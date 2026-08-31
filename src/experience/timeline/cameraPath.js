@@ -96,6 +96,38 @@ function easeCameraPath(t) {
   return 1 - (1 - t) ** EASE_OUT_POWER
 }
 
+// Roll (bank into the turn) — the one piece of genuine rotation freedom
+// this round adds: the camera's up vector tilts a few degrees as it
+// drifts through the right-side arc, then levels back out well before
+// the monitor approach. Implemented as `ScrollCameraRig` tilting
+// `camera.up` by this angle before calling `camera.lookAt()` — a
+// standard technique (lookAt's resulting orientation is built from
+// position, target, *and* up, so a tilted up vector introduces roll
+// without needing a hand-built quaternion/slerp pipeline for what's
+// still fundamentally a look-at-a-point camera). Both roll and the
+// position/lookAt targets it's layered on top of are damped continuously
+// every frame (`THREE.MathUtils.damp`, unchanged from earlier rounds),
+// which is what actually delivers "zero mechanical jerkiness" — a
+// discrete quaternion-slerp-between-keyframes approach was considered
+// and not used, since it would reintroduce the exact kind of piecewise,
+// per-keyframe motion this session spent several rounds removing (§4H).
+//
+// ZERO at progress 0 and by ~0.85: the hero frame must stay perfectly
+// level (approved Phase 1A framing), and the monitor-locked shot must
+// stay level too (banking while reading a screen would look wrong, and
+// the final approach is already slightly off-axis from the monitor's
+// own 20° yaw — see Monitor.jsx — without adding roll on top).
+const ROLL_MAX_DEGREES = 6
+const ROLL_RISE_END = 0.25
+const ROLL_FALL_START = 0.55
+const ROLL_FALL_END = 0.85
+
+function bankShape(t) {
+  const rise = THREE.MathUtils.smoothstep(t, 0, ROLL_RISE_END)
+  const fall = 1 - THREE.MathUtils.smoothstep(t, ROLL_FALL_START, ROLL_FALL_END)
+  return Math.min(rise, fall)
+}
+
 /**
  * Pure function of `progress` only (no history/state) — deterministic and
  * therefore trivially reversible: scrolling back to a given progress value
@@ -104,9 +136,14 @@ function easeCameraPath(t) {
 export function sampleCameraPath(progress) {
   const p = THREE.MathUtils.clamp(progress, 0, 1)
   const eased = easeCameraPath(p)
+  // Roll is driven by raw progress, not the eased/spline-sampled value —
+  // it's a banking cue tied to *where in the scroll gesture* the camera
+  // is turning, not to spatial position along the curve.
+  const rollDegrees = ROLL_MAX_DEGREES * bankShape(p)
 
   return {
     position: positionCurve.getPoint(eased).toArray(),
     lookAt: lookAtCurve.getPoint(eased).toArray(),
+    roll: THREE.MathUtils.degToRad(rollDegrees),
   }
 }

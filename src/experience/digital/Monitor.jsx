@@ -1,7 +1,26 @@
 import { useMemo } from 'react'
+import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import { lightingParams } from '../lighting/volumetricLighting.js'
 import { createScreenTestPatternMaterial } from './screenTestPatternMaterial.js'
+
+// A dynamic, off-square yaw rather than facing dead-center forward, per
+// explicit request. Rotating around the group's own origin (the cart's
+// floor position, MONITOR_ANCHOR.position) means the screen's actual
+// world-space center shifts slightly (it's offset from that origin along
+// local +Z by screenFrontZ, so the rotation sweeps it through a small
+// arc — up to roughly screenFrontZ * sin(20°) ≈ 0.1 world units in X/Z).
+// `cameraPath.js`'s monitor-aligned shot is deliberately NOT recomputed
+// to chase this small shift — MONITOR_ANCHOR/MONITOR_ALIGNED_POSITION is
+// a long-established, load-bearing derivation this session has never
+// touched, and reworking it to account for a rotated screen normal would
+// be a much larger, riskier change for a sub-0.1-unit correction. The
+// final approach reads slightly off-axis rather than perfectly square as
+// a result — left as-is deliberately, since it's consistent with (not a
+// bug relative to) this same request's "dynamic, angled" intent for the
+// whole approach, not just the monitor mesh. Verified visually, not just
+// assumed acceptable.
+const MONITOR_YAW_DEGREES = 20
 
 /**
  * Provisional Phase 1D monitor geometry — a retro/mid-century industrial
@@ -81,7 +100,7 @@ export default function Monitor() {
   const casingProps = { color: '#2b2a28', roughness: 0.75, metalness: 0.12 }
 
   return (
-    <group position={MONITOR_ANCHOR.position}>
+    <group position={MONITOR_ANCHOR.position} rotation={[0, THREE.MathUtils.degToRad(MONITOR_YAW_DEGREES), 0]}>
       {/* Equipment cart — four short legs and a platform, retro AV-cart styling */}
       {[
         [-CART.platformWidth / 2 + 0.08, -CART.platformDepth / 2 + 0.08],
