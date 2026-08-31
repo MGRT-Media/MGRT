@@ -37,9 +37,21 @@ export const lightingParams = {
     intensity: 1.1,
     position: [4, 10, 4],
   },
+  // Bounce/fill light on the room's -X side, opposite the breach (+X) —
+  // non-shadow-casting, like `key`, so it can't introduce a second shadow
+  // source. Purely lifts the shadow-side (left) wall out of near-black so
+  // its stone material stays readable even where the breach's direct
+  // light doesn't reach, per the readability request.
+  fill: {
+    color: '#c9cdd6',
+    intensity: 0.6,
+    position: [-5, 5, -1],
+  },
   ambient: {
     color: '#adadb8',
-    intensity: 2.3,
+    // Raised 2.3 -> 2.5 (+0.2, within the requested +0.15 to +0.25) so
+    // the shadow-side stone surfaces don't drop toward pitch black.
+    intensity: 2.5,
   },
   shadow: {
     mapSize: 2048,
@@ -313,6 +325,7 @@ export function createVolumetricLighting(params = lightingParams) {
   let spotLight = null
   let spotTarget = null
   let keyLight = null
+  let fillLight = null
   let ambientLight = null
   let beam = null
   let floorPool = null
@@ -351,13 +364,17 @@ export function createVolumetricLighting(params = lightingParams) {
     keyLight.position.set(...params.key.position)
     keyLight.castShadow = false
 
+    fillLight = new THREE.DirectionalLight(params.fill.color, params.fill.intensity)
+    fillLight.position.set(...params.fill.position)
+    fillLight.castShadow = false
+
     ambientLight = new THREE.AmbientLight(params.ambient.color, params.ambient.intensity)
 
     beam = buildBeam(params, origin, target)
     floorPool = buildFloorPool(params, origin, target)
     dust = buildDust(params, origin, target)
 
-    group.add(spotLight, spotTarget, keyLight, ambientLight, beam, floorPool, dust)
+    group.add(spotLight, spotTarget, keyLight, fillLight, ambientLight, beam, floorPool, dust)
   }
 
   /**

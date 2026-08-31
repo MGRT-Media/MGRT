@@ -55,13 +55,38 @@ function fbm(x, y, octaves) {
   return value
 }
 
+// One texture-repeat cycle (0–1 UV) = one stone block, per the request's
+// "mortar lines and individual stone blocks appropriately proportioned" —
+// `createStoneWallMaterial`'s `repeat` then directly sets how many blocks
+// tile across a given wall's physical size, tied to `TILE_SIZE` below.
+const MORTAR_WIDTH = 0.045
+const MORTAR_GROOVE_DEPTH = 0.6
+
+/**
+ * 0 right at a block edge, ramping up to 1 once `width` into the block's
+ * interior — used to recess the height field near tile borders so mortar
+ * reads as a genuine groove (in the normal map) and a genuine dark line
+ * (in the albedo, via the existing height→shade relationship) rather than
+ * a texture that has no block structure at all.
+ */
+function mortarMask(u, v, width) {
+  const du = Math.min(u, 1 - u)
+  const dv = Math.min(v, 1 - v)
+  const d = Math.min(du, dv)
+  return THREE.MathUtils.smoothstep(d, 0, width)
+}
+
 /** Builds the shared height field once, sized `TEXTURE_SIZE` × `TEXTURE_SIZE`. */
 function buildHeightField() {
   const height = new Float32Array(TEXTURE_SIZE * TEXTURE_SIZE)
   const scale = 6 / TEXTURE_SIZE
   for (let y = 0; y < TEXTURE_SIZE; y += 1) {
     for (let x = 0; x < TEXTURE_SIZE; x += 1) {
-      height[y * TEXTURE_SIZE + x] = fbm(x * scale, y * scale, 5)
+      const u = x / TEXTURE_SIZE
+      const v = y / TEXTURE_SIZE
+      const surfaceNoise = fbm(x * scale, y * scale, 5)
+      const mask = mortarMask(u, v, MORTAR_WIDTH)
+      height[y * TEXTURE_SIZE + x] = surfaceNoise * mask - (1 - mask) * MORTAR_GROOVE_DEPTH
     }
   }
   return height
@@ -69,11 +94,16 @@ function buildHeightField() {
 
 function buildAlbedoTexture(height) {
   const data = new Uint8Array(TEXTURE_SIZE * TEXTURE_SIZE * 4)
-  // Aged, mottled gray-tan stone base, darkened/lightened by the height field.
-  const base = new THREE.Color('#8c8478')
+  // Aged, mottled gray-tan stone base, darkened/lightened by the height
+  // field — brightened from the previous round's base/range specifically
+  // for readability (the request flagged the walls reading as "flat
+  // black"): mortar grooves (negative height, see buildHeightField) now
+  // shade down to a visibly dark line rather than the whole wall sitting
+  // uniformly dim.
+  const base = new THREE.Color('#948c7c')
   for (let i = 0; i < TEXTURE_SIZE * TEXTURE_SIZE; i += 1) {
     const h = height[i]
-    const shade = 0.72 + h * 0.5
+    const shade = THREE.MathUtils.clamp(0.78 + h * 0.55, 0.32, 1.3)
     data[i * 4] = THREE.MathUtils.clamp(base.r * 255 * shade, 0, 255)
     data[i * 4 + 1] = THREE.MathUtils.clamp(base.g * 255 * shade, 0, 255)
     data[i * 4 + 2] = THREE.MathUtils.clamp(base.b * 255 * shade, 0, 255)
@@ -140,8 +170,19 @@ function buildNormalTexture(height) {
  * behavior) so the existing three-tier wall tonality from Phase 1B
  * (`SURFACE_TONE.wallBack`/`wallSide`) still comes through under the new
  * stone detail, rather than the two being replaced outright.
+ *
+ * `repeat` is in texture-repeat units, where one repeat cycle = one stone
+ * block (see `MORTAR_WIDTH`/`MORTAR_GROOVE_DEPTH` above) — callers should
+ * derive it from a wall's actual physical size so block scale stays
+ * consistent relative to the pillars, rather than passing an arbitrary
+ * count; see `stoneRepeatForSize` and its call sites in `Environment.jsx`.
+ *
+ * `normalScale` raises the normal map's perturbation strength above the
+ * `MeshStandardMaterial` default of `(1, 1)` so incoming light — especially
+ * the raking angle from the breach — visibly catches the mortar grooves
+ * and block-face variation, per the request.
  */
-export function createStoneWallMaterial(tintColor, repeat = [6, 3]) {
+export function createStoneWallMaterial(tintColor, repeat = [6, 3], normalScale = [1.4, 1.4]) {
   const height = buildHeightField()
   const map = buildAlbedoTexture(height)
   const normalMap = buildNormalTexture(height)
@@ -157,8 +198,17 @@ export function createStoneWallMaterial(tintColor, repeat = [6, 3]) {
   return new THREE.MeshStandardMaterial({
     map,
     normalMap,
+    normalScale: new THREE.Vector2(normalScale[0], normalScale[1]),
     roughnessMap,
     color: tintColor,
     metalness: 0,
   })
+}
+
+/** One stone block ≈ `TILE_SIZE` world units — see the module doc comment. */
+const TILE_SIZE = 1.4
+
+/** Derives a `repeat` tuple from a wall segment's actual physical [width, height]. */
+export function stoneRepeatForSize(width, height) {
+  return [width / TILE_SIZE, height / TILE_SIZE]
 }

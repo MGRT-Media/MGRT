@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { useMemo } from 'react'
 import VolumetricLightingRig from './lighting/VolumetricLightingRig.jsx'
-import { createStoneWallMaterial } from './materials/stoneWallMaterial.js'
+import { createStoneWallMaterial, stoneRepeatForSize } from './materials/stoneWallMaterial.js'
 
 const HALL_WIDTH = 14
 const HALL_DEPTH = 32
@@ -57,22 +57,84 @@ const entrancePillarPositions = [
 ]
 
 /**
- * Single window opening on the right side wall (x = +HALL_WIDTH/2), upper
- * portion — per creative-reference.md's own "strong directional sunlight
- * through high apertures" brief. Reduced from the previous 3-window band
- * (§4O) to just this one, per explicit request. Its position exactly
- * matches `volumetricLighting.js`'s repositioned `spot.position` (x: 6.85,
- * y: 6.3, z: -3) so the beam visually originates at the opening itself.
+ * Organic breach in the right side wall (x = +HALL_WIDTH/2) — replaces the
+ * previous structured window frame (§4O/§4P) with a jagged opening, as if
+ * a section of stone collapsed away, per explicit request. Its center
+ * exactly matches `volumetricLighting.js`'s `spot.position` (x: 6.85,
+ * y: 6.3, z: -3) so the beam visually originates from inside the breach.
+ *
+ * `panelWidthZ` is the width (along world Z) of the dedicated wall panel
+ * that contains the hole — the right wall is split into this panel plus
+ * two plain flanking segments (front/back) covering the rest of its
+ * length, since punching an actual opening requires real geometry, not
+ * just an overlaid bright plane (see `Breach` and `stoneRepeatForSize`
+ * call sites in `Environment`).
  */
-const WINDOW = {
-  width: 1.3,
-  height: 3.2,
+const BREACH = {
+  centerZ: -3,
   centerY: 6.3,
-  frameThickness: 0.07,
-  frameDepth: 0.1,
-  glassColor: '#fff6e2',
+  panelWidthZ: 4,
+  holeRadiusZ: 1.05,
+  holeRadiusY: 1.85,
+  depth: 0.2,
 }
-const windowZPositions = [-3]
+
+/** Deterministic hash, matching the approach already used in stoneWallMaterial.js. */
+function hash1D(n) {
+  const s = Math.sin(n * 127.1) * 43758.5453
+  return s - Math.floor(s)
+}
+
+/**
+ * An irregular, fractured hole outline: a base ellipse perturbed by two
+ * low-frequency sine harmonics (broad lobes/bites, like real fracture
+ * planes) plus fine per-point jitter — rather than pure per-vertex random
+ * noise, which tends to read as a spiky star instead of broken stone.
+ */
+function buildFractureOutline(radiusZ, radiusY, pointCount = 18) {
+  const points = []
+  for (let i = 0; i < pointCount; i += 1) {
+    const t = (i / pointCount) * Math.PI * 2
+    const lobes = 1 + 0.16 * Math.sin(3 * t + 0.6) + 0.12 * Math.sin(5 * t + 2.1)
+    const jitter = 1 + (hash1D(i * 3.7 + 11) - 0.5) * 0.3
+    const r = lobes * jitter
+    points.push(new THREE.Vector2(Math.cos(t) * radiusZ * r, Math.sin(t) * radiusY * r))
+  }
+  return points
+}
+
+/**
+ * Wall panel geometry containing the breach: a flat rectangle (matching
+ * the wall's own thickness-less plane convention elsewhere, extruded only
+ * enough to give the fractured edge real depth) with the fracture outline
+ * cut out as a `Shape` hole. Local coordinates are centered like the
+ * existing wall planes (position marks the center), so it drops into the
+ * same `position`/`rotation` pattern as the other wall meshes.
+ */
+function useBreachGeometry() {
+  return useMemo(() => {
+    const halfW = BREACH.panelWidthZ / 2
+    const halfH = HALL_HEIGHT / 2
+    const holeCenterY = BREACH.centerY - HALL_HEIGHT / 2
+
+    const outer = new THREE.Shape()
+    outer.moveTo(-halfW, -halfH)
+    outer.lineTo(halfW, -halfH)
+    outer.lineTo(halfW, halfH)
+    outer.lineTo(-halfW, halfH)
+    outer.lineTo(-halfW, -halfH)
+
+    const outline = buildFractureOutline(BREACH.holeRadiusZ, BREACH.holeRadiusY).map(
+      (p) => new THREE.Vector2(p.x, p.y + holeCenterY),
+    )
+    outer.holes.push(new THREE.Path(outline))
+
+    const geometry = new THREE.ExtrudeGeometry(outer, { depth: BREACH.depth, bevelEnabled: false })
+    geometry.translate(0, 0, -BREACH.depth / 2)
+    geometry.computeVertexNormals()
+    return geometry
+  }, [])
+}
 
 /**
  * A simple classical column profile (plinth → shaft with a subtle taper →
@@ -105,50 +167,48 @@ function useColumnGeometry(height) {
 }
 
 /**
- * One window unit: a bright unlit glass pane (`toneMapped: false`, same
- * treatment as the monitor's screen material — ACES tonemapping crushes
- * low-radiance colors, so a plain lit material here would just look like
- * a dim gray rectangle rather than glowing daylight) plus a simple dark
- * frame border. Sits just inside the wall's own x-position to avoid
- * z-fighting with the solid wall plane behind it.
+ * The breach wall panel — the stone material, with the fracture shape cut
+ * as a genuine geometric hole (see `useBreachGeometry`). No separate
+ * "glow pane" is layered into the opening: a flat rectangle couldn't match
+ * the jagged outline without either falling short of it (leaving a visible
+ * gap to the stone edge) or overflowing onto the surrounding solid stone.
+ * The opening reading as lit comes from what's genuinely visible through
+ * it — the beam mesh's own bright apex (already established, unchanged)
+ * sits right at this location, and the fill/ambient light increases from
+ * this round keep the fractured edges themselves from going pitch black.
  */
-function Window({ z }) {
+function Breach({ material }) {
+  const geometry = useBreachGeometry()
   const wallX = HALL_WIDTH / 2
-  const { width, height, centerY, frameThickness, frameDepth, glassColor } = WINDOW
-  const halfW = width / 2
-  const halfH = height / 2
 
   return (
-    <group position={[wallX - 0.02, centerY, z]} rotation={[0, -Math.PI / 2, 0]}>
-      <mesh>
-        <planeGeometry args={[width, height]} />
-        <meshBasicMaterial color={glassColor} toneMapped={false} />
-      </mesh>
-      {/* Frame bars: top, bottom, left, right */}
-      <mesh position={[0, halfH + frameThickness / 2, 0]}>
-        <boxGeometry args={[width + frameThickness * 2, frameThickness, frameDepth]} />
-        <meshStandardMaterial color="#1d1d1e" roughness={0.6} metalness={0.3} />
-      </mesh>
-      <mesh position={[0, -halfH - frameThickness / 2, 0]}>
-        <boxGeometry args={[width + frameThickness * 2, frameThickness, frameDepth]} />
-        <meshStandardMaterial color="#1d1d1e" roughness={0.6} metalness={0.3} />
-      </mesh>
-      <mesh position={[-halfW - frameThickness / 2, 0, 0]}>
-        <boxGeometry args={[frameThickness, height, frameDepth]} />
-        <meshStandardMaterial color="#1d1d1e" roughness={0.6} metalness={0.3} />
-      </mesh>
-      <mesh position={[halfW + frameThickness / 2, 0, 0]}>
-        <boxGeometry args={[frameThickness, height, frameDepth]} />
-        <meshStandardMaterial color="#1d1d1e" roughness={0.6} metalness={0.3} />
-      </mesh>
-    </group>
+    <mesh
+      position={[wallX, HALL_HEIGHT / 2, BREACH.centerZ]}
+      rotation={[0, -Math.PI / 2, 0]}
+      geometry={geometry}
+      material={material}
+      castShadow
+      receiveShadow
+    />
   )
+}
+
+// Right wall is split around the breach into a front segment (nearer the
+// camera's hero start, +Z side) and a back segment (-Z side), covering
+// the rest of the wall's full HALL_DEPTH length.
+const rightFrontZ = {
+  center: (BREACH.centerZ + BREACH.panelWidthZ / 2 + HALL_DEPTH / 2) / 2,
+  width: HALL_DEPTH / 2 - (BREACH.centerZ + BREACH.panelWidthZ / 2),
+}
+const rightBackZ = {
+  center: (-HALL_DEPTH / 2 + BREACH.centerZ - BREACH.panelWidthZ / 2) / 2,
+  width: BREACH.centerZ - BREACH.panelWidthZ / 2 + HALL_DEPTH / 2,
 }
 
 /**
  * Persistent architectural shell: floor, walls, structural columns, and
- * (as of the window/relighting revision — see `Window` and
- * `volumetricLighting.js`'s repositioned spot) a single window opening.
+ * (as of the window/relighting revision — see `Breach` and
+ * `volumetricLighting.js`'s repositioned spot) a fractured wall opening.
  *
  * Core room dimensions and overall layout are the approved Phase 1A
  * foundation. Column *layout* (the half-moon arc) and wall *material*
@@ -159,20 +219,39 @@ function Window({ z }) {
  * `SURFACE_TONE` (walls mid, floor darkest, multiplied with the
  * generated stone albedo) — that part of Phase 1B's approval is
  * preserved, not replaced.
+ *
+ * Each wall segment gets its own `createStoneWallMaterial` call (rather
+ * than sharing one cloned texture set, as an earlier round did) so its
+ * `repeat` can be derived from that segment's own physical size via
+ * `stoneRepeatForSize` — keeping the stone block scale consistent
+ * relative to the pillars across every wall, including the two new right-
+ * wall segments the breach split off. The extra noise-texture generation
+ * this costs is a one-time mount cost (five materials × three 256×256
+ * DataTextures), not a per-frame one — confirmed via frame-timing after.
  */
 export default function Environment() {
   const columnGeometry = useColumnGeometry(HALL_HEIGHT)
 
-  const wallBackMaterial = useMemo(() => createStoneWallMaterial(SURFACE_TONE.wallBack), [])
-  // Cloning (rather than a second createStoneWallMaterial call) reuses the
-  // same generated map/normalMap/roughnessMap textures instead of
-  // re-running the noise generation a second time — only the tint color
-  // differs, matching Phase 1B's existing wallBack/wallSide distinction.
-  const wallSideMaterial = useMemo(() => {
-    const material = wallBackMaterial.clone()
-    material.color.set(SURFACE_TONE.wallSide)
-    return material
-  }, [wallBackMaterial])
+  const wallBackMaterial = useMemo(
+    () => createStoneWallMaterial(SURFACE_TONE.wallBack, stoneRepeatForSize(HALL_WIDTH, HALL_HEIGHT)),
+    [],
+  )
+  const wallLeftMaterial = useMemo(
+    () => createStoneWallMaterial(SURFACE_TONE.wallSide, stoneRepeatForSize(HALL_DEPTH, HALL_HEIGHT)),
+    [],
+  )
+  const wallRightFrontMaterial = useMemo(
+    () => createStoneWallMaterial(SURFACE_TONE.wallSide, stoneRepeatForSize(rightFrontZ.width, HALL_HEIGHT)),
+    [],
+  )
+  const wallRightBackMaterial = useMemo(
+    () => createStoneWallMaterial(SURFACE_TONE.wallSide, stoneRepeatForSize(rightBackZ.width, HALL_HEIGHT)),
+    [],
+  )
+  const breachMaterial = useMemo(
+    () => createStoneWallMaterial(SURFACE_TONE.wallSide, stoneRepeatForSize(BREACH.panelWidthZ, HALL_HEIGHT)),
+    [],
+  )
 
   return (
     <group>
@@ -189,23 +268,34 @@ export default function Environment() {
         <planeGeometry args={[HALL_WIDTH, HALL_HEIGHT]} />
       </mesh>
 
-      {/* Side walls — mid tier, old-stone PBR material */}
+      {/* Left side wall — mid tier, old-stone PBR material, unsplit */}
       <mesh
         position={[-HALL_WIDTH / 2, HALL_HEIGHT / 2, 0]}
         rotation={[0, Math.PI / 2, 0]}
-        material={wallSideMaterial}
+        material={wallLeftMaterial}
         receiveShadow
       >
         <planeGeometry args={[HALL_DEPTH, HALL_HEIGHT]} />
+      </mesh>
+
+      {/* Right side wall — split around the breach into front/back segments */}
+      <mesh
+        position={[HALL_WIDTH / 2, HALL_HEIGHT / 2, rightFrontZ.center]}
+        rotation={[0, -Math.PI / 2, 0]}
+        material={wallRightFrontMaterial}
+        receiveShadow
+      >
+        <planeGeometry args={[rightFrontZ.width, HALL_HEIGHT]} />
       </mesh>
       <mesh
-        position={[HALL_WIDTH / 2, HALL_HEIGHT / 2, 0]}
+        position={[HALL_WIDTH / 2, HALL_HEIGHT / 2, rightBackZ.center]}
         rotation={[0, -Math.PI / 2, 0]}
-        material={wallSideMaterial}
+        material={wallRightBackMaterial}
         receiveShadow
       >
-        <planeGeometry args={[HALL_DEPTH, HALL_HEIGHT]} />
+        <planeGeometry args={[rightBackZ.width, HALL_HEIGHT]} />
       </mesh>
+      <Breach material={breachMaterial} />
 
       {/* Half-moon pillar arc — lightest tier, frames the monitor */}
       {arcPillarPositions.map(([x, z], i) => (
@@ -219,11 +309,6 @@ export default function Environment() {
         <mesh key={`entrance-${i}`} position={[x, 0, z]} geometry={columnGeometry} castShadow receiveShadow>
           <meshStandardMaterial color={SURFACE_TONE.column} roughness={0.8} metalness={0.1} />
         </mesh>
-      ))}
-
-      {/* Window opening — right side wall, upper band */}
-      {windowZPositions.map((z) => (
-        <Window key={`window-${z}`} z={z} />
       ))}
     </group>
   )
