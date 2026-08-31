@@ -29,6 +29,19 @@ const columnPositions = Array.from({ length: COLUMN_COUNT_PER_SIDE }, (_, i) => 
 }).flat()
 
 /**
+ * Entrance pillars — a foreground pair flanking the camera's hero start
+ * ([0, 1.6, 9]) and the first leg of its path (which stays at x: 0 through
+ * z: 9 → 5, per cameraPath.js). Placed close to center (unlike the side
+ * colonnade at x: ∓6) so they read as a near-camera "gateway" the eye — and
+ * the camera — passes through toward the monitor, distinct in scale from
+ * the side columns for depth/parallax.
+ */
+const entrancePillarPositions = [
+  [-2.2, 4],
+  [2.2, 4],
+]
+
+/**
  * A simple classical column profile (plinth → shaft with a subtle taper →
  * capital), revolved into a single restrained LatheGeometry. Deliberately
  * plain — no fluting, carving, or ornamentation — and shared across every
@@ -99,6 +112,13 @@ export default function Environment() {
       {/* Structural columns — lightest tier */}
       {columnPositions.map(([x, z], i) => (
         <mesh key={i} position={[x, 0, z]} geometry={columnGeometry} castShadow receiveShadow>
+          <meshStandardMaterial color={SURFACE_TONE.column} roughness={0.8} metalness={0.1} />
+        </mesh>
+      ))}
+
+      {/* Entrance pillars — lightest tier, matches the side colonnade */}
+      {entrancePillarPositions.map(([x, z], i) => (
+        <mesh key={`entrance-${i}`} position={[x, 0, z]} geometry={columnGeometry} castShadow receiveShadow>
           <meshStandardMaterial color={SURFACE_TONE.column} roughness={0.8} metalness={0.1} />
         </mesh>
       ))}

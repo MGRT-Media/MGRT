@@ -150,6 +150,29 @@ Do not begin Phase 2 until Phase 1D is explicitly approved.
 
 ---
 
+## 4A. Geometry Refinement — Entrance Pillars (cross-cutting, Phase 1A revision)
+
+**Status:** TECHNICALLY COMPLETE
+**Approval:** NOT YET GRANTED
+
+Requested directly by the human (not phase-authorized work) during the Phase 1D review window: a foreground pillar pair at the room's entrance, framing the monitor and giving the opening view an immediate sense of depth/parallax as the camera passes between them. This revises the approved Phase 1A column layout, so it's recorded here rather than folded into Phase 1D's own record.
+
+### What changed
+- `src/experience/Environment.jsx` — added `entrancePillarPositions` (`[-2.2, 4]`, `[2.2, 4]`), rendered with the same shared `columnGeometry` and Tier-1 (`SURFACE_TONE.column`) material as the existing side colonnade — same shading, same profile, no new geometry or material system introduced.
+- Placement reasoning: the camera's first path segment (hero `[0, 1.6, 9]` → `t: 0.25` keyframe `[0, 1.6, 5]`, per `cameraPath.js`) holds `x: 0` at both ends, so the pillars sit safely off the camera's actual line of travel (clearance ≈1.8 units from the column surface to the camera path at closest approach) while still reading as a "gateway" the camera glides through, per `technical-architecture.md` §6's "no camera teleportation" — this is geometry placement around an existing path, not a path change (the camera path itself was not modified).
+- No other Phase 1A/1B/1C/1D code touched. Column count is now 10 (8 side colonnade + 2 entrance).
+
+### Verification
+- Tuned iteratively via direct screenshot comparison — an initial placement attempt (`[∓1.5, 7]`, then `[∓1.8, 5.5]`) put the pillars far enough into the camera's near field that they read as full-height foreground bands filling the frame edges rather than a clean gateway frame; corrected to `[∓2.2, 4]` for a comfortably framed opening shot. (A `resize_window` viewport mismatch briefly made an earlier placement attempt look broken in one screenshot — traced to the browser pane defaulting to a near-square aspect rather than 16:9; re-tested at an explicit 1280×720 viewport, which is what the final placement was actually tuned against.)
+- Verified no clipping: scrolled through the segment where the camera passes nearest the pillars (~30–35% progress) — clean pass-through, no geometry intersecting the view, no z-fighting.
+- Verified reversibility: scroll to ~50% (pillars behind camera) and back to 0% reproduces the exact hero frame.
+- Production build succeeds; no console errors; frame-timing re-measured under a simulated scroll-gesture burst — no regression (~16.6ms avg, 0 frames over 33ms); mobile viewport renders cleanly with no errors (the pillars fall outside portrait's narrower horizontal FOV at this position, which is expected — mobile-specific recomposition remains out of scope until Phase 4, per `build-workflow.md` §6).
+
+### Required next step
+Awaiting human visual review and approval of this geometry revision. Not gating Phase 1D's own approval, but should be reviewed alongside it since it touches the same environment.
+
+---
+
 ## 5. Approved Visual Decisions
 
 This section records visual decisions that have already received human approval and therefore should be treated as protected foundations.
@@ -158,9 +181,10 @@ This section records visual decisions that have already received human approval 
 
 **Phase 1A — Environment Shell (approved 2026-08-31):**
 - Room dimensions and architectural proportions (14×32 floor, 9 unit wall height).
-- Column geometry, proportions (plinth/tapered shaft/capital LatheGeometry profile), count (8, 4 per side), and spacing.
+- Column geometry, proportions (plinth/tapered shaft/capital LatheGeometry profile), and spacing.
 - Initial (progress-0) camera framing `[0, 1.6, 9]`, `fov: 45`, looking level down −Z, and the resulting negative space / composition.
 - Overall room layout (floor, back wall, two side walls, no ceiling).
+- **Column count revised post-approval (2026-08-31, pending re-review):** originally 8 (4 per side, side colonnade only); a two-pillar foreground "entrance" pair was added at `[∓2.2, 4]` per explicit human request — see the geometry-refinement entry below. Not yet re-approved as part of the visual record; flagged here so the count doesn't silently drift from what §4/§11 describe.
 
 **Phase 1B — Atmosphere & Light (approved 2026-08-31):**
 - The primary light system's character: warm SpotLight-driven volumetric shaft, floor light-pool, shadow-casting architecture, dust confined to the beam, and the ambient/fog/three-tier material tonality (columns lightest → walls mid → floor darkest) reached across three review passes.
@@ -435,6 +459,16 @@ Record meaningful implementation changes rather than every minor code edit.
 - Extended `src/experience/timeline/cameraPath.js` from 4 to 5 keyframes: the original hero→approach path's positions/lookAts are unchanged, only rescaled to `t: 0, 0.25, 0.5, 0.75` to make room for a new final `t: 1.0` keyframe — computed from `MONITOR_ANCHOR` (not hand-tuned numbers) so it stays correct if the monitor's placement or size ever changes. Same deterministic, reversible, Lenis+damp-smoothed path mechanism as Phase 1C — no separate/special-cased transition into monitor alignment.
 - Verified: production build succeeds; monitor renders cleanly in the beam at progress 0%; the approach and final alignment shots are clean with no clipping (caught and corrected a test-script arithmetic bug during verification — not a product bug — see §9's testing note); full reversibility confirmed; ~60fps sustained, no regression from Phase 1C; mobile viewport and address-bar-resize guard re-confirmed; no `useState`/`setState` anywhere in the scroll/camera/digital path (grep-verified).
 - Phase 1D is technically complete and awaiting human visual review and approval. Phase 2 has not been started.
+
+### 2026-08-31 (Entrance pillar geometry refinement)
+
+**Two foreground entrance pillars added to the Phase 1A environment — a cross-cutting revision, not phase-authorized work.**
+
+- Added `entrancePillarPositions` in `src/experience/Environment.jsx`: a pillar pair at `[∓2.2, 4]`, reusing the existing column geometry and Tier-1 material — no new geometry/material system.
+- Placed so the camera's existing first path segment (which holds `x: 0` between the hero keyframe and `t: 0.25`) passes safely between them (~1.8 units of clearance); the camera path itself was not modified.
+- Iteratively tuned via screenshot verification — two earlier placements read as full-height foreground bands rather than a clean gateway frame before settling on `[∓2.2, 4]`; also traced and corrected a viewport-aspect mismatch (a custom `resize_window` call rendering closer to square than 16:9) that briefly made one placement attempt look broken.
+- Verified: no clipping through the pass-through segment, full reversibility, production build succeeds, no console errors, no frame-timing regression, mobile renders cleanly (pillars fall outside portrait's narrower FOV at this position — expected, mobile recomposition is separately scoped for Phase 4).
+- Recorded in §4A rather than folded into Phase 1D, since it revises Phase 1A's approved column layout rather than being Phase 1D scope. Awaiting human visual review.
 
 ---
 
