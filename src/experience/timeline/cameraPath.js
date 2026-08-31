@@ -16,54 +16,55 @@ const MONITOR_ALIGNED_LOOKAT = [
   MONITOR_ANCHOR.position[2],
 ]
 
-function lerpVec3(a, b, t) {
-  return [
-    THREE.MathUtils.lerp(a[0], b[0], t),
-    THREE.MathUtils.lerp(a[1], b[1], t),
-    THREE.MathUtils.lerp(a[2], b[2], t),
-  ]
-}
-
-const APPROACH_POSITION = [1.0, 1.7, 1]
-const APPROACH_LOOKAT = [0.6, 0.6, -3.5]
-
-// A "settle" keyframe inserted just before the final monitor-aligned shot:
-// most (85%) of the remaining distance is covered by t: 0.75 -> 0.92, so
-// the last stretch (0.92 -> 1.0) is a deliberately small movement. Combined
-// with the per-segment ease below, this reads as the camera decelerating
-// and settling into frame rather than sweeping all the way in and stopping
-// abruptly at progress 1.0. Derived from APPROACH_*/MONITOR_ALIGNED_* (not
-// hand-picked numbers) so it stays correct if either endpoint ever moves.
-const SETTLE_T = 0.92
-const SETTLE_BLEND = 0.85
-const SETTLE_POSITION = lerpVec3(APPROACH_POSITION, MONITOR_ALIGNED_POSITION, SETTLE_BLEND)
-const SETTLE_LOOKAT = lerpVec3(APPROACH_LOOKAT, MONITOR_ALIGNED_LOOKAT, SETTLE_BLEND)
-
 /**
- * Camera keyframes — a provisional proof of the camera/scroll mechanism
- * through the approved Phase 1A/1B/1C environment, not the final Film/
- * Digital act choreography (that belongs to Phase 2).
+ * Waypoints — a provisional proof of the camera/scroll mechanism through
+ * the approved Phase 1A/1B/1C environment, not the final Film/Digital act
+ * choreography (that belongs to Phase 2).
  *
- * Keyframe 0 matches the approved Phase 1A static hero framing exactly
- * (position [0, 1.6, 9], looking level down -Z) so progress 0 never jumps.
- * The path then moves forward between the columns, approaches the Phase
- * 1B light beam's floor target while staying outside its dust volume
- * (roughly a 3.4-unit-radius cone), and finally glides — with an explicit
- * settle keyframe for a gentler deceleration — to a shot squarely aligned
- * with the Phase 1D monitor's screen face.
+ * These are sampled as a single continuous Catmull-Rom spline (below)
+ * rather than independently-eased line segments. Independently easing
+ * each segment forces the camera's velocity to zero at *every* waypoint —
+ * which is what previously read as a series of small "hard stops" between
+ * scroll sections rather than one continuous glide. A spline keeps motion
+ * flowing smoothly through the interior waypoints; only the very start
+ * (progress 0, at rest) and very end (progress 1, settling at the
+ * monitor) actually decelerate to zero, via the one global ease applied
+ * to overall progress before sampling the curve.
+ *
+ * First waypoint matches the approved Phase 1A static hero framing
+ * exactly (position [0, 1.6, 9], looking level down -Z) so progress 0
+ * never jumps. The path moves forward between the columns, approaches the
+ * Phase 1B light beam's floor target while staying outside its dust
+ * volume (roughly a 3.4-unit-radius cone), and settles on a shot squarely
+ * aligned with the Phase 1D monitor's screen face.
  */
-const KEYFRAMES = [
-  { t: 0.0, position: [0, 1.6, 9], lookAt: [0, 1.6, -50] },
-  { t: 0.25, position: [0, 1.6, 5], lookAt: [0.3, 1.4, -1] },
-  { t: 0.5, position: [0.5, 1.65, 2], lookAt: [0.6, 1.0, -3] },
-  { t: 0.75, position: APPROACH_POSITION, lookAt: APPROACH_LOOKAT },
-  { t: SETTLE_T, position: SETTLE_POSITION, lookAt: SETTLE_LOOKAT },
-  { t: 1.0, position: MONITOR_ALIGNED_POSITION, lookAt: MONITOR_ALIGNED_LOOKAT },
-]
+const POSITION_WAYPOINTS = [
+  [0, 1.6, 9],
+  [0, 1.6, 5],
+  [0.5, 1.65, 2],
+  [1.0, 1.7, 1],
+  MONITOR_ALIGNED_POSITION,
+].map((p) => new THREE.Vector3(...p))
 
-// Quintic in/out — a more pronounced "gentle accel out of rest, soft glide
-// to a stop" curve than a cubic ease, per this pass's request to eliminate
-// any remaining mechanical/linear feel between keyframes.
+// The first lookAt waypoint represents "looking level down -Z" (no literal
+// target) — kept at a finite-but-distant Z (not the ~50-unit point used
+// pre-spline) so it doesn't act as a wild outlier control point that would
+// distort the Catmull-Rom curve's shape near the start of the path.
+const LOOKAT_WAYPOINTS = [
+  [0, 1.6, -10],
+  [0.3, 1.4, -1],
+  [0.6, 1.0, -3],
+  [0.6, 0.6, -3.5],
+  MONITOR_ALIGNED_LOOKAT,
+].map((p) => new THREE.Vector3(...p))
+
+const positionCurve = new THREE.CatmullRomCurve3(POSITION_WAYPOINTS, false, 'catmullrom', 0.5)
+const lookAtCurve = new THREE.CatmullRomCurve3(LOOKAT_WAYPOINTS, false, 'catmullrom', 0.5)
+
+// Quintic in/out — the single global ease controlling overall pacing: a
+// gentle accel out of rest and a long, soft tail into the final monitor
+// alignment, applied once to `progress` rather than re-applied (and
+// re-zeroing velocity) at every interior waypoint.
 function easeInOutQuint(t) {
   return t < 0.5 ? 16 * t ** 5 : 1 - (-2 * t + 2) ** 5 / 2
 }
@@ -75,22 +76,10 @@ function easeInOutQuint(t) {
  */
 export function sampleCameraPath(progress) {
   const p = THREE.MathUtils.clamp(progress, 0, 1)
-
-  let start = KEYFRAMES[0]
-  let end = KEYFRAMES[KEYFRAMES.length - 1]
-  for (let i = 0; i < KEYFRAMES.length - 1; i += 1) {
-    if (p >= KEYFRAMES[i].t && p <= KEYFRAMES[i + 1].t) {
-      start = KEYFRAMES[i]
-      end = KEYFRAMES[i + 1]
-      break
-    }
-  }
-
-  const span = end.t - start.t || 1
-  const localT = easeInOutQuint(THREE.MathUtils.clamp((p - start.t) / span, 0, 1))
+  const eased = easeInOutQuint(p)
 
   return {
-    position: lerpVec3(start.position, end.position, localT),
-    lookAt: lerpVec3(start.lookAt, end.lookAt, localT),
+    position: positionCurve.getPoint(eased).toArray(),
+    lookAt: lookAtCurve.getPoint(eased).toArray(),
   }
 }

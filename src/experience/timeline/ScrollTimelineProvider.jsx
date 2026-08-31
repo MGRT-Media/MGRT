@@ -25,11 +25,12 @@ const SCROLL_LENGTH_MULTIPLIER = 3
  * timeline: a `gsap.timeline({ scrollTrigger: { scrub, ... } })` whose
  * ScrollTrigger drives `scrollProgress.value` from 0 to 1 across the
  * spacer's height. Raw wheel/touch input is first normalized into smooth,
- * inertial motion by Lenis (`smoothScroll.js`) — ScrollTrigger just stays
- * in sync with Lenis's already-smoothed scroll position, so `scrub` only
- * needs to add a light extra touch of catch-up smoothing rather than
- * carry the whole "glide to rest" feel itself. Together this is fully
- * reversible, with no section-snapping and no auto-scroll.
+ * inertial motion by Lenis (`smoothScroll.js`); `scrub: 1` then adds a
+ * full second of its own catch-up smoothing on top, so individual wheel
+ * notches/trackpad steps absorb into one continuous, fluid motion rather
+ * than each nudging the timeline forward in a visible little step.
+ * Together this is fully reversible, with no section-snapping and no
+ * auto-scroll.
  */
 export function ScrollSpacer() {
   const spacerRef = useRef(null)
@@ -42,7 +43,7 @@ export function ScrollSpacer() {
         trigger: spacerRef.current,
         start: 'top top',
         end: 'bottom bottom',
-        scrub: 0.15,
+        scrub: 1,
         onUpdate: (self) => {
           scrollProgress.value = self.progress
         },
