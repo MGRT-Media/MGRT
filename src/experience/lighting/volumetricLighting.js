@@ -21,17 +21,17 @@ export const lightingParams = {
     bias: -0.0012,
   },
   ambient: {
-    color: '#a6a6b0',
-    intensity: 1.7,
+    color: '#adadb8',
+    intensity: 2.3,
   },
   fog: {
-    color: '#242428',
-    density: 0.032,
+    color: '#2c2c30',
+    density: 0.028,
   },
   volumetric: {
     color: '#fff1dc',
-    opacity: 0.055,
-    coreOpacity: 0.12,
+    opacity: 0.075,
+    coreOpacity: 0.16,
     coreScale: 0.42,
     radialSegments: 32,
   },
