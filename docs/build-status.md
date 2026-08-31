@@ -228,9 +228,10 @@ The repository must maintain a recoverable implementation history.
 **Baseline commit (docs only, pre-implementation):** `960243b` — "Initial commit: governing documentation"
 **Approved Phase 1A checkpoint:** `8f6784d` — "Phase 1A: refine column geometry to classical cylindrical profile" (Phase 1A approved 2026-08-31 in chat, against this commit)
 **Approved Phase 1B checkpoint:** `c574d5e` — "Phase 1B: three-tier surface tonality and higher global exposure" (Phase 1B approved 2026-08-31 in chat, against this commit)
-**Current commit (Phase 1C, technically complete):** `b953859` — "Phase 1C: smooth camera scroll motion (Lenis + damping)" (on top of `e566d3f`, the initial Phase 1C implementation)
+**Approved Phase 1C checkpoint:** `b953859` — "Phase 1C: smooth camera scroll motion (Lenis + damping)" (Phase 1C approved 2026-08-31 in chat, against this commit)
+**Current commit (Phase 1D, technically complete):** `85b90be` — "Phase 1D: monitor mesh, screen shader, camera-monitor handshake"
 
-The repository was initialized (`git init -b main`) with the five governing documents relocated into `docs/` as the first commit, giving a clean recovery point before any implementation began. Phase 1A (scaffold, environment shell, column refinement) and Phase 1B (volumetric lighting, three review passes) were each committed and approved in sequence; Phase 1C (scroll-driven camera) is committed on top of the approved Phase 1B checkpoint and is recoverable independently of it.
+The repository was initialized (`git init -b main`) with the five governing documents relocated into `docs/` as the first commit, giving a clean recovery point before any implementation began. Phase 1A (scaffold, environment shell, column refinement), Phase 1B (volumetric lighting, three review passes), and Phase 1C (scroll-driven camera, motion-physics refinement) were each committed and approved in sequence; Phase 1D (monitor foundation) is committed on top of the approved Phase 1C checkpoint and is recoverable independently of it.
 
 ### Checkpoint rules
 
@@ -311,7 +312,7 @@ Each completed phase should receive a concise record.
 **Testing performed:** See §9. Production build, dev-server console check, visual verification at progress 0%/~60%/100%, reversibility check, frame-timing re-measurement (no regression), mobile-viewport and address-bar-resize guard re-check, grep-verified no `useState`/`setState`.
 **Known issues:** See §9's testing note (a test-script scroll-offset calculation bug, not a product bug) and §6 for carried-over issues.
 **Approved visual decisions:** None yet — pending human review of this phase.
-**Git checkpoint:** `main` branch; see §8 for the exact commit once recorded.
+**Git checkpoint:** `main` branch; commit `85b90be`.
 **Next approved phase:** Pending human approval of Phase 1D before Phase 2 (Film / Digital / Campaigns) may begin.
 
 ---
