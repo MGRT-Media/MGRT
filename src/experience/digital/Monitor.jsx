@@ -51,8 +51,16 @@ export default function Monitor() {
         <meshStandardMaterial color="#18181c" roughness={0.35} metalness={0.75} />
       </mesh>
 
-      {/* Screen surface — unlit procedural test pattern, provisional */}
-      <mesh position={[0, bodyCenterY, screenFrontZ]}>
+      {/*
+        Screen surface — unlit procedural test pattern, provisional.
+        `screenTestPatternMaterial` is a raw unlit ShaderMaterial (no PBR
+        lighting model), so roughness/metalness don't apply to it — its
+        "emission" is just its fragment-shader output read directly,
+        `toneMapped: false`. Explicitly excluded from both cast and
+        receive shadows so neither the bezel nor the entrance/side pillars
+        can cast a shadow onto the glowing screen face.
+      */}
+      <mesh position={[0, bodyCenterY, screenFrontZ]} castShadow={false} receiveShadow={false}>
         <planeGeometry
           args={[MONITOR_ANCHOR.screenWidth - BEZEL_MARGIN * 2, MONITOR_ANCHOR.screenHeight - BEZEL_MARGIN * 2]}
         />
@@ -60,7 +68,7 @@ export default function Monitor() {
       </mesh>
 
       {/* Glass — a thin, subtly reflective pane over the screen */}
-      <mesh position={[0, bodyCenterY, glassFrontZ]}>
+      <mesh position={[0, bodyCenterY, glassFrontZ]} castShadow={false} receiveShadow={false}>
         <planeGeometry args={[MONITOR_ANCHOR.screenWidth - BEZEL_MARGIN, MONITOR_ANCHOR.screenHeight - BEZEL_MARGIN]} />
         <meshPhysicalMaterial
           color="#0a0a0c"

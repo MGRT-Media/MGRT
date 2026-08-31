@@ -207,6 +207,37 @@ None of these turned up a reproducible artifact in this environment. This doesn'
 
 ---
 
+## 4C. Fix — Camera/Monitor Transition Light Pop
+
+**Status:** TECHNICALLY COMPLETE
+**Approval:** NOT YET GRANTED
+
+Human report: a slight light shift/jolt right as the camera transitions from the close-up approach to squarely aligned with the monitor screen.
+
+### Root cause (computed, not guessed)
+
+Worked out the beam-axis geometry rather than assuming: the camera's final "squarely aligned with the screen" position sits a perpendicular distance of ≈1.18 units from the volumetric halo cone's axis, at a point along that axis where the cone's radius is ≈2.69 — i.e. the camera ends up **inside** the halo shell by a margin of ≈1.5 units. The previous keyframe (`t: 0.75`, the close-up approach shot) sits **outside** the shell by a margin of ≈0.69. Somewhere between those two keyframes — worked out to be around progress ≈0.82 — the camera crosses from outside to inside a hollow, double-sided, additively-blended shell. That crossing is a well-known source of a brightness "pop": outside the shell the camera sees both the near and far faces of the cone (two additive layers); once the near-clip plane cuts through the shell as the camera enters it, only one face remains in view, roughly halving the accumulated additive brightness in a single frame.
+
+This is geometrically inherent to the composition, not a bug to "clip out": the monitor stands exactly at the beam's target, near the cone's widest point, by design (Phase 1D deliberately placed it "within the volumetric beam's path"). A camera squarely framing the monitor from a reasonable distance will unavoidably be near or inside the same cone the monitor sits in — repositioning the final camera keyframe to stay outside the cone isn't possible without abandoning the squarely-aligned framing. So the fix is the one the request itself offered as the alternative: fade the beam's opacity out across the crossing, so there's nothing left to pop by the time the camera arrives.
+
+### What changed
+- `src/experience/lighting/volumetricLighting.js` — the controller's `update(progress)` is no longer a no-op. It now fades the shaft (halo + core) and floor-pool opacity via `1 - THREE.MathUtils.smoothstep(progress, BEAM_FADE_START, BEAM_FADE_END)`, with `BEAM_FADE_START = 0.7` and `BEAM_FADE_END = 0.88` — chosen from the crossing-point math above (fade begins at the tail of the approach shot, is fully complete well before the crossing at ≈0.82). Each shaft mesh and the floor pool now store their `baseOpacity` in `userData` at build time so the fade multiplies against the original tuned value rather than a hardcoded number. This is a deliberate, narrowly-scoped exception to "Phase 1B lighting is static" — everything else about the light stays unanimated; only this fade responds to scroll, and only to prevent the transition pop.
+- `src/experience/lighting/VolumetricLightingRig.jsx` — now calls `controller.update(scrollProgress.value)` inside a `useFrame`, reading the same plain mutable `scrollProgress` object `ScrollCameraRig.jsx` already uses. No React state introduced.
+- **Camera position/lookAt damping (requested, already correct):** `ScrollCameraRig.jsx` already used the identical `DAMP_LAMBDA` and the same per-frame `delta` for both `camera.position` and the look-at target — verified this is genuinely synchronized (same exponential decay factor applied to both each frame, so they close the same *proportion* of their respective remaining distance every frame) and made no change here, since it already satisfied the request.
+- **LookAt perpendicularity (requested, already correct):** confirmed by direct vector math that `MONITOR_ALIGNED_POSITION` and `MONITOR_ALIGNED_LOOKAT` (`cameraPath.js`, unchanged) differ only along +Z — camera position minus lookAt is a pure `(0, 0, 2.1)` — which is exactly perpendicular to the screen plane's normal. No change needed; confirming this here since the request asked for verification, not just a fix.
+- `src/experience/digital/Monitor.jsx` — explicitly set `castShadow={false} receiveShadow={false}` on both the screen and glass meshes (previously relying on the three.js/R3F default of `false`, now made explicit so it can't silently regress). Documented that the screen's test-pattern material is a raw unlit `ShaderMaterial` with no PBR lighting model, so "roughness/metalness balance" doesn't apply to it — its glow is the shader's own fragment output, unaffected by scene lighting or shadows by construction.
+
+### Verification
+- Scrolled through progress 0%, 60%, 70%, 82%, and 100%: beam at full strength through 60–70%, visibly fading by 82%, fully faded and invisible by 100% — smooth, no visible pop at any sampled point.
+- Verified reversibility: scrolled back from the faded end state through 60% (beam returns to full strength) to 0% (pixel-identical to the approved baseline).
+- Frame-timing re-measured under a simulated scroll-gesture burst with the new per-frame `update()` call active: 180 frames, ~16.6ms avg, 0 frames over 33ms — no regression.
+- Production build succeeds; no console errors; grep-confirmed no `useState`/`setState` anywhere in the scroll/camera/lighting/digital paths; mobile viewport re-checked, renders cleanly.
+
+### Required next step
+Awaiting human visual review — please confirm the jolt is resolved when scrubbing through the camera→monitor transition.
+
+---
+
 ## 5. Approved Visual Decisions
 
 This section records visual decisions that have already received human approval and therefore should be treated as protected foundations.
@@ -539,6 +570,17 @@ Record meaningful implementation changes rather than every minor code edit.
 - Applied technically appropriate hardening rather than the literal suggested values: added `spotLight.shadow.normalBias = 0.02` (the standard fix for shadow acne on curved geometry like the pillars) instead of changing `shadow.bias` to `-0.0001` as literally suggested — that value has a smaller magnitude than the already-tuned `-0.0012` and would likely make acne risk worse, not better, so it wasn't applied. Lowered the camera `near` plane `0.1 → 0.05` for extra frustum-popping margin given the pillars' proximity. Re-confirmed (unchanged) that the Lenis/GSAP + `THREE.MathUtils.damp` architecture and the no-React-state rule are both still intact.
 - Verified: no regressions — production build succeeds, reversibility and pass-through checks still clean, frame-timing unchanged, mobile renders without errors.
 - **Flagged rather than claimed fixed:** could not empirically reproduce the reported artifact in this environment, so I can't confirm the fix resolves it — asked for on-device re-confirmation and, if it persists, more specific repro details (browser/GPU/scroll position).
+
+### 2026-08-31 (Camera/monitor transition light pop fix)
+
+**Fixed a light "pop" at the camera→monitor alignment transition by computing its actual geometric cause, then fading the beam across it.**
+
+- Human report: a slight light shift/jolt right as the camera transitions from the close-up approach to squarely aligned with the monitor screen.
+- Computed the beam-axis geometry rather than guessing: the final "squarely aligned" camera position sits ≈1.18 units from the halo cone's axis where the cone's radius is ≈2.69 (inside the shell by ≈1.5), while the previous keyframe sits ≈0.69 outside it — the camera crosses from outside to inside the hollow double-sided additive shell around progress ≈0.82, which is a known source of a brightness pop (near-clip cutting away one of two blended shell faces as the camera enters).
+- Since the monitor stands deliberately at the beam's target (near the cone's widest point), the camera can't stay outside the cone while framing it squarely — repositioning the final keyframe isn't viable. Implemented the fade alternative instead: `volumetricLighting.js`'s `update(progress)` (previously a no-op) now fades the shaft/floor-pool opacity from `BEAM_FADE_START = 0.7` to `BEAM_FADE_END = 0.88`, called every frame from `VolumetricLightingRig.jsx` via the shared `scrollProgress` object — no React state introduced.
+- Checked the other two requested items and found both already correct, so left them unchanged: camera position and lookAt already share the identical damp lambda and per-frame delta (genuinely synchronized), and the final camera position/lookAt already differ by a pure `(0,0,2.1)` offset — exactly perpendicular to the screen plane, confirmed by direct vector math.
+- `Monitor.jsx` — made the screen/glass meshes' shadow exclusion explicit (`castShadow={false} receiveShadow={false}`, previously relying on the default) and documented that the screen's unlit `ShaderMaterial` has no PBR roughness/metalness to tune in the first place.
+- Verified: fade is smooth across 60%/70%/82%/100% scroll positions with no visible pop, full reversibility, no frame-timing regression, no console errors, mobile renders cleanly, production build succeeds.
 
 ---
 

@@ -117,6 +117,7 @@ function buildShaftShell(params, origin, target, { radiusScale, opacity }) {
   })
 
   const mesh = new THREE.Mesh(geometry, material)
+  mesh.userData.baseOpacity = opacity
 
   const midpoint = origin.clone().add(target).multiplyScalar(0.5)
   const dirToOrigin = origin.clone().sub(target).normalize()
@@ -180,6 +181,7 @@ function buildFloorPool(params, length, target) {
   })
 
   const mesh = new THREE.Mesh(geometry, material)
+  mesh.userData.baseOpacity = params.volumetric.opacity * 1.4
   mesh.rotation.x = -Math.PI / 2
   mesh.position.set(target.x, 0.02, target.z)
   return mesh
@@ -231,11 +233,32 @@ function buildDust(params, origin, target, length) {
   return new THREE.Points(geometry, material)
 }
 
+// The camera's final Phase 1D monitor-aligned shot sits geometrically
+// inside the halo cone's radius at that point along the beam axis (the
+// monitor itself stands at the beam's target, near the cone's widest
+// point — that's the intended "monitor in the light" composition, so the
+// camera can't frame it squarely while staying outside the cone). Camera
+// crossing from outside to inside a hollow double-sided additive shell
+// produces a brightness "pop" as the near-clip plane cuts through it.
+// Rather than move the camera (geometrically impossible without breaking
+// the squarely-aligned framing), fade the shaft/floor-pool out across the
+// crossing so there's nothing to pop by the time the camera arrives.
+// Range computed from cameraPath.js's t: 0.75 -> 1.0 segment (worked out
+// via the beam's axis/radius math — the crossing lands around progress
+// 0.82): starts fading at the tail end of the approach shot, fully faded
+// well before progress 1.0.
+const BEAM_FADE_START = 0.7
+const BEAM_FADE_END = 0.88
+
 /**
- * Framework-agnostic controller for the Phase 1B volumetric lighting
- * system. `update(time)` is intentionally a no-op placeholder in this
- * phase — it exists so Phase 1C can drive these values from the shared
- * cinematic timeline without a rewrite, but nothing should call it yet.
+ * Framework-agnostic controller for the volumetric lighting system.
+ * `update(progress)` fades the shaft/floor-pool opacity down across
+ * `BEAM_FADE_START`–`BEAM_FADE_END` so the Phase 1D camera-monitor
+ * transition doesn't cross the (still fully static) volumetric geometry
+ * mid-flight. This is the one deliberate, narrowly-scoped exception to
+ * "Phase 1B lighting is static" — everything else about the light remains
+ * unanimated; only this fade responds to scroll, and only to prevent a
+ * visual pop, not to introduce new choreography.
  */
 export function createVolumetricLighting(params = lightingParams) {
   const group = new THREE.Group()
@@ -286,9 +309,15 @@ export function createVolumetricLighting(params = lightingParams) {
     group.add(spotLight, spotTarget, ambientLight, shaft, floorPool, dust)
   }
 
-  function update(/* time */) {
-    // Reserved for Phase 1C. Phase 1B lighting is static — nothing here
-    // runs per frame yet.
+  function update(progress = 0) {
+    const fade = 1 - THREE.MathUtils.smoothstep(progress, BEAM_FADE_START, BEAM_FADE_END)
+
+    shaftMeshes.forEach((mesh) => {
+      mesh.material.uniforms.uOpacity.value = mesh.userData.baseOpacity * fade
+    })
+    if (floorPool) {
+      floorPool.material.uniforms.uOpacity.value = floorPool.userData.baseOpacity * fade
+    }
   }
 
   function dispose() {
