@@ -220,7 +220,7 @@ The repository must maintain a recoverable implementation history.
 **Current working branch:** `main`
 **Baseline commit (docs only, pre-implementation):** `960243b` — "Initial commit: governing documentation"
 **Approved Phase 1A checkpoint:** `8f6784d` — "Phase 1A: refine column geometry to classical cylindrical profile" (Phase 1A approved 2026-08-31 in chat, against this commit)
-**Current commit (Phase 1B, technically complete):** `2da89c8` — "Phase 1B: refine volumetric lighting per visual feedback" (on top of `9d7e5b2`, the initial Phase 1B implementation)
+**Current commit (Phase 1B, technically complete):** `d36f88b` — "Phase 1B: raise ambient and lift fog for background wall visibility" (on top of `2da89c8` and `9d7e5b2`, the prior Phase 1B commits)
 
 The repository was initialized (`git init -b main`) with the five governing documents relocated into `docs/` as the first commit, giving a clean recovery point before any implementation began. Phase 1A (scaffold, environment shell, column refinement) was committed and approved on top of that baseline; Phase 1B (volumetric lighting) is committed on top of the approved Phase 1A checkpoint and is recoverable independently of it.
 
@@ -277,7 +277,7 @@ Each completed phase should receive a concise record.
 **Testing performed:** See §9. Production build, dev-server console check, visual verification, shadow-casting mechanics check, mobile-viewport resilience check — each repeated after every refinement pass.
 **Known issues:** See §4 and §6 — an ACES tone-mapping tuning gotcha and an R3F disposal fix (both resolved, documented for future work), plus the two carried-over Phase 1A issues (bundle size, dev-only esbuild advisory).
 **Approved visual decisions:** None yet — pending human review of this phase.
-**Git checkpoint:** `main` branch; initial commit `9d7e5b2`, first refinement `2da89c8`, second refinement recorded in §8 once committed.
+**Git checkpoint:** `main` branch; initial commit `9d7e5b2`, first refinement `2da89c8`, second refinement `d36f88b`.
 **Next approved phase:** Pending human approval of Phase 1B before Phase 1C (Camera & Scroll) may begin.
 
 ---
