@@ -960,6 +960,33 @@ Visual review requested — please confirm the dark-to-light reveal reads as dra
 
 ---
 
+## 4AB. Feature — Monitor Screen Setup (Dark Glass Material & Ignition Hook)
+
+**Status:** TECHNICALLY COMPLETE
+**Approval:** NOT YET GRANTED
+
+Human request: dark, non-emissive screen material during the scroll glide (subtle glass reflectivity, visible scanline depth, catching ambient highlights without glowing on its own), a controllable ignite uniform, and a reusable `onCameraLock` event mechanism — material/plumbing only, no real screen content yet.
+
+### What changed
+
+- **`screenTestPatternMaterial.js`** — added a `uIgnite` uniform (0–1, default `0`). At `0`, the shader outputs a near-black dormant color with the same faint scanline frequency as the "on" pattern (very low contrast) — enough to read as a physical glass surface with depth, not a flat void, while genuinely producing zero emissive output. At `1`, unchanged: the existing color-bar test pattern. The pattern *content* itself wasn't touched — only gated behind this uniform.
+- **Deliberately did not duplicate lit-material behavior into this shader** for "catching ambient highlights from the breach" — the existing glass pane (a separate mesh, `MeshPhysicalMaterial`, already responding to real scene lights) already does that job, sitting just in front of this plane. Verified visually that it shows a visible sheen once the room's own light (§4AA's ignition reveal) is active.
+- **`cameraLockEvent.js`** (new module) — a small, reusable pub/sub: `onCameraLock`/`onCameraUnlock` registration plus `updateCameraLockState(progress)`, called once per frame from `ScrollCameraRig.jsx` (which already reads `scrollProgress` every frame for the camera itself). `LOCK_THRESHOLD` is `0.995` (not exactly `1`) so it fires reliably once the camera has visibly settled, and fires exactly once per state transition, not every frame at the threshold. Both directions are exposed, not just lock — this scene's scroll is reversible everywhere else, so a one-way event would have been inconsistent with that.
+- **`Monitor.jsx`** — registers `onCameraLock`/`onCameraUnlock` to flip a plain ref target (1/0), damped each frame (`THREE.MathUtils.damp`, the same approach used throughout this project's camera/scroll work) into the screen material's `uIgnite` uniform. A brief, tasteful fade for the raw on/off hook itself — explicitly not a full power-on sequence, per the request's own scope boundary ("do not populate full screen content... yet"). No React state anywhere in this chain.
+
+### Verification
+- Visual check at progress 0% and 85%: screen reads as genuinely dark/dormant (previously it stayed lit even during §4AA's near-total darkness) — confirms the "0 emissive output during the scroll glide" requirement actually holds, not just at the very start.
+- Visual check right at the lock threshold (~99.5–100%): screen visibly ignites to the full test-pattern content, confirming the event fires at the right point, not prematurely when merely close to the monitor.
+- Full reversibility: scroll to 100% then back to 0% resets the screen to dormant — confirms `onCameraUnlock` is wired correctly, not just the one-way lock.
+- No console or shader errors on desktop or mobile.
+- Frame-timing under a simulated wheel-gesture burst: ~16.6ms avg, 0 frames over 33ms.
+- `grep -rn "useState\|setState" src/` — no matches; production build succeeds (73 modules — the new `cameraLockEvent.js`, no errors); mobile viewport renders cleanly.
+
+### Required next step
+Visual review requested — please confirm the dormant screen reads as a physical dark glass surface (not a "broken/missing content" look), and that the ignite-on-lock timing/feel is right before any future round builds an actual power-on sequence or real content on top of this hook.
+
+---
+
 ## 5. Approved Visual Decisions
 
 This section records visual decisions that have already received human approval and therefore should be treated as protected foundations.
@@ -1070,6 +1097,7 @@ The repository must maintain a recoverable implementation history.
 **Current commit (stone plinth monitor support, technically complete):** `d9369d0` — "Feat: replace retro AV-cart monitor support with a minimal stone plinth" (on top of `09e587f`)
 **Current commit (organic broken-rock plinth geometry, technically complete):** `56f9a8a` — "Feat: replace plinth cube geometry with an organic broken-rock shape" (on top of `d9369d0`)
 **Current commit (dark-to-light ignition reveal, technically complete):** `0f5a785` — "Feat: scroll-driven dark-to-light ignition reveal" (on top of `56f9a8a`)
+**Current commit (dark dormant screen material & onCameraLock hook, technically complete):** `654aa67` — "Feat: dark dormant screen material + reusable onCameraLock event hook" (on top of `0f5a785`)
 
 The repository was initialized (`git init -b main`) with the five governing documents relocated into `docs/` as the first commit, giving a clean recovery point before any implementation began. Phase 1A (scaffold, environment shell, column refinement), Phase 1B (volumetric lighting, three review passes), and Phase 1C (scroll-driven camera, motion-physics refinement) were each committed and approved in sequence; Phase 1D (monitor foundation) is committed on top of the approved Phase 1C checkpoint and is recoverable independently of it.
 
@@ -1479,6 +1507,18 @@ Each completed phase should receive a concise record.
 **Git checkpoint:** `main` branch; commit `0f5a785`.
 **Next approved phase:** N/A — cross-cutting lighting refinement, not a phase gate. Phase 2 remains on hold.
 
+### Monitor screen setup (dark glass material & ignition hook)
+
+**Implementation:** Complete
+**Technical completion:** Complete (2026-08-31)
+**Human approval:** Pending — visual review requested, see below
+**Major changes:** Added `uIgnite` uniform to the screen shader (dark/dormant at 0, existing pattern at 1); new `cameraLockEvent.js` reusable pub/sub (`onCameraLock`/`onCameraUnlock`, threshold-based, fires once per transition); `Monitor.jsx` wires both into a damped ignite target. No real screen content — material/plumbing only, per explicit scope. See §4AB.
+**Testing performed:** See §4AB. Visual checks at 0%/85%/lock, full reversibility (lock and unlock), frame-timing, grep for React state, production build, mobile re-check.
+**Known issues:** None identified.
+**Approved visual decisions:** None yet.
+**Git checkpoint:** `main` branch; commit `654aa67`.
+**Next approved phase:** N/A — cross-cutting material/event-plumbing addition, not a phase gate. Phase 2 remains on hold.
+
 ---
 
 ## 11. Change Log
@@ -1881,6 +1921,15 @@ Record meaningful implementation changes rather than every minor code edit.
 - Shadows needed no dedicated code — they strengthen automatically as `spotLight.intensity` ramps up, since the shadow-casting setup was already in place.
 - Verified: progress 0% reads as near-total darkness (monitor's own unlit screen stays visible throughout, correctly unaffected by scene lighting); progress 40% shows the room fully lit with beam, dust, and pillar shadows all visible; full atmosphere holds to progress 100%; full reversibility to the dark start; no console/shader errors; frame-timing unchanged (~16.6ms avg, 0 over 33ms); production build succeeds; no React state anywhere in `src/`; mobile renders cleanly.
 - Noted that §4A–§4Z is now exhausted; this entry and future ones continue as §4AA, §4AB, etc.
+
+### 2026-08-31 (Monitor screen setup — dark glass material & ignition hook)
+
+**The monitor screen is now genuinely dark/dormant during the scroll glide (previously it stayed at full brightness even through §4AA's near-total darkness) and only ignites once the camera actually reaches the monitor lock — via a new, reusable camera-lock event mechanism, not a one-off hack.**
+
+- `screenTestPatternMaterial.js`: added `uIgnite` (0–1, default 0). At 0, a near-black dormant color with the same faint scanline frequency as the "on" pattern — real depth/structure, zero actual emissive output. At 1, the existing color-bar pattern, unchanged. Deliberately did not build ambient-light response into this unlit shader — the existing glass pane (a real `MeshPhysicalMaterial`, already lit) already does that job.
+- `cameraLockEvent.js` (new): a small reusable pub/sub — `onCameraLock`/`onCameraUnlock` plus `updateCameraLockState(progress)`, called from `ScrollCameraRig.jsx`'s existing per-frame scroll read. Fires once per transition at a `0.995` threshold, both directions exposed for consistency with this scene's reversible scroll everywhere else.
+- `Monitor.jsx`: wires both events to a damped `uIgnite` target — a brief fade for the on/off hook itself, not a full power-on sequence (future work, per the request's explicit scope).
+- Verified: screen stays dark through progress 85%, ignites only at the lock threshold (not prematurely when merely close), resets to dormant on scroll-back (confirming `onCameraUnlock`), no console/shader errors, frame-timing unchanged (~16.6ms avg, 0 over 33ms), production build succeeds (73 modules), no React state anywhere in `src/`, mobile renders cleanly.
 
 ---
 
