@@ -927,6 +927,39 @@ Visual review requested — please confirm the rock reads as naturally broken st
 
 ---
 
+## 4AA. Feature — Lighting & Scroll Arc Update (Dramatic Shadow-to-Light Reveal)
+
+**Status:** TECHNICALLY COMPLETE
+**Approval:** NOT YET GRANTED
+
+Human request: near-total darkness at scroll progress 0, ramping to full atmosphere (beam, dust, directional lights) by progress 0.4 and holding through the monitor lock, while the straight diagonal camera descent stays unchanged.
+
+Note on section lettering: §4A through §4Z is now exhausted (26 rounds of cross-cutting fixes/features under §4), so this entry and future ones continue as §4AA, §4AB, etc.
+
+### Scope note
+
+This reverses `volumetricLighting.js`'s own prior "fully static by design" posture from the §4D/§4G rebuild. That posture was this codebase's own implementation choice at the time, not a protected/approved decision — the Phase 1B entry in §5 protects the room's light *character* (warm spotlight-driven volumetric shaft, shadow architecture, etc.), not a requirement that it never be scroll-coupled. This reveal doesn't change that character, only its timing, so it's implemented directly as a continuation of this session's established iteration pattern — called out explicitly here rather than silently reversing an earlier round's stated design intent.
+
+### What changed
+
+- **`volumetricLighting.js`** — added `ambient.darkIntensity` (`0.03`): the near-total-darkness starting value, a real absolute `AmbientLight` intensity in this project's established scale (not a 0–1 normalized value) — verified visually rather than assumed to read correctly at that magnitude. Replaced `setApproachFade` (which only ever thinned the beam/dust near the monitor — the opposite of this round's intent) with **`setIgnition(factor)`**: scales `spotLight`/`keyLight`/`fillLight` intensity, lerps `ambientLight` intensity between `darkIntensity` and its full value, and scales beam/dust/floor-pool opacity — all proportionally from their existing `lightingParams` values. A real "ignition" needs the actual light sources to visibly brighten, not just the atmospheric extras, which was the previous mechanism's narrower scope. `init()` now calls `setIgnition(0)` at the end, so there's no one-frame flash of full brightness before the first `useFrame` call lands.
+- **`VolumetricLightingRig.jsx`** — `useFrame` now computes `smoothstep(scrollProgress, 0, 0.4)` and calls `setIgnition` with it every frame, alongside the existing (unrelated, unchanged) dust `uTime` drift.
+- **`cameraPath.js` and `ScrollCameraRig.jsx` are untouched** — this round only ever touches light/opacity values, never camera position or orientation, preserving the straight diagonal descent per the request's explicit constraint.
+- Shadows needed no dedicated code: as `spotLight.intensity` ramps from 0, pillar/plinth shadows strengthen automatically as a direct consequence — the shadow-casting configuration itself was already in place from earlier rounds.
+
+### Verification
+- Visual check at progress 0%: near-total darkness with only faint pillar edges visible; the monitor's own unlit screen material stays visible throughout (correctly unaffected by scene lighting, since it's a raw shader with `toneMapped: false`).
+- Visual check at progress 40%: room fully lit — beam, dust, and pillar shadows on the floor all clearly visible, organic rock plinth and monitor fully revealed.
+- Visual check at progress 100%: full atmosphere holds through the monitor-locked shot, no artifacts.
+- Full reversibility: scroll to 100% then back to 0% reproduces the exact dark starting state.
+- Frame-timing under a simulated wheel-gesture burst: ~16.6ms avg, 0 frames over 33ms.
+- `grep -rn "useState\|setState" src/` — no matches; production build succeeds (72 modules, no errors); mobile viewport renders cleanly with no console errors.
+
+### Required next step
+Visual review requested — please confirm the dark-to-light reveal reads as dramatic/intentional (not just "broken/underlit"), and that the pacing (fully lit by 40% scroll) feels right.
+
+---
+
 ## 5. Approved Visual Decisions
 
 This section records visual decisions that have already received human approval and therefore should be treated as protected foundations.
@@ -1036,6 +1069,7 @@ The repository must maintain a recoverable implementation history.
 **Current commit (particle density & variance, technically complete):** `09e587f` — "Feat: denser dust field with per-particle size and velocity variance" (on top of `1ec920a`)
 **Current commit (stone plinth monitor support, technically complete):** `d9369d0` — "Feat: replace retro AV-cart monitor support with a minimal stone plinth" (on top of `09e587f`)
 **Current commit (organic broken-rock plinth geometry, technically complete):** `56f9a8a` — "Feat: replace plinth cube geometry with an organic broken-rock shape" (on top of `d9369d0`)
+**Current commit (dark-to-light ignition reveal, technically complete):** `0f5a785` — "Feat: scroll-driven dark-to-light ignition reveal" (on top of `56f9a8a`)
 
 The repository was initialized (`git init -b main`) with the five governing documents relocated into `docs/` as the first commit, giving a clean recovery point before any implementation began. Phase 1A (scaffold, environment shell, column refinement), Phase 1B (volumetric lighting, three review passes), and Phase 1C (scroll-driven camera, motion-physics refinement) were each committed and approved in sequence; Phase 1D (monitor foundation) is committed on top of the approved Phase 1C checkpoint and is recoverable independently of it.
 
@@ -1433,6 +1467,18 @@ Each completed phase should receive a concise record.
 **Git checkpoint:** `main` branch; commit `56f9a8a`.
 **Next approved phase:** N/A — cross-cutting geometry refinement, not a phase gate. Phase 2 remains on hold.
 
+### Lighting & scroll arc update (dramatic shadow-to-light reveal)
+
+**Implementation:** Complete
+**Technical completion:** Complete (2026-08-31)
+**Human approval:** Pending — visual review requested, see below
+**Major changes:** Room now starts near-total darkness at progress 0 and ramps to full brightness by progress 0.4 (`setIgnition`, replacing `setApproachFade`), holding through the monitor lock. Scales the actual spot/key/fill/ambient lights plus beam/dust/floor-pool opacity, all from a single `smoothstep(scrollProgress, 0, 0.4)` factor. Camera path/orientation untouched. See §4AA.
+**Testing performed:** See §4AA. Visual checks at 0%/40%/100%, full reversibility, frame-timing, grep for React state, production build, mobile re-check.
+**Known issues:** None identified.
+**Approved visual decisions:** None yet.
+**Git checkpoint:** `main` branch; commit `0f5a785`.
+**Next approved phase:** N/A — cross-cutting lighting refinement, not a phase gate. Phase 2 remains on hold.
+
 ---
 
 ## 11. Change Log
@@ -1824,6 +1870,17 @@ Record meaningful implementation changes rather than every minor code edit.
 - Swapped the previous `RoundedBoxGeometry` call for this; the existing plinth material (unchanged) now maps onto the rock's inherited `BoxGeometry` UVs.
 - Position, `screenCenterHeight` derivation, camera path, pillar alignment, and ambient light all untouched, per the request's explicit constraints.
 - Verified: close-up monitor-locked shot shows a clean, watertight, faceted broken-rock silhouette with the monitor sitting flush on its flat plateau — no gap or clipping. Full scroll range and reversibility clean; no console/shader errors; frame-timing unchanged (~16.6ms avg, 0 over 33ms) despite ~6× the vertex count; production build succeeds; no React state anywhere in `src/`; mobile renders cleanly.
+
+### 2026-08-31 (Lighting & scroll arc update — dramatic shadow-to-light reveal)
+
+**The room now starts near-total darkness at scroll progress 0 and ramps to full brightness by progress 0.4, holding through the monitor lock — reversing this module's own prior "fully static by design" posture, which was an implementation choice, not a protected decision.**
+
+- `volumetricLighting.js`: added `ambient.darkIntensity` (`0.03`) — the near-darkness starting value, a real absolute intensity in this project's scale, verified visually rather than assumed. Replaced `setApproachFade` (narrower scope — only thinned beam/dust near the monitor) with `setIgnition(factor)`, which scales the actual spot/key/fill light intensities plus ambient (lerped) and beam/dust/floor-pool opacity, all from one factor. `init()` calls `setIgnition(0)` so there's no one-frame bright flash before the first `useFrame`.
+- `VolumetricLightingRig.jsx`: `useFrame` now drives `setIgnition` from `smoothstep(scrollProgress, 0, 0.4)` every frame.
+- `cameraPath.js`/`ScrollCameraRig.jsx` untouched — only light/opacity values change, never camera position or orientation, preserving the straight diagonal descent per the request.
+- Shadows needed no dedicated code — they strengthen automatically as `spotLight.intensity` ramps up, since the shadow-casting setup was already in place.
+- Verified: progress 0% reads as near-total darkness (monitor's own unlit screen stays visible throughout, correctly unaffected by scene lighting); progress 40% shows the room fully lit with beam, dust, and pillar shadows all visible; full atmosphere holds to progress 100%; full reversibility to the dark start; no console/shader errors; frame-timing unchanged (~16.6ms avg, 0 over 33ms); production build succeeds; no React state anywhere in `src/`; mobile renders cleanly.
+- Noted that §4A–§4Z is now exhausted; this entry and future ones continue as §4AA, §4AB, etc.
 
 ---
 
