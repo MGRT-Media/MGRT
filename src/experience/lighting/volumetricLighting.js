@@ -65,9 +65,18 @@ export const lightingParams = {
   },
   dust: {
     color: '#fff6e8',
-    count: 170,
+    // Raised from 170 — the extra points are concentrated near the beam
+    // origin by `topBias` below, not spread evenly, so this reads as
+    // "more dust near the light" rather than a generally denser field.
+    count: 230,
     size: 0.035,
     opacity: 0.4,
+    // Exponent applied to the uniform random sample that picks each
+    // point's position along the beam axis (0 = light source/top, 1 =
+    // floor target). >1 skews the distribution toward 0 — see buildDust —
+    // clustering particles near the top while still leaving a long, sparse
+    // tail drifting down into the room, rather than a hard density cutoff.
+    topBias: 2.4,
   },
 }
 
@@ -189,21 +198,27 @@ function buildFloorPool(params, origin, target) {
  * offset is a bounded oscillation around each point's fixed base position
  * (not an accumulating drift), points never need to be wrapped/looped
  * back into bounds — they can't wander out in the first place.
+ *
+ * Points are distributed along the beam axis with `dust.topBias` biasing
+ * them toward the light source (t = 0) rather than spread uniformly —
+ * `Math.random() ** topBias` skews a uniform sample toward 0 for any
+ * exponent > 1, so most points cluster near the top while a sparse tail
+ * still drifts all the way down to the floor target.
  */
 function buildDust(params, origin, target) {
-  const { count, size, color, opacity } = params.dust
+  const { count, size, color, opacity, topBias } = params.dust
   const fullLength = target.clone().sub(origin).length()
   const axis = target.clone().sub(origin).normalize()
   const { u, v } = buildRadialBasis(axis)
   const maxRadius = Math.tan(params.spot.angle) * fullLength
 
   const positions = new Float32Array(count * 3)
-  // A per-point random phase offset so all 170 points don't oscillate in
-  // lockstep (which would read as the whole field pulsing rather than
-  // individual specks drifting independently).
+  // A per-point random phase offset so points don't oscillate in lockstep
+  // (which would read as the whole field pulsing rather than individual
+  // specks drifting independently).
   const phases = new Float32Array(count)
   for (let i = 0; i < count; i += 1) {
-    const t = Math.random()
+    const t = Math.random() ** topBias
     const center = origin.clone().lerp(target, t)
     const radiusAtT = THREE.MathUtils.lerp(0.05, maxRadius, t)
     const r = radiusAtT * Math.sqrt(Math.random()) * 0.85
