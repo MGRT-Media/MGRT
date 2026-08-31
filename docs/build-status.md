@@ -901,6 +901,32 @@ Per the request's stop condition: implementation is complete and validated to th
 
 ---
 
+## 4Z. Feature — Organic Broken Rock/Stone Base
+
+**Status:** TECHNICALLY COMPLETE
+**Approval:** NOT YET GRANTED
+
+Human request: replace the §4Y plinth's cube-based geometry with a procedurally distorted, organic broken-stone shape — jagged/irregular, while keeping the top stable enough for the monitor to sit naturally grounded.
+
+### What changed
+
+- **`Monitor.jsx`** — added `buildRockGeometry(width, height, depth)`: a subdivided `BoxGeometry` (6 segments per axis) with each vertex displaced outward by layered hash-based noise (two octaves, matching the deterministic-hash approach already used in `stoneWallMaterial.js`), except vertices at or near the exact top face — those are left fully undisplaced via a smoothstep falloff. This guarantees, rather than approximates, a genuinely flat plane for the monitor to rest on regardless of how the noise seed lands, directly addressing "keep the top surface... stable enough so the monitor sits naturally grounded."
+- `BoxGeometry` duplicates vertices per face at shared edges/corners (needed for correct per-face normals) — since the hash is a pure function of position, coincident vertices at an edge always get identical displacement, so the rock stays watertight with no cracks opening at the corners.
+- Swapped the previous `RoundedBoxGeometry` plinth call for this one. `plinthMaterial` (`createStoneWallMaterial`, unchanged from §4Y) is now applied to the rock's UVs — inherited unchanged from the source `BoxGeometry`, so the existing stone material still maps sensibly onto the new, bumpier surface, per "apply the existing old stone PBR material."
+- Nothing else touched: position, `screenCenterHeight` derivation, camera path, half-moon pillar alignment, and ambient light settings are all unchanged, per the request's explicit constraints.
+
+### Verification
+- Visual check at progress 0% and the close-up monitor-locked shot (100%): clean, watertight, faceted broken-rock silhouette — irregular bulging sides, no cracks or holes — with the monitor sitting flush on its flat top plateau, no gap or clipping visible at any distance tested.
+- Full scroll range and reversibility to 0%: clean (the rock geometry is static, unaffected by scroll, as expected).
+- No console or shader errors on desktop or mobile.
+- Frame-timing under a simulated wheel-gesture burst: ~16.6ms avg, 0 frames over 33ms — no measurable cost despite roughly 6× the vertex count of the previous box (a one-time `useMemo`-generated geometry, not a per-frame cost).
+- `grep -rn "useState\|setState" src/` — no matches; production build succeeds (72 modules, no errors).
+
+### Required next step
+Visual review requested — please confirm the rock reads as naturally broken stone rather than a "bumpy cube," and that the monitor's grounding on the flat plateau looks physically convincing.
+
+---
+
 ## 5. Approved Visual Decisions
 
 This section records visual decisions that have already received human approval and therefore should be treated as protected foundations.
@@ -1009,6 +1035,7 @@ The repository must maintain a recoverable implementation history.
 **Current commit (deep gateway establishing shot, technically complete):** `1ec920a` — "Fix: pull hero start much further back for a wide gateway establishing shot" (on top of `155ac1a`)
 **Current commit (particle density & variance, technically complete):** `09e587f` — "Feat: denser dust field with per-particle size and velocity variance" (on top of `1ec920a`)
 **Current commit (stone plinth monitor support, technically complete):** `d9369d0` — "Feat: replace retro AV-cart monitor support with a minimal stone plinth" (on top of `09e587f`)
+**Current commit (organic broken-rock plinth geometry, technically complete):** `56f9a8a` — "Feat: replace plinth cube geometry with an organic broken-rock shape" (on top of `d9369d0`)
 
 The repository was initialized (`git init -b main`) with the five governing documents relocated into `docs/` as the first commit, giving a clean recovery point before any implementation began. Phase 1A (scaffold, environment shell, column refinement), Phase 1B (volumetric lighting, three review passes), and Phase 1C (scroll-driven camera, motion-physics refinement) were each committed and approved in sequence; Phase 1D (monitor foundation) is committed on top of the approved Phase 1C checkpoint and is recoverable independently of it.
 
@@ -1394,6 +1421,18 @@ Each completed phase should receive a concise record.
 **Git checkpoint:** `main` branch; commit `d9369d0`.
 **Next approved phase:** N/A — cross-cutting geometry/material refinement, not a phase gate. Phase 2 remains on hold.
 
+### Organic broken rock/stone base
+
+**Implementation:** Complete
+**Technical completion:** Complete (2026-08-31)
+**Human approval:** Pending — visual review requested, see below
+**Major changes:** Replaced §4Y's `RoundedBoxGeometry` plinth with `buildRockGeometry` — a subdivided box with layered-noise vertex displacement, undisplaced (guaranteed flat) at the top face so the monitor stays genuinely grounded. Existing plinth material unchanged, applied to the rock's inherited UVs. Only `Monitor.jsx` touched. See §4Z.
+**Testing performed:** See §4Z. Full scroll range (0/100%) and reversibility, frame-timing, grep for React state, production build, mobile re-check.
+**Known issues:** None identified.
+**Approved visual decisions:** None yet.
+**Git checkpoint:** `main` branch; commit `56f9a8a`.
+**Next approved phase:** N/A — cross-cutting geometry refinement, not a phase gate. Phase 2 remains on hold.
+
 ---
 
 ## 11. Change Log
@@ -1775,6 +1814,16 @@ Record meaningful implementation changes rather than every minor code edit.
 - Verified: full scroll range (0/100%) and reversibility clean, plinth reads as a clean minimal monolith with no ornamentation at any distance tested, correct contact shadow beneath it, no console/shader errors, frame-timing unchanged (~16.6ms avg, 0 over 33ms — the plinth is cheaper geometry than the four legs it replaced), production build succeeds, no React state anywhere in `src/`, mobile renders cleanly.
 - Safari: not tested on an actual Safari browser (unavailable in this environment) — flagged rather than claimed verified. No new depth-sort risk: the plinth material is fully opaque, no transparency/custom blending involved.
 - Per the request's stop condition: holding here for explicit approval before any further work.
+
+### 2026-08-31 (Organic broken rock/stone base)
+
+**Replaced the plinth's cube-based geometry with a procedurally distorted, organic broken-stone shape — jagged sides, but a guaranteed-flat top so the monitor still sits genuinely grounded, not just approximately.**
+
+- `Monitor.jsx`: added `buildRockGeometry` — a subdivided `BoxGeometry` (6 segments/axis) with each vertex displaced outward by layered hash-based noise (same deterministic-hash approach as `stoneWallMaterial.js`), except vertices at or near the exact top face, which stay fully undisplaced via a smoothstep falloff — a real guarantee of flatness, not a "probably fine" approximation.
+- `BoxGeometry`'s per-face vertex duplication at shared edges/corners stays watertight despite the noise, since the hash is a pure function of position — coincident vertices at an edge always compute identical displacement.
+- Swapped the previous `RoundedBoxGeometry` call for this; the existing plinth material (unchanged) now maps onto the rock's inherited `BoxGeometry` UVs.
+- Position, `screenCenterHeight` derivation, camera path, pillar alignment, and ambient light all untouched, per the request's explicit constraints.
+- Verified: close-up monitor-locked shot shows a clean, watertight, faceted broken-rock silhouette with the monitor sitting flush on its flat plateau — no gap or clipping. Full scroll range and reversibility clean; no console/shader errors; frame-timing unchanged (~16.6ms avg, 0 over 33ms) despite ~6× the vertex count; production build succeeds; no React state anywhere in `src/`; mobile renders cleanly.
 
 ---
 
