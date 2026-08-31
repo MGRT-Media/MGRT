@@ -271,6 +271,37 @@ Awaiting human visual review of the rebuilt lighting — please confirm the room
 
 ---
 
+## 4E. Visual Refinement — Retro/Industrial Monitor Geometry
+
+**Status:** TECHNICALLY COMPLETE
+**Approval:** NOT YET GRANTED
+
+Human request: the flat-panel monitor read as too modern/sleek; replace it with a mid-century/retro-industrial reference-monitor aesthetic — deeper boxy chassis, thick bezel, rounded housing corners, matte industrial finish, while keeping the Phase 1C/1D camera handshake intact.
+
+### What changed
+- `src/experience/digital/Monitor.jsx` — fully rebuilt geometry:
+  - **Equipment cart:** four short cylindrical legs + a rounded platform (`RoundedBoxGeometry`), replacing the previous thin pedestal-and-neck stand — reads as a retro AV/broadcast equipment cart rather than a modern monitor arm.
+  - **Housing:** a deep, rounded-corner boxy chassis (`RoundedBoxGeometry`, front depth 0.55) with a smaller recessed "rear hump" box behind it (depth 0.42) suggesting a CRT tube's bulk — replacing the previous 0.07-deep flat-panel slab.
+  - **Bezel:** thick, asymmetric bezel (0.13 sides, 0.12 top, 0.22 bottom for a control-panel area) around a visibly smaller screen — replacing the previous thin 0.045 margin.
+  - **Control knobs:** two small cylinders on the lower bezel, a cheap, restrained retro detail.
+  - **Material:** matte, mostly non-metallic (`roughness: 0.75, metalness: 0.12`) dark charcoal casing, replacing the previous brushed-aluminum-like `roughness: 0.35, metalness: 0.75` — explicitly avoids the "sleek aluminum" look per the request, while remaining a standard `MeshStandardMaterial` that still picks up the spot/key/ambient lighting normally (no special-casing needed for "retains lighting interaction").
+  - Added `RoundedBoxGeometry` from `three/examples/jsm/geometries/` — bundled with the already-installed `three` package, **not a new dependency**.
+- **Camera handshake required no code changes.** `MONITOR_ANCHOR.screenCenterHeight` is computed from the new console's actual stacked dimensions (cart height + housing offset + bezel asymmetry) rather than hand-picked, and `cameraPath.js`'s monitor-aligned final keyframe already derives its position/lookAt from `MONITOR_ANCHOR` at module-load time (established when the monitor was first built in Phase 1D) — so the camera automatically retargeted to the new, taller/deeper console's screen center (≈1.285, close to the previous 1.2) with zero changes to the timeline itself. Verified visually rather than assumed: the final aligned shot reads as a clean, well-framed close-up with no retuning needed.
+- Screen/glass shadow exclusion (`castShadow={false} receiveShadow={false}`, from the §4C fix) carried over unchanged.
+
+### Verification
+- Hero frame (0%): retro console clearly reads as boxy/industrial, standing on the cart within the beam, thick bezel and control knobs visible.
+- Final aligned shot (100%): camera automatically squarely framed on the new screen center — confirms the handshake design (derive-from-anchor, not hardcoded) works as intended across a real geometry change, not just in theory.
+- Approach segment (75%): clean, no clipping against the taller/deeper housing.
+- Full reversibility: 100% → 0% reproduces the same hero frame.
+- Frame-timing under a simulated scroll-gesture burst: 180 frames, ~16.6ms avg, 0 over 33ms — no regression despite the added geometry (cart legs, platform, rear hump, control knobs).
+- Production build succeeds (71 modules, no errors); grep-confirmed no `useState`/`setState` anywhere in `src/`; mobile viewport renders cleanly, no console errors.
+
+### Required next step
+Awaiting human visual review of the retro/industrial monitor redesign.
+
+---
+
 ## 5. Approved Visual Decisions
 
 This section records visual decisions that have already received human approval and therefore should be treated as protected foundations.
@@ -654,6 +685,15 @@ Record meaningful implementation changes rather than every minor code edit.
 - Verified the three-tier surface hierarchy (`Environment.jsx`'s `SURFACE_TONE`) already matched the request exactly — confirmed by reading the file, not changed.
 - Verified: full scroll range (0/33/75/100%) clean with no artifacts, full reversibility, no frame-timing regression (~16.6ms avg, 0 over 33ms), production build succeeds, no console errors, no React state anywhere in `src/` (grep-verified), mobile renders cleanly.
 - One false alarm during this pass: a stale HMR error in the dev tab (persisted across reloads) was traced to the tab's own error-overlay state via a fresh-tab test, not a real code issue.
+
+### 2026-08-31 (Retro/industrial monitor geometry)
+
+**Rebuilt the monitor mesh as a retro/mid-century industrial reference-monitor console on human request; verified the camera handshake required zero code changes.**
+
+- `Monitor.jsx` rebuilt: a four-legged equipment cart (replacing the thin pedestal), a deep rounded-corner boxy housing with a recessed rear hump suggesting CRT tube depth (replacing the 0.07-deep flat-panel slab), a thick asymmetric bezel with two control knobs, and a matte mostly-non-metallic charcoal finish (`roughness: 0.75, metalness: 0.12`, replacing the previous brushed-aluminum-like values).
+- Added `RoundedBoxGeometry` from `three/examples/jsm/geometries/` — bundled with the already-installed `three` package, not a new dependency.
+- `MONITOR_ANCHOR.screenCenterHeight` is computed from the new console's actual stacked dimensions, not hand-picked; `cameraPath.js`'s monitor-aligned keyframe already derives from `MONITOR_ANCHOR` (established in Phase 1D) — confirmed visually that the camera automatically retargeted correctly to the new screen center with no changes to the camera timeline itself.
+- Verified: hero frame reads clearly retro/industrial, final aligned shot squarely framed with no manual retuning, approach segment clean with no clipping against the taller/deeper housing, full reversibility, no frame-timing regression despite added geometry, production build succeeds, no console errors, no React state anywhere in `src/`, mobile renders cleanly.
 
 ---
 
