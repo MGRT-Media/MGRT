@@ -61,16 +61,38 @@ const LOOKAT_WAYPOINTS = [
 const positionCurve = new THREE.CatmullRomCurve3(POSITION_WAYPOINTS, false, 'catmullrom', 0.5)
 const lookAtCurve = new THREE.CatmullRomCurve3(LOOKAT_WAYPOINTS, false, 'catmullrom', 0.5)
 
-// Asymmetric single global ease: quintic accel out of rest for the first
-// half, then a softer septic (power 7) decel for the second half — a
-// longer, gentler tail than a symmetric quintic gives, so the final
-// approach into the monitor-locked shot coasts down rather than arriving
-// briskly. Continuous in value at t=0.5 (both halves equal 0.5 there).
+// Asymmetric single global ease, replacing the previous symmetric
+// quintic-in/septic-out curve: that shape had near-zero velocity right at
+// progress 0, which made a single ordinary scroll gesture (landing well
+// within the slow part of the ramp) produce almost imperceptible camera
+// motion — read as the camera "not responding" to the first scroll.
+//
+// This curve is linear (1:1, full velocity from the very first instant)
+// for the first LANDING_START of progress, so the opening move out of the
+// hero position is immediately, fully responsive — no ease-in dead zone.
+// From LANDING_START to 1 it switches to a cubic Hermite segment tuned so
+// its start slope exactly matches the linear portion's slope (no jerk at
+// the handoff) and its end slope is exactly 0 — a long, smooth decel to a
+// complete stop right at the monitor-locked shot, preserving the soft
+// landing. Matching the slope at the junction is what keeps this from
+// reintroducing the piecewise "hard stop" problem the spline (see above)
+// was built to fix — the two pieces meet at identical velocity, not zero.
+const LANDING_START = 0.85
+const LANDING_SPAN = 1 - LANDING_START
+
 function easeCameraPath(t) {
-  if (t < 0.5) {
-    return 16 * t ** 5
+  if (t <= LANDING_START) {
+    return t
   }
-  return 1 - (-2 * t + 2) ** 7 / 2
+  // Cubic Hermite on u = local progress through the landing segment
+  // (o(0) = 0, o(1) = 1, o'(0) = 1, o'(1) = 0). The o'(0) = 1 condition is
+  // what matches the linear portion's slope through the chain rule —
+  // d(eased)/dt = o'(u) here, since the u-substitution's two scale factors
+  // (LANDING_SPAN in the numerator from re-expanding by LANDING_SPAN,
+  // 1/LANDING_SPAN from du/dt) cancel exactly.
+  const u = (t - LANDING_START) / LANDING_SPAN
+  const o = -(u ** 3) + u ** 2 + u
+  return LANDING_START + LANDING_SPAN * o
 }
 
 /**

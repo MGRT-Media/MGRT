@@ -25,11 +25,14 @@ const SCROLL_LENGTH_MULTIPLIER = 3
  * timeline: a `gsap.timeline({ scrollTrigger: { scrub, ... } })` whose
  * ScrollTrigger drives `scrollProgress.value` from 0 to 1 across the
  * spacer's height. Raw wheel/touch input is first normalized into smooth,
- * inertial motion by Lenis (`smoothScroll.js`); `scrub: 1.5` then adds
- * 1.5s of its own catch-up smoothing on top, so individual wheel
- * notches/trackpad steps absorb into one continuous, fluid motion rather
- * than each nudging the timeline forward in a visible little step, with
- * an even longer settle than before at the very end of a scroll gesture.
+ * inertial motion by Lenis (`smoothScroll.js`); `scrub: 1` then adds a
+ * further second of its own catch-up smoothing on top, so individual
+ * wheel notches/trackpad steps absorb into one continuous, fluid motion
+ * rather than each nudging the timeline forward in a visible little step.
+ * Lowered from 1.5 back to 1 alongside `cameraPath.js`'s asymmetric ease —
+ * with the path itself now fully responsive (linear) through progress
+ * 0.85, the extra half-second of scrub lag was adding a dead zone on top
+ * of an already-fixed ease-in problem rather than softening anything.
  * Together this is fully reversible, with no section-snapping and no
  * auto-scroll.
  */
@@ -47,7 +50,7 @@ export function ScrollSpacer() {
         scroller: window,
         start: 'top top',
         end: 'bottom bottom',
-        scrub: 1.5,
+        scrub: 1,
         onUpdate: (self) => {
           scrollProgress.value = self.progress
         },
