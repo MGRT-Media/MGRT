@@ -4,17 +4,21 @@ import { useFrame } from '@react-three/fiber'
 import { createVolumetricLighting } from './volumetricLighting.js'
 import { scrollProgress } from '../timeline/ScrollTimelineProvider.jsx'
 
-// Beam/dust approach dip: fully visible before progress 0.30, reduced to
-// FADE_FLOOR by 0.42, then held there through the monitor lock. An earlier
-// round faded this all the way to 0 to keep the additive cone mesh fully
-// out of view near the approach — but that read as the atmosphere
-// vanishing rather than settling, which is its own reported problem. A
-// floor (not zero) keeps a subtle ambient glow/dust presence for the rest
-// of the scroll, including the final monitor-filling shot, while still
-// thinning the beam during the one window closest to the camera's path.
+// Beam/dust approach dip — DISABLED (floor raised to 1, a no-op) per
+// explicit request that the beam "stay visible and stable through the
+// ENTIRE scroll trajectory." Two earlier rounds used this to thin the
+// beam during the approach (first to 0, then to a 0.3 floor after that
+// read as the atmosphere vanishing) to guard against a reported
+// monitor-transition light glitch — but that glitch was never actually
+// reproduced in this environment despite dedicated testing (§4H), so
+// disabling the guard entirely now trades a hedge against an unconfirmed
+// issue for the requested constant, stable presence. The mechanism
+// itself (and the geometric beam truncation that keeps the camera from
+// ever entering the beam volume, which is unrelated and unaffected) is
+// left in place in case a real transition artifact does turn up later.
 const FADE_START = 0.3
 const FADE_END = 0.42
-const FADE_FLOOR = 0.3
+const FADE_FLOOR = 1
 
 /**
  * Thin R3F adapter around the framework-agnostic lighting controller.
