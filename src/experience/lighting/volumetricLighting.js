@@ -19,6 +19,13 @@ export const lightingParams = {
     mapSize: 2048,
     radius: 6,
     bias: -0.0012,
+    // Surface-normal-aware bias, not just depth bias — the standard fix for
+    // shadow acne on curved geometry (the entrance/side pillars are
+    // cylindrical LatheGeometry). A depth-only `bias` shift can't fully
+    // compensate for a curved surface's varying angle to the light without
+    // introducing peter-panning; `normalBias` offsets along the surface
+    // normal instead and handles that case correctly.
+    normalBias: 0.02,
   },
   ambient: {
     color: '#adadb8',
@@ -259,6 +266,7 @@ export function createVolumetricLighting(params = lightingParams) {
     spotLight.shadow.mapSize.set(params.shadow.mapSize, params.shadow.mapSize)
     spotLight.shadow.radius = params.shadow.radius
     spotLight.shadow.bias = params.shadow.bias
+    spotLight.shadow.normalBias = params.shadow.normalBias
     spotLight.shadow.camera.near = 1
     spotLight.shadow.camera.far = params.distance
 

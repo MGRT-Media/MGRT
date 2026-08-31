@@ -173,6 +173,40 @@ Awaiting human visual review and approval of this geometry revision. Not gating 
 
 ---
 
+## 4B. Fix — Shadow/Frustum Hardening After Entrance Pillars
+
+**Status:** TECHNICALLY COMPLETE
+**Approval:** NOT YET GRANTED
+
+Human report: adding the entrance pillars introduced scroll jitter and high-frequency light flickering/strobing.
+
+### Investigation
+
+Before changing anything, attempted to reproduce the reported artifact directly rather than guessing:
+- **Static spatial sampling:** read pixel values across a 7×7 grid at a pillar/floor contact point (the classic shadow-acne location) — no speckled noise pattern, values were smooth (2 near-identical values across the whole neighborhood).
+- **Temporal sampling during active scroll:** read a fixed screen-space pixel every animation frame for ~150 frames while continuously scrolling through the pillar pass-through segment — values changed smoothly and monotonically (consistent with the camera moving through lit/shadowed/beam-overlap regions), no oscillation or back-and-forth flipping between frames.
+- **Frame-timing during the pass-through:** 168 frames sampled, ~16.6ms average, 0 frames over 20ms or 33ms — no stutter/frame-drop detected.
+- **Console:** no WebGL/shadow-map warnings at any point.
+
+None of these turned up a reproducible artifact in this environment. This doesn't mean the report is wrong — shadow-map aliasing/shimmer is highly GPU- and driver-dependent, and this sandboxed Chromium environment may render shadows differently than the reviewer's actual hardware. Rather than claim a fix for something unobserved, applied the technically appropriate preventative hardening below, and I'm flagging that on-device confirmation is still needed.
+
+### What changed
+- `src/experience/lighting/volumetricLighting.js` — added `spotLight.shadow.normalBias = 0.02` (new `lightingParams.shadow.normalBias`). **Did not** apply the literal `shadow.bias = -0.0001` suggested in the request: the current tuned `bias` is `-0.0012`, and `-0.0001` has a *smaller* magnitude, which would move shadow-acne risk in the wrong direction (weaker depth bias, not stronger). `normalBias` is the standard, more correct fix for acne specifically on curved geometry like the cylindrical pillars — it offsets along the surface normal rather than only in depth, avoiding acne without introducing peter-panning the way over-correcting `bias` can. Left the existing `bias` value untouched since there's no evidence it needs to change.
+- `src/experience/CinematicExperience.jsx` — lowered the camera `near` plane `0.1 → 0.05`, giving more clearance margin against near-frustum popping now that the entrance pillars bring foreground geometry closer to the camera than anything in the scene before them.
+- Camera trajectory clearance from the pillars was already verified when they were added (~1.8 units at closest approach) and is unchanged here, since the camera path itself was not touched by this fix.
+- Re-verified (unchanged, re-confirmed by grep and code review): `ScrollCameraRig.jsx` still drives the camera exclusively via `THREE.MathUtils.damp` inside `useFrame` using the real frame `delta`, reading from the Lenis/GSAP-smoothed `scrollProgress.value`; no `useState`/`setState` anywhere in the scroll, camera, lighting, or digital-anchor code paths.
+
+### Verification
+- Production build succeeds; no console errors.
+- Re-ran the pass-through scroll test and reversibility check (0% → 33% → 0%) after the changes — visually identical to before, no regressions, matches the approved baseline exactly at rest.
+- Re-ran frame-timing under a simulated scroll-gesture burst: 180 frames, ~16.6ms avg, 0 frames over 33ms — no change from pre-fix measurement.
+- Mobile viewport re-checked: renders cleanly, no console errors.
+
+### Required next step
+**On-device confirmation needed.** The reported flicker/jitter could not be reproduced or measured in this sandboxed environment despite targeted spatial, temporal, and frame-timing testing. The preventative fixes above (`normalBias`, tighter near plane) are technically sound regardless and were verified to introduce no regressions, but please re-check on the hardware/browser where the artifact was originally observed and report back whether it's resolved — if it persists, more specific repro details (browser, GPU, approximate scroll position/speed) would help pin down the actual cause.
+
+---
+
 ## 5. Approved Visual Decisions
 
 This section records visual decisions that have already received human approval and therefore should be treated as protected foundations.
@@ -482,6 +516,16 @@ Record meaningful implementation changes rather than every minor code edit.
 - Iteratively tuned via screenshot verification — two earlier placements read as full-height foreground bands rather than a clean gateway frame before settling on `[∓2.2, 4]`; also traced and corrected a viewport-aspect mismatch (a custom `resize_window` call rendering closer to square than 16:9) that briefly made one placement attempt look broken.
 - Verified: no clipping through the pass-through segment, full reversibility, production build succeeds, no console errors, no frame-timing regression, mobile renders cleanly (pillars fall outside portrait's narrower FOV at this position — expected, mobile recomposition is separately scoped for Phase 4).
 - Recorded in §4A rather than folded into Phase 1D, since it revises Phase 1A's approved column layout rather than being Phase 1D scope. Awaiting human visual review.
+
+### 2026-08-31 (Shadow/frustum hardening fix)
+
+**Investigated a reported flicker/jitter after the entrance pillars were added; applied preventative hardening, could not reproduce the artifact itself.**
+
+- Human report: scroll jitter and high-frequency light flickering/strobing after the entrance pillars were added.
+- Investigated before changing anything: static 7×7 pixel-neighborhood sampling at a pillar/floor shadow-contact point (no acne noise found), temporal pixel sampling across ~150 frames during active scroll through the pass-through segment (smooth, monotonic, no oscillation), and frame-timing during that segment (168 frames, ~16.6ms avg, 0 over 33ms — no stutter). No WebGL console warnings at any point. Could not reproduce the reported artifact in this sandboxed environment.
+- Applied technically appropriate hardening rather than the literal suggested values: added `spotLight.shadow.normalBias = 0.02` (the standard fix for shadow acne on curved geometry like the pillars) instead of changing `shadow.bias` to `-0.0001` as literally suggested — that value has a smaller magnitude than the already-tuned `-0.0012` and would likely make acne risk worse, not better, so it wasn't applied. Lowered the camera `near` plane `0.1 → 0.05` for extra frustum-popping margin given the pillars' proximity. Re-confirmed (unchanged) that the Lenis/GSAP + `THREE.MathUtils.damp` architecture and the no-React-state rule are both still intact.
+- Verified: no regressions — production build succeeds, reversibility and pass-through checks still clean, frame-timing unchanged, mobile renders without errors.
+- **Flagged rather than claimed fixed:** could not empirically reproduce the reported artifact in this environment, so I can't confirm the fix resolves it — asked for on-device re-confirmation and, if it persists, more specific repro details (browser/GPU/scroll position).
 
 ---
 

@@ -25,7 +25,10 @@ export default function CinematicExperience() {
       camera={{
         position: [0, 1.6, 9],
         fov: 45,
-        near: 0.1,
+        // Lowered from 0.1: the entrance pillars now bring foreground
+        // geometry closer to the camera than before, so a tighter near
+        // plane gives more clearance margin against near-frustum popping.
+        near: 0.05,
         far: 100,
       }}
     >
