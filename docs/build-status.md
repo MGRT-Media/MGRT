@@ -289,6 +289,7 @@ The repository must maintain a recoverable implementation history.
 **Approved Phase 1C checkpoint:** `b953859` — "Phase 1C: smooth camera scroll motion (Lenis + damping)" (Phase 1C approved 2026-08-31 in chat, against this commit)
 **Current commit (Phase 1D, technically complete):** `85b90be` — "Phase 1D: monitor mesh, screen shader, camera-monitor handshake"
 **Current commit (entrance pillar refinement, technically complete):** `cdba4d9` — "Environment: add foreground entrance pillars" (on top of `85b90be`)
+**Current commit (shadow/frustum hardening fix, technically complete):** `c3c79f1` — "Fix: shadow normalBias and tighter near-clip after entrance pillars" (on top of `cdba4d9`)
 
 The repository was initialized (`git init -b main`) with the five governing documents relocated into `docs/` as the first commit, giving a clean recovery point before any implementation began. Phase 1A (scaffold, environment shell, column refinement), Phase 1B (volumetric lighting, three review passes), and Phase 1C (scroll-driven camera, motion-physics refinement) were each committed and approved in sequence; Phase 1D (monitor foundation) is committed on top of the approved Phase 1C checkpoint and is recoverable independently of it.
 
@@ -385,6 +386,18 @@ Each completed phase should receive a concise record.
 **Approved visual decisions:** None yet — pending human review.
 **Git checkpoint:** `main` branch; commit `cdba4d9`.
 **Next approved phase:** N/A — this is a cross-cutting revision, not a phase gate. Review alongside Phase 1D.
+
+### Shadow/frustum hardening fix
+
+**Implementation:** Complete
+**Technical completion:** Complete (2026-08-31)
+**Human approval:** Pending — needs on-device confirmation, see below
+**Major changes:** Added `spotLight.shadow.normalBias = 0.02`; lowered camera `near` `0.1 → 0.05`. See §4B for full investigation detail and why the literally-suggested `shadow.bias = -0.0001` was not applied.
+**Testing performed:** See §4B. Static/temporal pixel sampling, frame-timing measurement, reversibility/pass-through re-check, production build, mobile re-check.
+**Known issues:** The reported flicker/jitter could not be reproduced in this environment — flagged as needing on-device confirmation rather than claimed as resolved.
+**Approved visual decisions:** None yet.
+**Git checkpoint:** `main` branch; commit `c3c79f1`.
+**Next approved phase:** N/A — cross-cutting fix, not a phase gate.
 
 ---
 
