@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import { scrollProgress } from './ScrollTimelineProvider.jsx'
 import { sampleCameraPath } from './cameraPath.js'
+import { updateCameraLockState } from './cameraLockEvent.js'
 
 // Position and lookAt are damped at the *same* rate — sharing one lambda
 // keeps both converging in lockstep rather than one settling before the
@@ -46,6 +47,12 @@ export default function ScrollCameraRig() {
 
     camera.position.copy(pos)
     camera.lookAt(look)
+
+    // Fires cameraLockEvent.js's onCameraLock/onCameraUnlock listeners on
+    // the raw scroll progress (not the damped position) — the "lock" is a
+    // scroll-state concept (has the visitor scrolled all the way there),
+    // not a "has the camera's glide physically finished settling" one.
+    updateCameraLockState(scrollProgress.value)
   })
 
   return null

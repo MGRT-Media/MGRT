@@ -1,9 +1,19 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
+import { useFrame } from '@react-three/fiber'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import { lightingParams } from '../lighting/volumetricLighting.js'
 import { createScreenTestPatternMaterial } from './screenTestPatternMaterial.js'
 import { createStoneWallMaterial } from '../materials/stoneWallMaterial.js'
+import { onCameraLock, onCameraUnlock } from '../timeline/cameraLockEvent.js'
+
+// How quickly the screen's uIgnite uniform eases toward its 0/1 target
+// once the camera locks/unlocks — a brief, tasteful fade for the raw
+// on/off hook itself (THREE.MathUtils.damp, same frame-rate-independent
+// approach used throughout this project's scroll/camera work), NOT a
+// full power-on sequence — that's future work, per the request's explicit
+// "do not populate full screen content... yet" scope.
+const IGNITE_DAMP_LAMBDA = 4
 
 // A dynamic, off-square yaw rather than facing dead-center forward, per
 // explicit request. Rotating around the group's own origin (the cart's
@@ -140,6 +150,32 @@ const glassFrontZ = screenFrontZ + 0.004
 
 export default function Monitor() {
   const screenMaterial = useMemo(() => createScreenTestPatternMaterial(), [])
+  // Target for the screen's ignite state — a plain ref (not React state),
+  // flipped by the onCameraLock/onCameraUnlock event mechanism below and
+  // read every frame to damp the material's actual uIgnite uniform toward
+  // it. Reversible by design: unlocking (scrolling back out) resets the
+  // target to 0, so the screen goes dormant again rather than staying lit
+  // forever after the first visit — consistent with this scene's scroll
+  // being fully reversible everywhere else.
+  const igniteTarget = useRef(0)
+
+  useEffect(() => {
+    const offLock = onCameraLock(() => {
+      igniteTarget.current = 1
+    })
+    const offUnlock = onCameraUnlock(() => {
+      igniteTarget.current = 0
+    })
+    return () => {
+      offLock()
+      offUnlock()
+    }
+  }, [])
+
+  useFrame((_, delta) => {
+    const uniform = screenMaterial.uniforms.uIgnite
+    uniform.value = THREE.MathUtils.damp(uniform.value, igniteTarget.current, IGNITE_DAMP_LAMBDA, delta)
+  })
 
   const housingGeometry = useMemo(
     () => new RoundedBoxGeometry(HOUSING.width, HOUSING.height, HOUSING.frontDepth, 3, HOUSING.cornerRadius),
@@ -210,13 +246,16 @@ export default function Monitor() {
       ))}
 
       {/*
-        Screen surface — unlit procedural test pattern, provisional.
-        `screenTestPatternMaterial` is a raw unlit ShaderMaterial (no PBR
-        lighting model), so roughness/metalness don't apply to it — its
-        "emission" is just its fragment-shader output read directly,
-        `toneMapped: false`. Explicitly excluded from both cast and
-        receive shadows so neither the bezel nor the entrance/side pillars
-        can cast a shadow onto the glowing screen face.
+        Screen surface — unlit procedural test pattern, provisional, now
+        gated behind `uIgnite` (see the material module and the
+        onCameraLock wiring above): dark/dormant until the camera reaches
+        the monitor lock. `screenTestPatternMaterial` is a raw unlit
+        ShaderMaterial (no PBR lighting model), so roughness/metalness
+        don't apply to it — its "emission" is just its fragment-shader
+        output read directly, `toneMapped: false`. Explicitly excluded
+        from both cast and receive shadows so neither the bezel nor the
+        entrance/side pillars can cast a shadow onto the (once ignited)
+        glowing screen face.
       */}
       <mesh position={[0, screenCenterY, screenFrontZ]} castShadow={false} receiveShadow={false}>
         <planeGeometry args={[screenWidth, screenHeight]} />
