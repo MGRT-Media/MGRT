@@ -1,11 +1,11 @@
 import * as THREE from 'three'
 import { useMemo } from 'react'
 import VolumetricLightingRig from './lighting/VolumetricLightingRig.jsx'
+import { createStoneWallMaterial } from './materials/stoneWallMaterial.js'
 
 const HALL_WIDTH = 14
 const HALL_DEPTH = 32
 const HALL_HEIGHT = 9
-const COLUMN_COUNT_PER_SIDE = 4
 
 /**
  * Three-tier surface tonality, lightest to darkest: columns catch the most
@@ -20,21 +20,36 @@ const SURFACE_TONE = {
   floor: '#484848',
 }
 
-const columnPositions = Array.from({ length: COLUMN_COUNT_PER_SIDE }, (_, i) => {
-  const z = 6 - i * 6
-  return [
-    [-HALL_WIDTH / 2 + 1, z],
-    [HALL_WIDTH / 2 - 1, z],
-  ]
-}).flat()
+/**
+ * Half-moon pillar arc framing the monitor, replacing the previous straight
+ * two-sided colonnade. Semicircle opens toward the camera (+Z) so the
+ * pillars read as layers of depth/parallax while scrolling forward along
+ * -Z, with the monitor (at the spot-target x: 0.6, z: -3.5) sitting inside
+ * the arc's "mouth." Center is placed just behind the monitor so the arc's
+ * apex (the pillar furthest back) frames it from behind without any pillar
+ * overlapping the monitor itself or the entrance pillars near the hero
+ * start (z: 4, well outside the arc's z range).
+ */
+const ARC_PILLAR_COUNT = 7
+const ARC_CENTER = [0, -4]
+const ARC_RADIUS = 6.5
+const ARC_SPAN_DEGREES = 160 // from -80° to +80°, symmetric around the back apex (0°)
+
+const arcPillarPositions = Array.from({ length: ARC_PILLAR_COUNT }, (_, i) => {
+  const t = ARC_PILLAR_COUNT === 1 ? 0 : i / (ARC_PILLAR_COUNT - 1)
+  const angle = THREE.MathUtils.degToRad(-ARC_SPAN_DEGREES / 2 + t * ARC_SPAN_DEGREES)
+  const x = ARC_CENTER[0] + ARC_RADIUS * Math.sin(angle)
+  const z = ARC_CENTER[1] - ARC_RADIUS * Math.cos(angle)
+  return [x, z]
+})
 
 /**
  * Entrance pillars — a foreground pair flanking the camera's hero start
  * ([0, 1.6, 9]) and the first leg of its path (which stays at x: 0 through
- * z: 9 → 5, per cameraPath.js). Placed close to center (unlike the side
- * colonnade at x: ∓6) so they read as a near-camera "gateway" the eye — and
- * the camera — passes through toward the monitor, distinct in scale from
- * the side columns for depth/parallax.
+ * z: 9 → 5, per cameraPath.js). Placed close to center (unlike the arc
+ * pillars, which stay well behind z: -4) so they read as a near-camera
+ * "gateway" the eye — and the camera — passes through before reaching the
+ * arc, distinct in role and scale from it.
  */
 const entrancePillarPositions = [
   [-2.2, 4],
@@ -42,19 +57,12 @@ const entrancePillarPositions = [
 ]
 
 /**
- * Clerestory-style window band on the right side wall (x = +HALL_WIDTH/2),
- * upper portion — per creative-reference.md's own "strong directional
- * sunlight through high apertures" brief. Three window units spaced at
- * z: 3, -3, -9, each centered between a pair of the existing structural
- * columns (z: 6, 0, -6, -12) so no window sits directly behind a column.
- *
- * These are decorative glass apertures only — visually identical bright
- * panes, not individual light sources. The actual illumination is the
- * repositioned primary SpotLight in `volumetricLighting.js`, positioned
- * to coincide with the z: -3 window (nearest the monitor/floor target) so
- * its beam visually originates there. The z: 3 and z: -9 windows exist
- * purely for architectural rhythm — a single window would read as an odd
- * one-off cutout rather than a coherent window band.
+ * Single window opening on the right side wall (x = +HALL_WIDTH/2), upper
+ * portion — per creative-reference.md's own "strong directional sunlight
+ * through high apertures" brief. Reduced from the previous 3-window band
+ * (§4O) to just this one, per explicit request. Its position exactly
+ * matches `volumetricLighting.js`'s repositioned `spot.position` (x: 6.85,
+ * y: 6.3, z: -3) so the beam visually originates at the opening itself.
  */
 const WINDOW = {
   width: 1.3,
@@ -64,7 +72,7 @@ const WINDOW = {
   frameDepth: 0.1,
   glassColor: '#fff6e2',
 }
-const windowZPositions = [3, -3, -9]
+const windowZPositions = [-3]
 
 /**
  * A simple classical column profile (plinth → shaft with a subtle taper →
@@ -140,16 +148,31 @@ function Window({ z }) {
 /**
  * Persistent architectural shell: floor, walls, structural columns, and
  * (as of the window/relighting revision — see `Window` and
- * `volumetricLighting.js`'s repositioned spot) a clerestory window band.
+ * `volumetricLighting.js`'s repositioned spot) a single window opening.
  *
- * Core room dimensions, column geometry, and overall layout are the
- * approved Phase 1A foundation and are unchanged. Lighting comes from the
- * Phase 1B system (`VolumetricLightingRig`). Surface base colors follow
- * the three-tier tonality in `SURFACE_TONE` (columns lightest, walls mid,
- * floor darkest), per Phase 1B review feedback.
+ * Core room dimensions and overall layout are the approved Phase 1A
+ * foundation. Column *layout* (the half-moon arc) and wall *material*
+ * (procedural old stone) are deliberate revisions of that foundation —
+ * see the Phase 1A entry in build-status.md §5. Lighting comes from the
+ * Phase 1B system (`VolumetricLightingRig`). The stone material's `color`
+ * tint still carries the existing three-tier tonality from
+ * `SURFACE_TONE` (walls mid, floor darkest, multiplied with the
+ * generated stone albedo) — that part of Phase 1B's approval is
+ * preserved, not replaced.
  */
 export default function Environment() {
   const columnGeometry = useColumnGeometry(HALL_HEIGHT)
+
+  const wallBackMaterial = useMemo(() => createStoneWallMaterial(SURFACE_TONE.wallBack), [])
+  // Cloning (rather than a second createStoneWallMaterial call) reuses the
+  // same generated map/normalMap/roughnessMap textures instead of
+  // re-running the noise generation a second time — only the tint color
+  // differs, matching Phase 1B's existing wallBack/wallSide distinction.
+  const wallSideMaterial = useMemo(() => {
+    const material = wallBackMaterial.clone()
+    material.color.set(SURFACE_TONE.wallSide)
+    return material
+  }, [wallBackMaterial])
 
   return (
     <group>
@@ -161,25 +184,32 @@ export default function Environment() {
         <meshStandardMaterial color={SURFACE_TONE.floor} roughness={0.9} metalness={0.05} />
       </mesh>
 
-      {/* Back wall — mid tier */}
-      <mesh position={[0, HALL_HEIGHT / 2, -HALL_DEPTH / 2]} receiveShadow>
+      {/* Back wall — mid tier, old-stone PBR material */}
+      <mesh position={[0, HALL_HEIGHT / 2, -HALL_DEPTH / 2]} material={wallBackMaterial} receiveShadow>
         <planeGeometry args={[HALL_WIDTH, HALL_HEIGHT]} />
-        <meshStandardMaterial color={SURFACE_TONE.wallBack} roughness={0.95} metalness={0} />
       </mesh>
 
-      {/* Side walls — mid tier */}
-      <mesh position={[-HALL_WIDTH / 2, HALL_HEIGHT / 2, 0]} rotation={[0, Math.PI / 2, 0]} receiveShadow>
+      {/* Side walls — mid tier, old-stone PBR material */}
+      <mesh
+        position={[-HALL_WIDTH / 2, HALL_HEIGHT / 2, 0]}
+        rotation={[0, Math.PI / 2, 0]}
+        material={wallSideMaterial}
+        receiveShadow
+      >
         <planeGeometry args={[HALL_DEPTH, HALL_HEIGHT]} />
-        <meshStandardMaterial color={SURFACE_TONE.wallSide} roughness={0.95} metalness={0} />
       </mesh>
-      <mesh position={[HALL_WIDTH / 2, HALL_HEIGHT / 2, 0]} rotation={[0, -Math.PI / 2, 0]} receiveShadow>
+      <mesh
+        position={[HALL_WIDTH / 2, HALL_HEIGHT / 2, 0]}
+        rotation={[0, -Math.PI / 2, 0]}
+        material={wallSideMaterial}
+        receiveShadow
+      >
         <planeGeometry args={[HALL_DEPTH, HALL_HEIGHT]} />
-        <meshStandardMaterial color={SURFACE_TONE.wallSide} roughness={0.95} metalness={0} />
       </mesh>
 
-      {/* Structural columns — lightest tier */}
-      {columnPositions.map(([x, z], i) => (
-        <mesh key={i} position={[x, 0, z]} geometry={columnGeometry} castShadow receiveShadow>
+      {/* Half-moon pillar arc — lightest tier, frames the monitor */}
+      {arcPillarPositions.map(([x, z], i) => (
+        <mesh key={`arc-${i}`} position={[x, 0, z]} geometry={columnGeometry} castShadow receiveShadow>
           <meshStandardMaterial color={SURFACE_TONE.column} roughness={0.8} metalness={0.1} />
         </mesh>
       ))}
@@ -191,7 +221,7 @@ export default function Environment() {
         </mesh>
       ))}
 
-      {/* Clerestory window band — right side wall, upper band */}
+      {/* Window opening — right side wall, upper band */}
       {windowZPositions.map((z) => (
         <Window key={`window-${z}`} z={z} />
       ))}
