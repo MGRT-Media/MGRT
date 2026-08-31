@@ -16,7 +16,16 @@ export const lightingParams = {
   spot: {
     color: '#fff1dc',
     intensity: 55,
-    position: [3.4, 8, 2.2],
+    // Repositioned to coincide with the z: -3 clerestory window
+    // (`Environment.jsx`'s `Window`, right side wall, x: +7) so the beam
+    // visually originates at the window rather than an unmarked point in
+    // space — "key light streams directly through the windows." `target`
+    // is intentionally unchanged: `Monitor.jsx`'s `MONITOR_ANCHOR.position`
+    // and therefore the entire camera path's monitor-aligned endpoint
+    // (`cameraPath.js`) are both derived from this exact point, so moving
+    // it would silently relocate the monitor and the whole scroll
+    // destination — a much bigger change than "reposition the light."
+    position: [6.85, 6.3, -3],
     target: [0.6, 0, -3.5],
     angle: 0.32,
     penumbra: 0.92,
@@ -47,17 +56,19 @@ export const lightingParams = {
     opacity: 0.11,
     // How much of the full spot-to-target distance the *visible* beam
     // mesh actually spans, starting from the light source. World Y drops
-    // linearly along the beam from 8 (source) to 0 (floor target), so
-    // lengthFraction 0.75 stops the mesh at world Y ≈ 2.0 — a margin
-    // above every camera height in cameraPath.js (max ~1.7), so the
-    // camera can never end up inside this geometry, by construction,
-    // regardless of how the camera path is tuned later. No scroll-
-    // coupling needed to avoid a transition pop; the floor pool below
-    // still reads as where the beam lands, and this keeps most of the
-    // beam's dramatic visible length (unlike a more conservative
-    // truncation, which pushed the whole mesh out of the hero shot's
-    // frustum — checked and rejected during tuning).
-    lengthFraction: 0.75,
+    // linearly along the beam from `spot.position[1]` (6.3, at the
+    // window) to 0 (floor target), so at fraction f the beam's lowest
+    // point is at Y = 6.3 * (1 - f) — recalculated after the window
+    // reposition (previously Y = 8 * (1 - f) with fraction 0.75, giving
+    // Y ≈ 2.0). Lowered to 0.65 here so the new, shallower window-angle
+    // beam keeps essentially the same ~2.2 clearance above every camera
+    // height in cameraPath.js (max ~1.7) — recomputed, not left at the
+    // old value, since the window's lower/shallower origin would
+    // otherwise drop the beam's bottom to ~1.57, inside the camera's
+    // reachable height range. No scroll-coupling needed to avoid a
+    // transition pop; the floor pool below still reads as where the beam
+    // lands.
+    lengthFraction: 0.65,
     radialSegments: 24,
   },
   floorPool: {

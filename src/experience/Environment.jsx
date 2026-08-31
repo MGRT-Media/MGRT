@@ -42,6 +42,31 @@ const entrancePillarPositions = [
 ]
 
 /**
+ * Clerestory-style window band on the right side wall (x = +HALL_WIDTH/2),
+ * upper portion — per creative-reference.md's own "strong directional
+ * sunlight through high apertures" brief. Three window units spaced at
+ * z: 3, -3, -9, each centered between a pair of the existing structural
+ * columns (z: 6, 0, -6, -12) so no window sits directly behind a column.
+ *
+ * These are decorative glass apertures only — visually identical bright
+ * panes, not individual light sources. The actual illumination is the
+ * repositioned primary SpotLight in `volumetricLighting.js`, positioned
+ * to coincide with the z: -3 window (nearest the monitor/floor target) so
+ * its beam visually originates there. The z: 3 and z: -9 windows exist
+ * purely for architectural rhythm — a single window would read as an odd
+ * one-off cutout rather than a coherent window band.
+ */
+const WINDOW = {
+  width: 1.3,
+  height: 3.2,
+  centerY: 6.3,
+  frameThickness: 0.07,
+  frameDepth: 0.1,
+  glassColor: '#fff6e2',
+}
+const windowZPositions = [3, -3, -9]
+
+/**
  * A simple classical column profile (plinth → shaft with a subtle taper →
  * capital), revolved into a single restrained LatheGeometry. Deliberately
  * plain — no fluting, carving, or ornamentation — and shared across every
@@ -72,13 +97,56 @@ function useColumnGeometry(height) {
 }
 
 /**
- * Persistent architectural shell: floor, walls, structural columns.
+ * One window unit: a bright unlit glass pane (`toneMapped: false`, same
+ * treatment as the monitor's screen material — ACES tonemapping crushes
+ * low-radiance colors, so a plain lit material here would just look like
+ * a dim gray rectangle rather than glowing daylight) plus a simple dark
+ * frame border. Sits just inside the wall's own x-position to avoid
+ * z-fighting with the solid wall plane behind it.
+ */
+function Window({ z }) {
+  const wallX = HALL_WIDTH / 2
+  const { width, height, centerY, frameThickness, frameDepth, glassColor } = WINDOW
+  const halfW = width / 2
+  const halfH = height / 2
+
+  return (
+    <group position={[wallX - 0.02, centerY, z]} rotation={[0, -Math.PI / 2, 0]}>
+      <mesh>
+        <planeGeometry args={[width, height]} />
+        <meshBasicMaterial color={glassColor} toneMapped={false} />
+      </mesh>
+      {/* Frame bars: top, bottom, left, right */}
+      <mesh position={[0, halfH + frameThickness / 2, 0]}>
+        <boxGeometry args={[width + frameThickness * 2, frameThickness, frameDepth]} />
+        <meshStandardMaterial color="#1d1d1e" roughness={0.6} metalness={0.3} />
+      </mesh>
+      <mesh position={[0, -halfH - frameThickness / 2, 0]}>
+        <boxGeometry args={[width + frameThickness * 2, frameThickness, frameDepth]} />
+        <meshStandardMaterial color="#1d1d1e" roughness={0.6} metalness={0.3} />
+      </mesh>
+      <mesh position={[-halfW - frameThickness / 2, 0, 0]}>
+        <boxGeometry args={[frameThickness, height, frameDepth]} />
+        <meshStandardMaterial color="#1d1d1e" roughness={0.6} metalness={0.3} />
+      </mesh>
+      <mesh position={[halfW + frameThickness / 2, 0, 0]}>
+        <boxGeometry args={[frameThickness, height, frameDepth]} />
+        <meshStandardMaterial color="#1d1d1e" roughness={0.6} metalness={0.3} />
+      </mesh>
+    </group>
+  )
+}
+
+/**
+ * Persistent architectural shell: floor, walls, structural columns, and
+ * (as of the window/relighting revision — see `Window` and
+ * `volumetricLighting.js`'s repositioned spot) a clerestory window band.
  *
- * Geometry, proportions, and layout are the approved Phase 1A foundation
- * and are unchanged here. Lighting comes from the Phase 1B system
- * (`VolumetricLightingRig`). Surface base colors follow the three-tier
- * tonality in `SURFACE_TONE` (columns lightest, walls mid, floor darkest),
- * per Phase 1B review feedback.
+ * Core room dimensions, column geometry, and overall layout are the
+ * approved Phase 1A foundation and are unchanged. Lighting comes from the
+ * Phase 1B system (`VolumetricLightingRig`). Surface base colors follow
+ * the three-tier tonality in `SURFACE_TONE` (columns lightest, walls mid,
+ * floor darkest), per Phase 1B review feedback.
  */
 export default function Environment() {
   const columnGeometry = useColumnGeometry(HALL_HEIGHT)
@@ -121,6 +189,11 @@ export default function Environment() {
         <mesh key={`entrance-${i}`} position={[x, 0, z]} geometry={columnGeometry} castShadow receiveShadow>
           <meshStandardMaterial color={SURFACE_TONE.column} roughness={0.8} metalness={0.1} />
         </mesh>
+      ))}
+
+      {/* Clerestory window band — right side wall, upper band */}
+      {windowZPositions.map((z) => (
+        <Window key={`window-${z}`} z={z} />
       ))}
     </group>
   )
