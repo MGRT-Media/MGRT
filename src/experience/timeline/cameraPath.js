@@ -17,133 +17,59 @@ const MONITOR_ALIGNED_LOOKAT = [
 ]
 
 /**
- * Waypoints — a provisional proof of the camera/scroll mechanism through
- * the approved Phase 1A/1B/1C environment, not the final Film/Digital act
- * choreography (that belongs to Phase 2).
+ * Full rewrite, per explicit request, of the multi-waypoint spline +
+ * banking path from the previous several rounds: a single straight line,
+ * no curvature, no roll.
  *
- * Four waypoints define three continuous stages, per the request:
- *  - Entry [0]→[1]: wide, centered view down the sanctuary, level.
- *  - Right-side arc [1]→[2]: drifts right toward the breach's light
- *    shaft (x rises to 1.6, well clear of every arc pillar — the arc's
- *    pillars all sit at z ≤ -4, while this waypoint is at z: 1, so there's
- *    no proximity to check).
- *  - Monitor approach [2]→[3]: glides forward into the screen-aligned
- *    shot.
+ * This supersedes the approved Phase 1A hero framing's starting position
+ * AND orientation — `[0, 1.6, 9]` looking level down -Z — which every
+ * prior round of camera work explicitly preserved byte-for-byte
+ * ("progress 0 never jumps"). This request is the first to ask for that
+ * to change, explicitly and in detail (an exact starting position beside
+ * the left entrance pillar, locked onto the monitor from the first
+ * frame), so it's implemented as a deliberate supersession, flagged here
+ * and in build-status.md §5, not a silent drift from the approved shot.
  *
- * These are sampled as a single continuous Catmull-Rom spline (below)
- * rather than independently-eased line segments — independently easing
- * each segment forces the camera's velocity to zero at *every* waypoint,
- * which reads as repeated hard stops rather than one glide. A spline
- * keeps motion flowing through the interior waypoints; only progress 0
- * (at rest) and progress 1 (settling at the monitor) decelerate to zero,
- * via the one global ease applied to progress before sampling (below).
- *
- * First waypoint matches the approved Phase 1A static hero framing
- * exactly (position [0, 1.6, 9], looking level down -Z) so progress 0
- * never jumps. Last waypoint is `MONITOR_ANCHOR`-derived and unchanged
- * across every round of this camera work, so the Phase 1D handshake
- * stays intact.
+ * START_POSITION sits just left of and behind the left entrance pillar
+ * (`Environment.jsx`'s `entrancePillarPositions`, `[-2.2, 4]`), framing
+ * the room diagonally across toward the monitor from the very first
+ * frame. The end position is still `MONITOR_ANCHOR`-derived and
+ * unchanged, so the Phase 1D handshake stays intact.
  */
-const POSITION_WAYPOINTS = [
-  [0, 1.6, 9],
-  [0, 1.6, 5],
-  [1.6, 1.7, 1],
-  MONITOR_ALIGNED_POSITION,
-].map((p) => new THREE.Vector3(...p))
+const START_POSITION = new THREE.Vector3(-3.6, 1.6, 3.2)
+const END_POSITION = new THREE.Vector3(...MONITOR_ALIGNED_POSITION)
 
-// The first lookAt waypoint represents "looking level down -Z" (no literal
-// target) — kept at a finite-but-distant Z (not the ~50-unit point used
-// pre-spline) so it doesn't act as a wild outlier control point that would
-// distort the Catmull-Rom curve's shape near the start of the path.
-const LOOKAT_WAYPOINTS = [
-  [0, 1.6, -10],
-  [0, 1.5, -6],
-  [1.4, 1.2, -3],
-  MONITOR_ALIGNED_LOOKAT,
-].map((p) => new THREE.Vector3(...p))
-
-const positionCurve = new THREE.CatmullRomCurve3(POSITION_WAYPOINTS, false, 'catmullrom', 0.5)
-const lookAtCurve = new THREE.CatmullRomCurve3(LOOKAT_WAYPOINTS, false, 'catmullrom', 0.5)
-
-// Single monotonic ease-out across the whole 0–1 domain — replacing the
-// previous piecewise linear-then-Hermite-landing curve, which had a
-// measured, real defect: matching the Hermite segment's start slope to
-// the linear portion's constant slope (so the handoff itself had no
-// jerk) forced a brief SPEED-UP just past progress 0.85 (peak slope
-// ≈1.33 around progress ≈0.90) before the final decel to a stop — see
-// the git history for the numeric derivative check. That hump, landing
-// right where the camera is also descending toward the monitor's lower
-// screen-center height, is what read as a "sudden drop" right before
-// the monitor lock — confirmed by re-running that same derivative check
-// before touching this function, not assumed from the report alone.
-//
-// f(t) = 1 - (1-t)^POWER is a pure ease-out: maximum velocity at t=0
-// (POWER × the old cruise rate — chosen at 1.5 for a modest, not
-// jarring, opening burst) decreasing *monotonically* the entire way to
-// exactly 0 at t=1. No cruise-then-brake handoff, so there's no knot to
-// force a hump at — the whole path is one smooth deceleration, which is
-// what actually eliminates the drop (reshaping the waypoints alone,
-// without fixing this, would not have). It also still opens at nonzero
-// velocity, so the dead-zone problem (§4K/§4L) stays fixed.
-//
-// This request also asked for `power1.inOut` specifically — not adopted,
-// same reasoning as last round: that shape has zero velocity at t=0,
-// reintroducing the dead zone. A pure ease-out (not ease-in-out) is what
-// satisfies "responsive start" and "zero abrupt acceleration" together.
-const EASE_OUT_POWER = 1.5
-
-function easeCameraPath(t) {
-  return 1 - (1 - t) ** EASE_OUT_POWER
-}
-
-// Roll (bank into the turn) — the one piece of genuine rotation freedom
-// this round adds: the camera's up vector tilts a few degrees as it
-// drifts through the right-side arc, then levels back out well before
-// the monitor approach. Implemented as `ScrollCameraRig` tilting
-// `camera.up` by this angle before calling `camera.lookAt()` — a
-// standard technique (lookAt's resulting orientation is built from
-// position, target, *and* up, so a tilted up vector introduces roll
-// without needing a hand-built quaternion/slerp pipeline for what's
-// still fundamentally a look-at-a-point camera). Both roll and the
-// position/lookAt targets it's layered on top of are damped continuously
-// every frame (`THREE.MathUtils.damp`, unchanged from earlier rounds),
-// which is what actually delivers "zero mechanical jerkiness" — a
-// discrete quaternion-slerp-between-keyframes approach was considered
-// and not used, since it would reintroduce the exact kind of piecewise,
-// per-keyframe motion this session spent several rounds removing (§4H).
-//
-// ZERO at progress 0 and by ~0.85: the hero frame must stay perfectly
-// level (approved Phase 1A framing), and the monitor-locked shot must
-// stay level too (banking while reading a screen would look wrong, and
-// the final approach is already slightly off-axis from the monitor's
-// own 20° yaw — see Monitor.jsx — without adding roll on top).
-const ROLL_MAX_DEGREES = 6
-const ROLL_RISE_END = 0.25
-const ROLL_FALL_START = 0.55
-const ROLL_FALL_END = 0.85
-
-function bankShape(t) {
-  const rise = THREE.MathUtils.smoothstep(t, 0, ROLL_RISE_END)
-  const fall = 1 - THREE.MathUtils.smoothstep(t, ROLL_FALL_START, ROLL_FALL_END)
-  return Math.min(rise, fall)
-}
+// Locked onto the monitor screen face for the entire scroll, per explicit
+// request — not interpolated from a separate starting look direction, so
+// there's no orientation sweep to eliminate in the first place.
+const LOOK_AT = MONITOR_ALIGNED_LOOKAT
 
 /**
  * Pure function of `progress` only (no history/state) — deterministic and
  * therefore trivially reversible: scrolling back to a given progress value
  * always reproduces the exact same camera state.
+ *
+ * Position is a direct linear interpolation (`Vector3.lerpVectors`) with
+ * no easing curve layered on top — progress maps to position at a
+ * perfectly constant rate on every axis, including Y, so the altitude
+ * decreases evenly across the whole scroll with no deceleration, plateau,
+ * or steepening anywhere to read as a "drop" or a "leveling off." The
+ * existing frame-rate-independent damp smoothing in `ScrollCameraRig.jsx`
+ * (unchanged) still turns discrete scroll input into a physically
+ * continuous glide in real time — removing the *spatial* curve doesn't
+ * remove that separate, still-necessary *temporal* smoothing layer.
+ *
+ * `roll` is always 0 — no banking, no rotation shifts, per explicit
+ * request. `ScrollCameraRig.jsx`'s roll-handling code from the previous
+ * round is removed entirely rather than just parameterized to zero, since
+ * banking isn't a feature this design calls for at all right now.
  */
 export function sampleCameraPath(progress) {
   const p = THREE.MathUtils.clamp(progress, 0, 1)
-  const eased = easeCameraPath(p)
-  // Roll is driven by raw progress, not the eased/spline-sampled value —
-  // it's a banking cue tied to *where in the scroll gesture* the camera
-  // is turning, not to spatial position along the curve.
-  const rollDegrees = ROLL_MAX_DEGREES * bankShape(p)
+  const position = new THREE.Vector3().lerpVectors(START_POSITION, END_POSITION, p)
 
   return {
-    position: positionCurve.getPoint(eased).toArray(),
-    lookAt: lookAtCurve.getPoint(eased).toArray(),
-    roll: THREE.MathUtils.degToRad(rollDegrees),
+    position: position.toArray(),
+    lookAt: LOOK_AT,
   }
 }
