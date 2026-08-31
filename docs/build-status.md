@@ -764,6 +764,34 @@ Visual review requested — please confirm the banking reads as intentional/cine
 
 ---
 
+## 4U. Overhaul — Straight Diagonal Line & Left-Pillar Start
+
+**Status:** TECHNICALLY COMPLETE
+**Approval:** NOT YET GRANTED — supersedes the approved Phase 1A hero framing, see below
+
+Human request: replace the whole camera path with a single straight line, starting beside the left entrance pillar, constant Y slope, locked onto the monitor from the first frame, no banking/sweeping.
+
+### Scope note — this changes the approved Phase 1A hero framing
+
+Every prior round of camera work (§4H through §4T) explicitly preserved the Phase 1A-approved hero shot — position `[0, 1.6, 9]`, looking level down −Z — byte-for-byte, calling it out in comments each time ("progress 0 never jumps"). This request is the first to explicitly ask for that starting position *and* orientation to change. Given how detailed and deliberate the request is (an exact starting position beside a specific pillar, locked onto the monitor from frame one), this was implemented as a deliberate supersession rather than blocked on a fresh confirmation — consistent with how the wall/lighting revisions in §4O onward were handled once the human had established that direction — but it's flagged clearly here and in §5 rather than silently drifted from the approved shot.
+
+### What changed
+
+- **`cameraPath.js`** — full rewrite. Position is now `Vector3.lerpVectors(start, end, progress)` with no easing curve on top — every axis, including Y, changes at a perfectly constant rate across the whole scroll, which eliminates any possibility of a plateau, steepening, or drop by construction (not by tuning an ease shape to avoid one, as every previous round did). `lookAt` is now a constant — `MONITOR_ALIGNED_LOOKAT` — for the entire range, not interpolated, satisfying "locked onto the monitor from the start of the scroll to the finish" directly (there's no orientation sweep to smooth in the first place). Roll is removed entirely, not just zeroed.
+- **Start position tuned empirically, not just computed**: an initial attempt at `[-2.7, 1.6, 4.6]` (closer to and more "behind" the left entrance pillar) put the pillar shaft directly in the sightline to the monitor, dominating/occluding most of the frame — caught by an actual screenshot, not assumed from the coordinates. Moved to `[-3.6, 1.6, 3.2]` (further left, less far back), which reads as a strong diagonal composition across the room with the pillar as a foreground framing element rather than a wall.
+- **`ScrollCameraRig.jsx`** — removed the up-vector-tilt roll mechanism from §4T entirely. Seed refs updated to match the new start position/lookAt exactly, so there's no startup glide-in from stale values. The existing `THREE.MathUtils.damp` frame-to-frame smoothing is unchanged — that's a temporal layer (turning discrete scroll input into a continuous glide in real time) separate from the spatial curve this request is about, and still needed regardless of the path's shape.
+- **`CinematicExperience.jsx`** — Canvas's initial camera position prop updated to match the new start exactly.
+
+### Verification
+- Visual check across the full scroll range (0%, 50%, 100%) and reversibility to 0%: hero frame reads as a strong diagonal composition toward the angled monitor (not occluded by the pillar, confirmed after the empirical repositioning above), no roll/tilt anywhere in the scroll, clean final shot, exact reproduction on scroll-back.
+- Frame-timing under a simulated wheel-gesture burst: ~16.6ms avg, 0 frames over 33ms.
+- `grep -rn "useState\|setState" src/` — no matches; production build succeeds (72 modules, no errors); mobile viewport renders cleanly with no console errors.
+
+### Required next step
+Visual review requested — please confirm the new hero framing and the straight-line approach both read as intentional, and that this supersession of the original Phase 1A hero shot is the direction you want to keep going forward.
+
+---
+
 ## 5. Approved Visual Decisions
 
 This section records visual decisions that have already received human approval and therefore should be treated as protected foundations.
@@ -773,7 +801,7 @@ This section records visual decisions that have already received human approval 
 **Phase 1A — Environment Shell (approved 2026-08-31):**
 - Room dimensions and architectural proportions (14×32 floor, 9 unit wall height).
 - Column geometry, proportions (plinth/tapered shaft/capital LatheGeometry profile), and spacing.
-- Initial (progress-0) camera framing `[0, 1.6, 9]`, `fov: 45`, looking level down −Z, and the resulting negative space / composition.
+- Initial (progress-0) camera framing `[0, 1.6, 9]`, `fov: 45`, looking level down −Z, and the resulting negative space / composition. **Superseded post-approval (2026-08-31, pending re-review):** the hero position and orientation both changed to `[-3.6, 1.6, 3.2]`, locked onto the monitor from the first frame, per explicit human request — see §4U. Every round before §4U explicitly preserved this original framing byte-for-byte; §4U is the first to change it, flagged as a deliberate supersession rather than a silent drift.
 - Overall room layout (floor, back wall, two side walls, no ceiling).
 - **Column layout revised post-approval (2026-08-31, pending re-review):** originally 8 columns in a straight two-sided colonnade (4 per side, `x: ∓6`) plus a two-pillar foreground "entrance" pair at `[∓2.2, 4]`. The straight colonnade was replaced with a 7-pillar semicircular arc (radius 6.5, center `[0, -4]`, 160° span) framing the monitor, per explicit human request — see §4P. The entrance pillars are unchanged. Individual column geometry/profile is untouched, only the side colonnade's *layout* changed. Not yet re-approved as part of the visual record.
 - **Wall layout and material revised post-approval (2026-08-31, pending re-review):** the right side wall's opening evolved from a 3-window band (§4O) to a single structured window (§4P) to its current form — a fractured, organic breach cut as a geometric hole via `ExtrudeGeometry`/`Shape` (§4Q) — and all three walls now use a procedurally generated old-stone PBR material (`stoneWallMaterial.js`, with real block/mortar structure and per-wall-computed texture scale as of §4Q) in place of the previous flat colored `meshStandardMaterial`, per explicit human request each round — the conflict with this approved "no ceiling, plain walls" layout was flagged in §4O's turn and the human chose to proceed as a deliberate revision, a decision carried forward into §4P and §4Q. The existing `wallBack`/`wallSide` tonal distinction is preserved as a color tint on top of the new stone texture. Not yet re-approved as part of the visual record.
@@ -784,8 +812,8 @@ This section records visual decisions that have already received human approval 
 - **Light position/direction revised post-approval (2026-08-31, pending re-review):** `spot.position` moved from `[3.4, 8, 2.2]` to `[6.85, 6.3, -3]` so the beam originates at the window/breach rather than an unmarked point in space, per explicit human request — the conflict with this approved "reached across three review passes" light character was flagged in §4O's turn and the human chose to proceed. `spot.target` (and therefore the monitor position and camera-path endpoint) is unchanged, and `spot.position` itself is unchanged again in §4P and §4Q — each revision of the opening (window count, then the fractured breach) has stayed centered on this same point. §4Q also added a non-shadow-casting fill light and raised `ambient.intensity` (2.3 → 2.5) for wall readability. Not yet re-approved as part of the visual record.
 
 **Phase 1C — Camera & Scroll (approved 2026-08-31):**
-- The scroll-driven camera mechanism: a single master GSAP/ScrollTrigger timeline, Lenis-smoothed input, `THREE.MathUtils.damp`-eased camera follow, and the deterministic/reversible keyframe-based path through the environment.
-- The hero→approach keyframes (`t: 0, 0.25, 0.5, 0.75` as of Phase 1D — originally `0, 0.35, 0.7, 1.0` before Phase 1D's extension) and their exact position/lookAt values, in `src/experience/timeline/cameraPath.js`.
+- The scroll-driven camera mechanism: a single master GSAP/ScrollTrigger timeline, Lenis-smoothed input, `THREE.MathUtils.damp`-eased camera follow, and the deterministic/reversible keyframe-based path through the environment. This mechanism itself is unchanged as of §4U — still Lenis + damp-eased — even though the path sampled by that mechanism is now a straight line rather than a keyframed/splined curve.
+- The hero→approach keyframes (`t: 0, 0.25, 0.5, 0.75` as of Phase 1D — originally `0, 0.35, 0.7, 1.0` before Phase 1D's extension) and their exact position/lookAt values, in `src/experience/timeline/cameraPath.js`. **Superseded as of §4U** — this entry is historical record of the approved starting point, not the current implementation; see §4U for the current straight-line path and §4's Phase 1A entry above for the hero-framing change specifically.
 
 These are now protected foundations. Later phases must not alter them without identifying the conflict first — with two already-anticipated exceptions: (1) Phase 1A's "static initial camera position" was always scoped as the **opening (progress-0) framing only** (`build-status.md` §4's Phase 1A record explicitly listed "full camera choreography" as out of scope, reserved for Phase 1C) — Phase 1C making the camera scroll-driven for progress > 0 was that anticipated evolution, not a violation. (2) Phase 1C's approved path was always understood to extend rather than freeze at its final keyframe once later phases introduced new physical anchors to travel toward — build-workflow.md's own Phase 1C entry describes the approach as "the initial Film approach," implying more path would follow. Phase 1D's keyframe extension is additive: the original four keyframes' *positions/lookAts* (the actual approved waypoint compositions) are byte-for-byte unchanged; their `t` values were rescaled from `0, 0.35, 0.7, 1.0` to `0, 0.25, 0.5, 0.75` to make room for the new final segment, which does shift exactly which scroll percentage shows which waypoint. Re-verified visually after the change: progress 0 still reproduces the exact approved hero frame, and the same waypoint compositions still appear in the same order with smooth continuity — just at different scroll percentages than before.
 
@@ -867,6 +895,7 @@ The repository must maintain a recoverable implementation history.
 **Current commit (camera smoothness & beam stability, technically complete):** `d1941a5` — "Fix: simplify camera path to 2 stages, disable beam approach-fade dip" (on top of `015c39d`)
 **Current commit (eliminate camera drop, reshape to 3 stages, technically complete):** `e958d45` — "Fix: eliminate camera drop with single monotonic ease, reshape to 3 stages" (on top of `d1941a5`)
 **Current commit (20° monitor yaw & camera roll/banking, technically complete):** `3f4fcf9` — "Feat: 20-degree monitor yaw and banked camera roll through the arc" (on top of `e958d45`)
+**Current commit (straight-line camera path, left-pillar start, technically complete):** `b33334a` — "Feat: rewrite camera path as a single straight line, remove all roll" (on top of `3f4fcf9`)
 
 The repository was initialized (`git init -b main`) with the five governing documents relocated into `docs/` as the first commit, giving a clean recovery point before any implementation began. Phase 1A (scaffold, environment shell, column refinement), Phase 1B (volumetric lighting, three review passes), and Phase 1C (scroll-driven camera, motion-physics refinement) were each committed and approved in sequence; Phase 1D (monitor foundation) is committed on top of the approved Phase 1C checkpoint and is recoverable independently of it.
 
@@ -1191,6 +1220,18 @@ Each completed phase should receive a concise record.
 **Approved visual decisions:** None yet.
 **Git checkpoint:** `main` branch; commit `3f4fcf9`.
 **Next approved phase:** N/A — cross-cutting motion/architectural refinement, not a phase gate. Phase 2 remains on hold.
+
+### Straight diagonal line & left-pillar start
+
+**Implementation:** Complete
+**Technical completion:** Complete (2026-08-31)
+**Human approval:** Pending — supersedes the approved Phase 1A hero framing, see below
+**Major changes:** Full rewrite of `cameraPath.js` to a direct linear interpolation (no easing curve, no spline) from a new start position beside the left entrance pillar to the unchanged monitor-aligned end; lookAt is now a constant, locked on the monitor for the whole scroll; all roll removed. See §4U.
+**Testing performed:** See §4U. Full scroll range (0/50/100%) and reversibility, frame-timing, grep for React state, production build, mobile re-check.
+**Known issues:** None identified.
+**Approved visual decisions:** Superseded, pending re-review — see the further-updated Phase 1A/1C entries in §5 (this is the first round to change the hero framing itself, not just the walls/lighting/mid-path).
+**Git checkpoint:** `main` branch; commit `b33334a`.
+**Next approved phase:** N/A — cross-cutting motion refinement, not a phase gate. Phase 2 remains on hold.
 
 ---
 
@@ -1523,6 +1564,17 @@ Record meaningful implementation changes rather than every minor code edit.
 - `ScrollCameraRig.jsx`: applies roll by tilting `camera.up` around the current look direction before `camera.lookAt()` — a standard technique that introduces real roll without a hand-built quaternion pipeline. Damped every frame with the same lambda already shared by position/lookAt (§4L), so all three settle in lockstep.
 - Deliberately did not implement discrete quaternion-slerp-between-keyframes, despite the request naming `slerp` — that would reintroduce the exact piecewise, per-keyframe motion this session spent several rounds removing (§4H). The existing continuous per-frame damping already delivers "zero mechanical jerkiness" — verified visually, not assumed equivalent.
 - Verified: full scroll range (0/35/100%) and reversibility clean, roll visibly banks the view during the arc (pillars tilt from vertical) and returns to exactly level at both ends, monitor's 20° yaw clearly visible in the final shot, frame-timing unchanged (~16.6ms avg, 0 over 33ms), production build succeeds, no React state anywhere in `src/`, mobile renders cleanly.
+
+### 2026-08-31 (Camera trajectory overhaul — straight diagonal line & left-pillar start)
+
+**Full rewrite of the camera path to a single straight line, superseding the approved Phase 1A hero framing for the first time in this session's camera work — flagged explicitly rather than silently drifted from.**
+
+- Every round since §4H explicitly preserved the original hero shot (`[0, 1.6, 9]`, looking level down −Z) byte-for-byte. This request explicitly and specifically asked for a different starting position and orientation, so — consistent with how the wall/lighting supersessions were handled once the human had established that direction (§4O onward) — implemented it as a deliberate change, not blocked on a fresh confirmation, but flagged clearly in both the commit and §5.
+- `cameraPath.js`: replaced the 4-waypoint spline + ease-out + banking entirely with `Vector3.lerpVectors(start, end, progress)` — no easing curve at all, so every axis (including Y) moves at a perfectly constant rate across the whole scroll, ruling out any plateau/steepen/drop by construction rather than by tuning an ease shape to avoid one. `lookAt` is now a constant, locked on the monitor for the entire range — no orientation interpolation, satisfying "locked from start to finish" directly.
+- Start position tuned empirically: an initial attempt (closer to/more "behind" the left entrance pillar) put the pillar shaft directly in the sightline to the monitor, occluding most of the frame — caught via an actual screenshot, not assumed. Moved further left and less far back (`[-3.6, 1.6, 3.2]`), which reads as a clean diagonal composition with the pillar as a foreground framing element.
+- `ScrollCameraRig.jsx`: removed the roll/up-tilt mechanism from the previous round entirely (not zeroed). Seed refs updated to match the new start exactly, avoiding a startup glide-in. `CinematicExperience.jsx`'s initial camera position prop updated to match.
+- Verified: full scroll range (0/50/100%) and reversibility clean, hero frame reads as an intentional diagonal shot (not pillar-occluded), no roll/tilt anywhere, frame-timing unchanged (~16.6ms avg, 0 over 33ms), production build succeeds, no React state anywhere in `src/`, mobile renders cleanly.
+- Updated §5's Phase 1A and 1C entries to record the hero-framing and path-mechanism supersession, following the same "superseded, pending re-review" pattern already used for the wall/pillar/lighting changes.
 
 ---
 
