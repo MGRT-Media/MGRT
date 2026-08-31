@@ -647,6 +647,40 @@ Visual review requested — please confirm the arc's framing, the stone wall's t
 
 ---
 
+## 4Q. Feature — Broken Stone Wall Breach & Wall Readability Fix
+
+**Status:** TECHNICALLY COMPLETE
+**Approval:** NOT YET GRANTED — further deliberate revision of Phase 1A/1B, continuing §4O
+
+Human request: replace the structured window frame with an organic fractured breach, and fix the stone wall material reading as flat black.
+
+### Scope note
+
+Continues the same standing "deliberate revision" decision from §4O — proceeded directly, consistent with §4P.
+
+### What changed — the breach
+
+- **`Environment.jsx`** — the right wall is now split into a dedicated breach panel plus two plain flanking segments (front/back) covering the rest of the wall's length. The panel is a `THREE.Shape` rectangle with a fractured hole cut into it (`buildFractureOutline`: a base ellipse perturbed by two low-frequency sine harmonics for broad "bites," plus fine per-point jitter — chosen over pure per-vertex random noise, which reads as a spiky star rather than broken stone), extruded via `ExtrudeGeometry` for real edge depth. Centered exactly on the existing `spot.position` — no light reposition needed. Dust was already clustering there by construction (§4N's `topBias`), so it's already re-centered on the breach too.
+- **Scoped narrowly, and flagged rather than silently under-delivered:** no separate "glow pane" fills the hole — a flat rectangle can't match the jagged outline without either falling short of the edge or overflowing onto the surrounding stone, so the opening reads as lit through the beam's own bright apex (unchanged) plus this round's ambient/fill increases. The beam's cross-section itself is also unchanged (still a plain cone) — literally shaping the volumetric beam to the breach's exact silhouette would need a custom alpha-mask projection, real complexity for a soft additive glow where fine silhouette detail wouldn't read clearly at a distance. "Takes on the broken contour" is satisfied by the beam visibly originating from within the fractured opening, not by a custom-shaped beam mesh.
+
+### What changed — wall readability
+
+- **`stoneWallMaterial.js`** — the height field now encodes real block/mortar structure (`mortarMask`: height recessed near each texture-repeat tile's edge), so both the albedo and normal maps show mortar lines and distinct block faces rather than smooth undifferentiated noise — addresses the "flat black" complaint at its source (missing texture pattern), not just by adding more light. Brightened the base albedo color and shade range. `normalScale` raised to `(1.4, 1.4)` (`MeshStandardMaterial`'s default is `(1, 1)`) so the mortar grooves visibly catch raking light, per the request. Added `stoneRepeatForSize(width, height)` — one texture-repeat cycle = one stone block (`TILE_SIZE = 1.4` world units) — so block scale is computed from each wall segment's own physical size, addressing "mortar lines and blocks appropriately proportioned relative to the pillars," rather than the single guessed constant used in §4P.
+- **`Environment.jsx`** now calls `createStoneWallMaterial` separately for each of the 5 wall pieces (back, left, right-front, right-back, breach) instead of cloning one shared texture set — trading a small one-time mount cost (5× the noise-texture generation) for correct per-wall proportions.
+- **`volumetricLighting.js`** — added a non-shadow-casting fill/bounce `DirectionalLight` on the room's `-X` side, opposite the `+X` breach, so the shadow-side wall doesn't drop toward black. `ambient.intensity` raised `2.3 → 2.5` (+0.2, within the requested +0.15 to +0.25 window).
+
+### Verification
+- Full scroll range (0%, 40%, 100%) and reversibility clean; stone block/mortar pattern clearly visible on both desktop and mobile.
+- No console/shader errors — an `ExtrudeGeometry`/`Shape`-hole compile failure or a degenerate shape would surface immediately.
+- Frame-timing under a simulated wheel-gesture burst: ~16.6ms avg, 0 frames over 33ms — the 5× procedural texture generation is a one-time mount cost, not per-frame.
+- `grep -rn "useState\|setState" src/` — no matches; production build succeeds (72 modules, no errors); mobile viewport renders cleanly.
+- **Not independently confirmed:** the exact fractured silhouette. The camera path never frames the right wall directly (consistent with every prior round — the window/breach has always been a background/atmospheric element, not a framed subject), and this session's canvas-readback tooling — tried `gl.readPixels`, `drawImage`-to-a-2D-canvas, and an injected magnified-crop overlay — was unreliable for this WebGL context across all three methods, consistent with limitations already noted earlier this session (e.g. the §4H temporal-flicker test, §4M's dust-motion verification). Flagged honestly for a human visual check rather than claimed as verified.
+
+### Required next step
+Visual review specifically needed for the breach shape (this environment's tooling couldn't confirm it directly) and the wall readability fix — please confirm the stone no longer reads as flat black and the fractured opening looks like broken stone rather than an odd hole.
+
+---
+
 ## 5. Approved Visual Decisions
 
 This section records visual decisions that have already received human approval and therefore should be treated as protected foundations.
@@ -659,12 +693,12 @@ This section records visual decisions that have already received human approval 
 - Initial (progress-0) camera framing `[0, 1.6, 9]`, `fov: 45`, looking level down −Z, and the resulting negative space / composition.
 - Overall room layout (floor, back wall, two side walls, no ceiling).
 - **Column layout revised post-approval (2026-08-31, pending re-review):** originally 8 columns in a straight two-sided colonnade (4 per side, `x: ∓6`) plus a two-pillar foreground "entrance" pair at `[∓2.2, 4]`. The straight colonnade was replaced with a 7-pillar semicircular arc (radius 6.5, center `[0, -4]`, 160° span) framing the monitor, per explicit human request — see §4P. The entrance pillars are unchanged. Individual column geometry/profile is untouched, only the side colonnade's *layout* changed. Not yet re-approved as part of the visual record.
-- **Wall layout and material revised post-approval (2026-08-31, pending re-review):** the right side wall has a single window opening (reduced from an earlier 3-window band, §4O → §4P), and all three walls now use a procedurally generated old-stone PBR material (`stoneWallMaterial.js`) in place of the previous flat colored `meshStandardMaterial`, per explicit human request — the conflict with this approved "no ceiling, plain walls" layout was flagged in §4O's turn and the human chose to proceed as a deliberate revision, a decision carried forward into §4P. The existing `wallBack`/`wallSide` tonal distinction is preserved as a color tint on top of the new stone texture. Not yet re-approved as part of the visual record.
+- **Wall layout and material revised post-approval (2026-08-31, pending re-review):** the right side wall's opening evolved from a 3-window band (§4O) to a single structured window (§4P) to its current form — a fractured, organic breach cut as a geometric hole via `ExtrudeGeometry`/`Shape` (§4Q) — and all three walls now use a procedurally generated old-stone PBR material (`stoneWallMaterial.js`, with real block/mortar structure and per-wall-computed texture scale as of §4Q) in place of the previous flat colored `meshStandardMaterial`, per explicit human request each round — the conflict with this approved "no ceiling, plain walls" layout was flagged in §4O's turn and the human chose to proceed as a deliberate revision, a decision carried forward into §4P and §4Q. The existing `wallBack`/`wallSide` tonal distinction is preserved as a color tint on top of the new stone texture. Not yet re-approved as part of the visual record.
 
 **Phase 1B — Atmosphere & Light (approved 2026-08-31):**
 - The primary light system's character: warm SpotLight-driven volumetric shaft, floor light-pool, shadow-casting architecture, dust confined to the beam, and the ambient/fog/three-tier material tonality (columns lightest → walls mid → floor darkest) reached across three review passes.
 - Exact final parameter values live in `lightingParams` (`src/experience/lighting/volumetricLighting.js`) and `SURFACE_TONE` (`src/experience/Environment.jsx`).
-- **Light position/direction revised post-approval (2026-08-31, pending re-review):** `spot.position` moved from `[3.4, 8, 2.2]` to `[6.85, 6.3, -3]` so the beam originates at the window rather than an unmarked point in space, per explicit human request — the conflict with this approved "reached across three review passes" light character was flagged in §4O's turn and the human chose to proceed. `spot.target` (and therefore the monitor position and camera-path endpoint) is unchanged. Unchanged again in §4P (window count reduced to one, but it's the same window this light already coincided with). Not yet re-approved as part of the visual record.
+- **Light position/direction revised post-approval (2026-08-31, pending re-review):** `spot.position` moved from `[3.4, 8, 2.2]` to `[6.85, 6.3, -3]` so the beam originates at the window/breach rather than an unmarked point in space, per explicit human request — the conflict with this approved "reached across three review passes" light character was flagged in §4O's turn and the human chose to proceed. `spot.target` (and therefore the monitor position and camera-path endpoint) is unchanged, and `spot.position` itself is unchanged again in §4P and §4Q — each revision of the opening (window count, then the fractured breach) has stayed centered on this same point. §4Q also added a non-shadow-casting fill light and raised `ambient.intensity` (2.3 → 2.5) for wall readability. Not yet re-approved as part of the visual record.
 
 **Phase 1C — Camera & Scroll (approved 2026-08-31):**
 - The scroll-driven camera mechanism: a single master GSAP/ScrollTrigger timeline, Lenis-smoothed input, `THREE.MathUtils.damp`-eased camera follow, and the deterministic/reversible keyframe-based path through the environment.
@@ -746,6 +780,7 @@ The repository must maintain a recoverable implementation history.
 **Current commit (dust concentration near light source, technically complete):** `413727e` — "Fix: concentrate dust density near the beam origin/light source" (on top of `6bbd50a`)
 **Current commit (windows & transition key light, technically complete):** `92c8e83` — "Feat: add clerestory windows and reposition key light to stream through them" (on top of `413727e`)
 **Current commit (pillar arc, stone walls, single window, technically complete):** `d315d96` — "Feat: half-moon pillar arc, procedural old-stone walls, single window" (on top of `92c8e83`)
+**Current commit (broken-stone breach & wall readability, technically complete):** `015c39d` — "Feat: organic broken-stone breach and wall material readability fix" (on top of `d315d96`)
 
 The repository was initialized (`git init -b main`) with the five governing documents relocated into `docs/` as the first commit, giving a clean recovery point before any implementation began. Phase 1A (scaffold, environment shell, column refinement), Phase 1B (volumetric lighting, three review passes), and Phase 1C (scroll-driven camera, motion-physics refinement) were each committed and approved in sequence; Phase 1D (monitor foundation) is committed on top of the approved Phase 1C checkpoint and is recoverable independently of it.
 
@@ -1021,6 +1056,18 @@ Each completed phase should receive a concise record.
 **Known issues:** None identified. One stale-HMR console false alarm during this pass, resolved via fresh tab, not a real issue.
 **Approved visual decisions:** Superseded, pending re-review — see the further-updated Phase 1A entries in §5.
 **Git checkpoint:** `main` branch; commit `d315d96`.
+**Next approved phase:** N/A — cross-cutting architectural/lighting revision, not a phase gate. Phase 2 remains on hold.
+
+### Broken stone wall breach & wall readability fix
+
+**Implementation:** Complete
+**Technical completion:** Complete (2026-08-31)
+**Human approval:** Pending — needs visual confirmation this environment's tooling couldn't provide, see below
+**Major changes:** Replaced the structured window frame with a fractured, organic breach (`ExtrudeGeometry`/`Shape`-hole geometry, right wall split into breach panel + two flanking segments); added real block/mortar structure to the stone material's height field, brightened albedo, raised `normalScale`, and computed texture repeat per-wall from physical size; added a fill/bounce light and raised ambient intensity for wall readability. See §4Q.
+**Testing performed:** See §4Q. Full scroll range (0/40/100%) and reversibility, frame-timing with 5x the procedural texture generation, grep for React state, production build, mobile re-check.
+**Known issues:** The exact fractured silhouette wasn't independently confirmed — the camera path never frames the right wall directly, and this session's canvas-readback tooling (three different methods tried) was unreliable for this WebGL context. Flagged for human visual check rather than claimed verified.
+**Approved visual decisions:** Superseded, pending re-review — see the further-updated Phase 1A/1B entries in §5.
+**Git checkpoint:** `main` branch; commit `015c39d`.
 **Next approved phase:** N/A — cross-cutting architectural/lighting revision, not a phase gate. Phase 2 remains on hold.
 
 ---
@@ -1311,6 +1358,18 @@ Record meaningful implementation changes rather than every minor code edit.
 - Verified: full scroll range (0/15/100%) and reversibility clean, arc visibly frames the monitor at the final locked shot, stone texture variation visible under the window's light, frame-timing unchanged (~16.6ms avg, 0 over 33ms) despite the added procedural texture generation; production build succeeds (72 modules); no React state anywhere in `src/`; mobile renders cleanly.
 - One stale-HMR false alarm (a `columnPositions is not defined` error persisting in an existing tab's console after a force-reload) — traced to the tab's own cached console history via a fresh-tab test, not a real code issue.
 - Further updated §5's Phase 1A entries to record the column-layout and wall-layout/material changes as superseded, pending re-review.
+
+### 2026-08-31 (Broken stone wall breach & wall readability fix)
+
+**Replaced the structured window with a fractured, organic hole and fixed the stone material reading as flat black — another deliberate revision continuing the standing §4O decision, no new conflict.**
+
+- `Environment.jsx`: right wall split into a dedicated breach panel (a `THREE.Shape` rectangle with a fractured hole cut in via `Shape.holes`, extruded with `ExtrudeGeometry` for real edge depth) plus two plain flanking segments covering the rest of the wall. The fracture outline (`buildFractureOutline`) blends two low-frequency sine harmonics with fine per-point jitter — chosen over pure per-vertex random noise, which reads as a spiky star rather than broken stone. Centered exactly on the existing light position, so no light reposition was needed; dust was already anchored there too.
+- Scoped narrowly and flagged rather than over-built: no glow-pane overlay fills the hole (a flat shape can't match the jagged outline cleanly), and the beam's own cross-section is unchanged — a literally jagged-shaped volumetric beam would need a custom alpha-mask projection for a detail that wouldn't read clearly through a soft, diffuse, additive glow at a distance.
+- `stoneWallMaterial.js`: the height field now encodes real block/mortar structure (a `mortarMask` recessing height near each tile's edge), so albedo and normal maps both show mortar lines and distinct blocks instead of smooth undifferentiated noise — the actual fix for "flat black," not just adding light. Brightened the base albedo. Raised `normalScale` to `(1.4, 1.4)`. Added `stoneRepeatForSize` so texture repeat is computed from each wall segment's real physical size (one repeat cycle = one `TILE_SIZE` = 1.4-unit block) instead of a shared guessed constant.
+- `volumetricLighting.js`: added a non-shadow-casting fill/bounce light on the room's `-X` side (opposite the breach); raised `ambient.intensity` `2.3 → 2.5`.
+- Verified: full scroll range (0/40/100%) and reversibility clean, stone block/mortar pattern clearly visible on desktop and mobile, no render/shader errors, frame-timing unchanged (~16.6ms avg, 0 over 33ms) despite 5× the procedural texture generation (one-time mount cost), production build succeeds, no React state anywhere in `src/`.
+- Honestly flagged, not silently claimed: couldn't independently confirm the exact fractured silhouette — the camera path never frames the right wall directly, and three different canvas-readback approaches (`gl.readPixels`, `drawImage`-to-2D-canvas, an injected magnified-crop overlay) were all unreliable for this WebGL context, consistent with earlier limitations this session (§4H, §4M).
+- Further updated §5's Phase 1A/1B entries to record the breach and fill-light/ambient changes as superseded, pending re-review.
 
 ---
 
