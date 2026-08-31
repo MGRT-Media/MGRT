@@ -617,6 +617,36 @@ Visual review requested — please confirm the window/relighting treatment reads
 
 ---
 
+## 4P. Feature — Architectural & Lighting Overhaul (Semicircular Pillar Arc, Old Stone Walls & Right Window Light Shaft)
+
+**Status:** TECHNICALLY COMPLETE
+**Approval:** NOT YET GRANTED — further deliberate revision of Phase 1A/1B, continuing §4O
+
+Human request: rearrange the pillars into a half-moon arc framing the monitor, apply an aged-stone PBR material to the walls, and reduce to a single right-wall window opening.
+
+### Scope note
+
+This continues the same "deliberate revision of Phase 1A/1B" direction already flagged and explicitly confirmed by the human in §4O's turn — not a new conflict category requiring a fresh confirmation. Proceeded directly, per that standing decision.
+
+### What changed
+
+- **`Environment.jsx`** — replaced the straight 8-column side colonnade with a 7-pillar semicircular arc: radius 6.5, center `[0, -4]`, spanning 160° (`-80°` to `+80°`) around the back apex, opening toward the camera's `+Z` approach. The monitor (at the spot-target `x: 0.6, z: -3.5`) sits inside the arc's "mouth"; the arc's furthest-back pillar lands at `z ≈ -10.5`, well clear of the monitor and the back wall. Entrance pillars near the hero start (`z: 4`) are unchanged — a distinct near-camera "gateway" role, not part of the arc.
+- **`stoneWallMaterial.js`** (new module) — a procedurally generated old-stone `MeshStandardMaterial`: real `map`/`normalMap`/`roughnessMap` `DataTexture`s built from a shared layered value-noise (fbm) height field at runtime, no external texture assets. This codebase has no existing texture-loading pipeline — every material to date is either a flat color or a custom procedural shader (the beam, floor pool, dust, monitor screen) — so runtime-generated textures satisfy "with Normal and Roughness maps" literally while staying consistent with that existing all-procedural pattern and avoiding a new asset/loader dependency, per CLAUDE.md's "avoid unnecessary dependencies." Roughness is kept in a 0.72–0.95 band specifically so the stone catches highlights cleanly without artificial gloss, per the request's own phrasing. Applied to all three walls via one base material plus a `.clone()`'d, retinted variant (reuses the same generated textures rather than regenerating the noise a second time) — this preserves Phase 1B's existing `wallBack`/`wallSide` tonal distinction as a color multiply on top of the new stone detail, rather than discarding that part of the approved tonality.
+- **Window band reduced** from the 3 units added in §4O to a single opening at `z: -3` — no light reposition needed, since the light was already coincident with exactly this window from the previous round.
+- Dust, GPU drift motion, and shadow-camera behavior are all unchanged/automatic — dust already clusters at `spot.position` by construction, and Three.js derives the shadow frustum from the light's position/angle each frame; neither needed touching for this round.
+- Phase 2 untouched, per explicit instruction.
+
+### Verification
+- Visual check across the scroll range (0%, 15%, 100%) and reversibility to 0%: arc pillars visibly frame the monitor from behind at the final locked shot, stone texture variation visible in the beam-lit wall area, no clipping or artifacts.
+- Frame-timing under a simulated wheel-gesture burst: ~16.6ms avg, 0 frames over 33ms — the added procedural texture generation (three 256×256 DataTextures, generated once at mount) costs nothing measurable per-frame.
+- `grep -rn "useState\|setState" src/` — no matches; production build succeeds (72 modules, no errors — the new material file); mobile viewport renders cleanly with no console errors.
+- One stale-HMR false alarm during this pass (a `columnPositions is not defined` error persisting in an existing tab's console log across a force-reload) — traced to the tab's own cached console history via a fresh-tab test, not a real code issue; `grep`-confirmed the file had no remaining reference to the removed name.
+
+### Required next step
+Visual review requested — please confirm the arc's framing, the stone wall's texture read (particularly under the window's light), and that reducing to one window still gives enough light presence in the room.
+
+---
+
 ## 5. Approved Visual Decisions
 
 This section records visual decisions that have already received human approval and therefore should be treated as protected foundations.
@@ -628,13 +658,13 @@ This section records visual decisions that have already received human approval 
 - Column geometry, proportions (plinth/tapered shaft/capital LatheGeometry profile), and spacing.
 - Initial (progress-0) camera framing `[0, 1.6, 9]`, `fov: 45`, looking level down −Z, and the resulting negative space / composition.
 - Overall room layout (floor, back wall, two side walls, no ceiling).
-- **Column count revised post-approval (2026-08-31, pending re-review):** originally 8 (4 per side, side colonnade only); a two-pillar foreground "entrance" pair was added at `[∓2.2, 4]` per explicit human request — see the geometry-refinement entry below. Not yet re-approved as part of the visual record; flagged here so the count doesn't silently drift from what §4/§11 describe.
-- **Wall layout revised post-approval (2026-08-31, pending re-review):** the right side wall gained a 3-window clerestory band per explicit human request, after the conflict with this approved "no ceiling, plain walls" layout was flagged and the human chose to proceed as a deliberate revision — see §4O. Not yet re-approved as part of the visual record.
+- **Column layout revised post-approval (2026-08-31, pending re-review):** originally 8 columns in a straight two-sided colonnade (4 per side, `x: ∓6`) plus a two-pillar foreground "entrance" pair at `[∓2.2, 4]`. The straight colonnade was replaced with a 7-pillar semicircular arc (radius 6.5, center `[0, -4]`, 160° span) framing the monitor, per explicit human request — see §4P. The entrance pillars are unchanged. Individual column geometry/profile is untouched, only the side colonnade's *layout* changed. Not yet re-approved as part of the visual record.
+- **Wall layout and material revised post-approval (2026-08-31, pending re-review):** the right side wall has a single window opening (reduced from an earlier 3-window band, §4O → §4P), and all three walls now use a procedurally generated old-stone PBR material (`stoneWallMaterial.js`) in place of the previous flat colored `meshStandardMaterial`, per explicit human request — the conflict with this approved "no ceiling, plain walls" layout was flagged in §4O's turn and the human chose to proceed as a deliberate revision, a decision carried forward into §4P. The existing `wallBack`/`wallSide` tonal distinction is preserved as a color tint on top of the new stone texture. Not yet re-approved as part of the visual record.
 
 **Phase 1B — Atmosphere & Light (approved 2026-08-31):**
 - The primary light system's character: warm SpotLight-driven volumetric shaft, floor light-pool, shadow-casting architecture, dust confined to the beam, and the ambient/fog/three-tier material tonality (columns lightest → walls mid → floor darkest) reached across three review passes.
 - Exact final parameter values live in `lightingParams` (`src/experience/lighting/volumetricLighting.js`) and `SURFACE_TONE` (`src/experience/Environment.jsx`).
-- **Light position/direction revised post-approval (2026-08-31, pending re-review):** `spot.position` moved from `[3.4, 8, 2.2]` to `[6.85, 6.3, -3]` so the beam originates at the new clerestory window rather than an unmarked point in space, per explicit human request — the conflict with this approved "reached across three review passes" light character was flagged and the human chose to proceed. `spot.target` (and therefore the monitor position and camera-path endpoint) is unchanged. See §4O. Not yet re-approved as part of the visual record.
+- **Light position/direction revised post-approval (2026-08-31, pending re-review):** `spot.position` moved from `[3.4, 8, 2.2]` to `[6.85, 6.3, -3]` so the beam originates at the window rather than an unmarked point in space, per explicit human request — the conflict with this approved "reached across three review passes" light character was flagged in §4O's turn and the human chose to proceed. `spot.target` (and therefore the monitor position and camera-path endpoint) is unchanged. Unchanged again in §4P (window count reduced to one, but it's the same window this light already coincided with). Not yet re-approved as part of the visual record.
 
 **Phase 1C — Camera & Scroll (approved 2026-08-31):**
 - The scroll-driven camera mechanism: a single master GSAP/ScrollTrigger timeline, Lenis-smoothed input, `THREE.MathUtils.damp`-eased camera follow, and the deterministic/reversible keyframe-based path through the environment.
@@ -715,6 +745,7 @@ The repository must maintain a recoverable implementation history.
 **Current commit (GPU dust particle drift, technically complete):** `6bbd50a` — "Feat: continuous GPU-driven dust particle drift (Brownian/air-current)" (on top of `325eac1`)
 **Current commit (dust concentration near light source, technically complete):** `413727e` — "Fix: concentrate dust density near the beam origin/light source" (on top of `6bbd50a`)
 **Current commit (windows & transition key light, technically complete):** `92c8e83` — "Feat: add clerestory windows and reposition key light to stream through them" (on top of `413727e`)
+**Current commit (pillar arc, stone walls, single window, technically complete):** `d315d96` — "Feat: half-moon pillar arc, procedural old-stone walls, single window" (on top of `92c8e83`)
 
 The repository was initialized (`git init -b main`) with the five governing documents relocated into `docs/` as the first commit, giving a clean recovery point before any implementation began. Phase 1A (scaffold, environment shell, column refinement), Phase 1B (volumetric lighting, three review passes), and Phase 1C (scroll-driven camera, motion-physics refinement) were each committed and approved in sequence; Phase 1D (monitor foundation) is committed on top of the approved Phase 1C checkpoint and is recoverable independently of it.
 
@@ -978,6 +1009,18 @@ Each completed phase should receive a concise record.
 **Known issues:** None identified.
 **Approved visual decisions:** Superseded, pending re-review — see the updated Phase 1A/1B entries in §5.
 **Git checkpoint:** `main` branch; commit `92c8e83`.
+**Next approved phase:** N/A — cross-cutting architectural/lighting revision, not a phase gate. Phase 2 remains on hold.
+
+### Architectural & lighting overhaul (semicircular pillar arc, old stone walls & right window light shaft)
+
+**Implementation:** Complete
+**Technical completion:** Complete (2026-08-31)
+**Human approval:** Pending — further deliberate revision of Phase 1A/1B, continuing §4O
+**Major changes:** Replaced the straight 8-column colonnade with a 7-pillar semicircular arc framing the monitor; added a new procedural old-stone PBR material (`stoneWallMaterial.js`, runtime-generated map/normalMap/roughnessMap, no external assets) applied to all three walls; reduced the window band to a single opening. Proceeded directly on the standing "deliberate revision" decision from §4O rather than re-asking. See §4P.
+**Testing performed:** See §4P. Full scroll range (0/15/100%) and reversibility, frame-timing with the added procedural textures, grep for React state, production build, mobile re-check.
+**Known issues:** None identified. One stale-HMR console false alarm during this pass, resolved via fresh tab, not a real issue.
+**Approved visual decisions:** Superseded, pending re-review — see the further-updated Phase 1A entries in §5.
+**Git checkpoint:** `main` branch; commit `d315d96`.
 **Next approved phase:** N/A — cross-cutting architectural/lighting revision, not a phase gate. Phase 2 remains on hold.
 
 ---
@@ -1258,6 +1301,16 @@ Record meaningful implementation changes rather than every minor code edit.
 - No dust or shadow code changes needed: dust already clusters at `spot.position` by construction (the §4N `topBias` distribution), and Three.js derives the shadow camera from the light's position/angle automatically each frame.
 - Verified: full scroll range (0/50/100%) and reversibility clean, beam/shadows read correctly from the new angle, no artifacts; frame-timing unchanged (~16.6ms avg, 0 over 33ms); production build succeeds; no React state anywhere in `src/`; mobile renders cleanly.
 - Updated §5's Approved Visual Decisions to flag both superseded items (wall layout, light position/direction) as "pending re-review," following the same pattern already used for the entrance-pillar column-count revision.
+
+### 2026-08-31 (Architectural & lighting overhaul — semicircular pillar arc, old stone walls & right window light shaft)
+
+**Rearranged the pillars into a monitor-framing arc, gave the walls a procedurally generated old-stone PBR material, and reduced the window band to a single opening — a further deliberate revision continuing the previous round's already-confirmed decision, not a new conflict requiring re-confirmation.**
+
+- `Environment.jsx`: replaced the straight 8-column side colonnade with a 7-pillar semicircular arc (radius 6.5, center `[0, -4]`, 160° span opening toward the camera) framing the monitor from behind. Entrance pillars near the hero start untouched. Reduced the window band from 3 units to a single opening at `z: -3` (the light's existing position, no reposition needed).
+- `stoneWallMaterial.js` (new): procedurally generated old-stone `MeshStandardMaterial` — real `map`/`normalMap`/`roughnessMap` `DataTexture`s built from a shared fbm value-noise height field at runtime, no external texture assets (this codebase has no existing texture pipeline; every material to date is a flat color or a custom procedural shader). Roughness kept in a 0.72–0.95 band so the stone catches highlights without artificial gloss, per the request. Applied to all three walls via one base material plus a `.clone()`'d/retinted variant, reusing the same generated textures and preserving Phase 1B's existing `wallBack`/`wallSide` tonal distinction as a color tint on top.
+- Verified: full scroll range (0/15/100%) and reversibility clean, arc visibly frames the monitor at the final locked shot, stone texture variation visible under the window's light, frame-timing unchanged (~16.6ms avg, 0 over 33ms) despite the added procedural texture generation; production build succeeds (72 modules); no React state anywhere in `src/`; mobile renders cleanly.
+- One stale-HMR false alarm (a `columnPositions is not defined` error persisting in an existing tab's console after a force-reload) — traced to the tab's own cached console history via a fresh-tab test, not a real code issue.
+- Further updated §5's Phase 1A entries to record the column-layout and wall-layout/material changes as superseded, pending re-review.
 
 ---
 
