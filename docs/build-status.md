@@ -530,6 +530,39 @@ Visual review requested — please confirm the opening scroll now feels immediat
 
 ---
 
+## 4M. Feature — Dynamic GPU Dust Particle Motion
+
+**Status:** TECHNICALLY COMPLETE
+**Approval:** NOT YET GRANTED
+
+Human request: give the dust specks natural, continuous floating movement (Brownian motion / slow air-current drift) so the room feels like a real ambient space, computed on the GPU via a `uTime` uniform, independent of scrolling.
+
+### What changed
+
+- **`volumetricLighting.js`** — `buildDust` now creates a `THREE.ShaderMaterial` instead of a static `THREE.PointsMaterial`. Each point's base position (generated once, as before) gets a per-vertex sine/cosine offset every frame, computed on the GPU exactly as specified in the request:
+  ```glsl
+  pos.x += sin(uTime * 0.3 + position.y + aPhase) * 0.05;
+  pos.y += cos(uTime * 0.2 + position.x + aPhase) * 0.03;
+  pos.z += sin(uTime * 0.25 + position.z + aPhase) * 0.04;
+  ```
+  Added `aPhase` — a new per-point random-phase buffer attribute — so the 170 points drift independently instead of visibly pulsing in unison. Because the offset is a bounded oscillation around each point's own fixed base position (not a velocity/cumulative drift), points can never wander out of the room's volume — no explicit position-wrapping/looping logic is needed to satisfy that part of the request; the math is self-bounding by construction.
+  - Replaced the material's implicit hard-edged square point sprite with a soft circular one (`smoothstep` on `gl_PointCoord`) and reimplemented perspective size attenuation to match the previous `PointsMaterial` look, since a raw `ShaderMaterial` doesn't get either for free.
+  - `setApproachFade` (§4I/§4J) now writes to a `uOpacity` uniform instead of `material.opacity` — same behavior, adapted to the new material type.
+- **`VolumetricLightingRig.jsx`** — added `controller.setTime(state.clock.elapsedTime)` inside the existing `useFrame` (the same one already driving the approach-fade), using R3F's own clock rather than anything scroll-derived — the drift runs continuously whether or not the user is scrolling, satisfying "particles continue floating smoothly even when the user is completely still."
+- Retained `transparent: true` / `depthWrite: false` on the dust material, per the request's item 3 — these were already present on the previous `PointsMaterial` and carried over unchanged.
+
+### Verification
+- No console/shader errors on load (a GLSL compile or link failure would surface immediately as a `THREE.WebGLProgram` error) — confirms the shader is valid and running, on both desktop and mobile viewports.
+- Full scroll range and reversibility unaffected: dust still visible (dimmed per §4J's floor-fade) at the monitor-filling final shot, exact hero-baseline match on scroll-back to 0.
+- Frame-timing under a simulated wheel-gesture burst: ~16.6ms avg, 0 frames over 33ms — the added per-vertex GPU math costs nothing measurable at 170 points.
+- `grep -rn "useState\|setState" src/` — no matches; production build succeeds (71 modules, no errors).
+- **Not independently confirmed:** pixel-level motion verification. Tried two automated readback methods (`gl.readPixels` and `drawImage`-to-a-2D-canvas) to diff frames a few seconds apart; both returned a static buffer with zero difference, which is inconsistent with this session's own frame-timing tests confirming `useFrame`/`requestAnimationFrame` fires reliably every ~16ms throughout. Treating this as a canvas-readback limitation of this tooling environment (not the first such limitation encountered this session — see the WebGL readback caveat in §4H's temporal-flicker test) rather than evidence the drift isn't happening; confidence instead rests on the shader compiling/running cleanly and the wiring being simple, direct uniform mutation matching the already-verified `setApproachFade` pattern. Flagging honestly rather than claiming a visual confirmation that didn't actually happen.
+
+### Required next step
+Visual review needed specifically for the motion itself, since this environment's tooling couldn't confirm it directly — please confirm the dust is visibly, gently drifting (not static) both while idle and while scrolling.
+
+---
+
 ## 5. Approved Visual Decisions
 
 This section records visual decisions that have already received human approval and therefore should be treated as protected foundations.
@@ -623,6 +656,7 @@ The repository must maintain a recoverable implementation history.
 **Current commit (atmospheric polish, technically complete):** `3c2b6b7` — "Fix: keep beam/dust ambient presence through the monitor approach" (on top of `0952617`)
 **Current commit (first-scroll sync hardening, technically complete):** `eca309a` — "Fix: harden Lenis/ScrollTrigger init lifecycle and scroll-input CSS" (on top of `3c2b6b7`)
 **Current commit (asymmetric ease — snappy start, soft landing, technically complete):** `325eac1` — "Fix: asymmetric ease -- linear responsive start, soft Hermite landing" (on top of `eca309a`)
+**Current commit (GPU dust particle drift, technically complete):** `6bbd50a` — "Feat: continuous GPU-driven dust particle drift (Brownian/air-current)" (on top of `325eac1`)
 
 The repository was initialized (`git init -b main`) with the five governing documents relocated into `docs/` as the first commit, giving a clean recovery point before any implementation began. Phase 1A (scaffold, environment shell, column refinement), Phase 1B (volumetric lighting, three review passes), and Phase 1C (scroll-driven camera, motion-physics refinement) were each committed and approved in sequence; Phase 1D (monitor foundation) is committed on top of the approved Phase 1C checkpoint and is recoverable independently of it.
 
@@ -851,6 +885,18 @@ Each completed phase should receive a concise record.
 **Approved visual decisions:** None yet.
 **Git checkpoint:** `main` branch; commit `325eac1`.
 **Next approved phase:** N/A — cross-cutting motion refinement, not a phase gate.
+
+### Dynamic GPU dust particle motion
+
+**Implementation:** Complete
+**Technical completion:** Complete (2026-08-31)
+**Human approval:** Pending — visual review specifically needed, see below
+**Major changes:** Converted the dust field from a static `PointsMaterial` to a `ShaderMaterial` with a `uTime`-driven per-vertex sine/cosine drift (matching the request's exact formula), a per-point random phase so points drift independently, and a soft circular sprite with reimplemented size attenuation. `uTime` is driven from R3F's own clock in the existing `useFrame`, not scroll-coupled. See §4M.
+**Testing performed:** See §4M. No console/shader errors (desktop + mobile), full scroll range/reversibility unaffected, frame-timing, grep for React state, production build.
+**Known issues:** Pixel-level motion could not be independently confirmed by this session's tooling — two automated canvas-readback methods both returned a static buffer, inconsistent with this session's own frame-timing tests showing `useFrame` firing reliably. Treated as a tooling limitation, not a code issue, but flagged rather than claimed as visually verified — needs a human look.
+**Approved visual decisions:** None yet.
+**Git checkpoint:** `main` branch; commit `6bbd50a`.
+**Next approved phase:** N/A — cross-cutting atmospheric polish, not a phase gate.
 
 ---
 
@@ -1095,6 +1141,15 @@ Record meaningful implementation changes rather than every minor code edit.
 - Numerically verified the Hermite segment before committing to it (`node -e`): fully smooth and monotonic, but the four boundary conditions (value 0→1, start slope 1, end slope 0) can only be satisfied with a brief, unavoidable speed-up just past the 0.85 junction (peak slope ≈1.33 around progress ≈0.90) before the true deceleration begins. Documented honestly rather than described as a flawless decel from the very start of the landing window.
 - `ScrollTimelineProvider.jsx`: `scrub` lowered `1.5 → 1`, since the extra half-second of lag was compounding the dead-zone this round exists to fix.
 - Verified: re-ran §4K's exact single-scroll-gesture reproduction (fresh load, one wheel event landing at ~30% scroll) — previously showed zero visible movement, now shows clear, immediate movement; full reversibility to the hero baseline; clean landing at progress 100%; frame-timing unchanged (~16.6ms avg, 0 over 33ms); production build succeeds; no React state anywhere in `src/`; mobile renders cleanly.
+
+### 2026-08-31 (Dynamic GPU dust particle motion)
+
+**Gave the dust field continuous, per-vertex GPU-driven drift so it reads as ambient Brownian/air-current motion instead of a static field, per the request's exact shader formula.**
+
+- `volumetricLighting.js`: `buildDust` now builds a `ShaderMaterial` in place of the previous static `PointsMaterial`. Each point keeps its original base position (generated once, as before) and gets a bounded sine/cosine offset every frame — `sin(uTime*0.3 + position.y + aPhase)*0.05`, `cos(uTime*0.2 + position.x + aPhase)*0.03`, `sin(uTime*0.25 + position.z + aPhase)*0.04` — computed entirely in the vertex shader. Added a new `aPhase` per-point random-phase buffer attribute so the 170 points drift independently rather than pulsing together. Because the offset oscillates around a fixed base position rather than accumulating, points are self-bounded and can never drift out of the room — no explicit wrap/loop logic needed for that. Rebuilt the point sprite (soft circular shape, perspective size attenuation) since a raw `ShaderMaterial` doesn't inherit `PointsMaterial`'s defaults for either. `setApproachFade` updated to write a `uOpacity` uniform instead of `material.opacity`.
+- `VolumetricLightingRig.jsx`: added `controller.setTime(state.clock.elapsedTime)` to the existing `useFrame`, using R3F's own clock rather than scroll progress — drift continues while the user is completely still.
+- Verified: no console/shader errors on desktop or mobile (a GLSL failure would surface immediately); full scroll range, approach-fade, and reversibility all unaffected; frame-timing unchanged (~16.6ms avg, 0 over 33ms); production build succeeds; no React state anywhere in `src/`.
+- Honestly flagged, not silently claimed: could not independently confirm the actual pixel-level motion — two automated canvas-readback methods (`gl.readPixels`, `drawImage`-to-2D-canvas) both returned a static buffer across a several-second gap, which is inconsistent with this session's own repeated frame-timing tests confirming `useFrame`/rAF fires every ~16ms throughout. Read as a canvas-readback limitation of this tooling environment rather than evidence against the fix — confidence rests on the clean shader compile and the simple, direct uniform-mutation wiring — but this one specifically needs a human visual check.
 
 ---
 
