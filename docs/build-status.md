@@ -473,6 +473,37 @@ Visual review requested — please confirm the atmosphere (beam glow + dust) now
 
 ---
 
+## 4K. Fix — First-Scroll Motion Block & Force Sync
+
+**Status:** TECHNICALLY COMPLETE
+**Approval:** NOT YET GRANTED
+
+Human report: the browser scrollbar moves on the first scroll input, but the 3D canvas camera stays stationary.
+
+### Reproduction and diagnosis
+
+Reproduced directly (fresh page load, a single wheel event, no prior interaction) before changing anything: `window.scrollY` reached its target correctly via Lenis, but the rendered frame was pixel-identical to the hero baseline afterward. Investigated whether this was a genuine freeze or a perceptual one:
+
+- Checked the existing init order in `ScrollTimelineProvider.jsx` — Lenis was already created before the GSAP master timeline, and `lenis.on('scroll', ScrollTrigger.update)` was already wired, matching the request's items 1 and 2. These weren't the gap.
+- Tested progression across several scroll fractions (10/20/30/40/70%) rather than just one point: the camera *does* move continuously and reversibly — it isn't frozen. At the fraction a single typical scroll gesture lands in (roughly the first 30% of the page), the eased camera-path progress is only ~4–5% (the quintic-in ease tuned in an earlier round — §4I — is intentionally near-zero velocity at the very start, for a soft launch out of rest). Combined with the `scrub: 1.5` and Lenis's own lag stacked on top of that (both also raised in earlier rounds), a single scroll gesture's resulting camera movement is real but small enough, and delayed enough, to read as "not moving" — which matches the report.
+
+### What changed
+
+Applied the requested lifecycle/sync hardening — real, defensible measures on their own even though the initial order was already correct:
+
+- **`ScrollTimelineProvider.jsx`** — added explicit `scroller: window` to the ScrollTrigger config; added `timeline.progress(0.0001); timeline.progress(0)` immediately after creation to wake GSAP's internal progress cache rather than waiting for the first real scroll tick; added a `requestAnimationFrame`-deferred `ScrollTrigger.refresh()` after mount so it re-measures against final layout rather than whatever state the Canvas's own layout/DPR settling left mid-transition.
+- **`global.css`** — added `overflow-x: hidden; height: auto` to `html, body`; made the fixed `.app-shell` canvas container `pointer-events: none` so wheel/touch input always reaches Lenis's window-level listeners rather than being capturable by the canvas sitting on top of the page.
+
+### Verification
+- Reproduction test re-run after the fix: same result as before the fix — motion is small-but-real and continuous through 10/20/30/40/70%, and fully reversible back to the exact hero baseline. The hardening didn't change this because it wasn't the actual gap (see diagnosis above) — flagging rather than claiming the *perceptual* symptom is resolved.
+- Frame-timing under a simulated wheel-gesture burst: ~16.6ms avg, 0 frames over 33ms.
+- `grep -rn "useState\|setState" src/` — no matches; production build succeeds (71 modules, no errors); mobile viewport renders with no console errors.
+
+### Required next step
+The literal "binding is broken" diagnosis didn't hold up under reproduction — what's actually happening is that three earlier rounds (§4H, §4I) progressively slowed the *start* of the motion (quintic-in ease, `scrub` raised to 1.5, longer Lenis lag) for a softer feel, and that's now made a single ordinary scroll gesture produce close to imperceptible camera movement. Flagging rather than re-tuning unilaterally, since it's the opposite direction of several explicit recent requests: would you like the very start of the ease/scrub made snappier (faster initial response, keeping the soft *landing* at the end), or is the current slow launch intentional and the concern was something else?
+
+---
+
 ## 5. Approved Visual Decisions
 
 This section records visual decisions that have already received human approval and therefore should be treated as protected foundations.
@@ -564,6 +595,7 @@ The repository must maintain a recoverable implementation history.
 **Current commit (choreography & scroll polish, technically complete):** `4c85661` — "Fix: replace piecewise keyframe easing with continuous spline camera path" (on top of `c46afd7`)
 **Current commit (motion polish & lighting fix, technically complete):** `0952617` — "Fix: softer landing ease and beam fade through monitor approach" (on top of `4c85661`)
 **Current commit (atmospheric polish, technically complete):** `3c2b6b7` — "Fix: keep beam/dust ambient presence through the monitor approach" (on top of `0952617`)
+**Current commit (first-scroll sync hardening, technically complete):** `eca309a` — "Fix: harden Lenis/ScrollTrigger init lifecycle and scroll-input CSS" (on top of `3c2b6b7`)
 
 The repository was initialized (`git init -b main`) with the five governing documents relocated into `docs/` as the first commit, giving a clean recovery point before any implementation began. Phase 1A (scaffold, environment shell, column refinement), Phase 1B (volumetric lighting, three review passes), and Phase 1C (scroll-driven camera, motion-physics refinement) were each committed and approved in sequence; Phase 1D (monitor foundation) is committed on top of the approved Phase 1C checkpoint and is recoverable independently of it.
 
@@ -767,6 +799,18 @@ Each completed phase should receive a concise record.
 **Known issues:** None identified. Flagged for the human: an actual lens-flare/bloom effect would be a new addition (new dependency + render pipeline), not present today — noted in §4J's "required next step" for scoping if wanted.
 **Approved visual decisions:** None yet.
 **Git checkpoint:** `main` branch; commit `3c2b6b7`.
+**Next approved phase:** N/A — cross-cutting motion refinement, not a phase gate.
+
+### First-scroll motion block & force sync
+
+**Implementation:** Complete
+**Technical completion:** Complete (2026-08-31)
+**Human approval:** Pending — see below, this one needs a decision rather than just a look
+**Major changes:** Added explicit `scroller: window`, an immediate `timeline.progress()` wake trick, and an rAF-deferred `ScrollTrigger.refresh()` after mount; added `overflow-x: hidden`/`height: auto` on `html, body` and `pointer-events: none` on the fixed canvas container. Reproduced the reported symptom first: not a genuine freeze — the camera does move, continuously and reversibly, but three earlier rounds' cumulative slow-start tuning (quintic-in ease, `scrub: 1.5`, longer Lenis lag) means a single ordinary scroll gesture produces close to imperceptible motion. See §4K.
+**Testing performed:** See §4K. Direct reproduction before and after the fix (10/20/30/40/70% progression), reversibility, frame-timing, grep for React state, production build, mobile re-check.
+**Known issues:** The perceptual "camera isn't moving" symptom is not resolved by this commit — it's a property of the current easing/scrub tuning, not a binding bug. Flagged for a human decision: faster initial response vs. keep the current slow launch.
+**Approved visual decisions:** None yet.
+**Git checkpoint:** `main` branch; commit `eca309a`.
 **Next approved phase:** N/A — cross-cutting motion refinement, not a phase gate.
 
 ---
@@ -992,6 +1036,17 @@ Record meaningful implementation changes rather than every minor code edit.
 - `VolumetricLightingRig.jsx`: changed the fade to dip to a `0.3` floor instead of `0`, and hold there through the monitor lock — beam/dust now thin during the same approach window as before, but never fully vanish; a subtle glow and dust presence now persists to the final monitor-filling shot.
 - Scope-checked rather than assumed: no lens-flare/bloom/postprocessing component exists anywhere in `src/` or `package.json` — not added, since that would be a new dependency and render pipeline, a real architectural addition. Dust's confinement to the light-beam volume is a protected Phase 1B decision (§5) — not expanded to cover the full camera trajectory; in practice the beam's floor target already coincides with the monitor's base position, so the existing dust cloud already reaches the monitor without needing to be spatially larger. The dust material's `transparent`/`depthWrite` flags were already exactly as requested.
 - Verified: beam and dust both visibly present (dimmed, not gone) at progress 0.35 and at the final progress-1 monitor-filling shot; full reversibility; frame-timing unchanged (~16.6ms avg, 0 over 33ms); production build succeeds; no React state anywhere in `src/`; mobile renders cleanly.
+
+### 2026-08-31 (First-scroll motion block & force sync)
+
+**Reproduced the reported "camera stays stationary on first scroll" symptom before changing anything, applied the requested lifecycle/sync hardening, and found the real explanation is a slow-start easing/scrub property from earlier rounds, not a binding bug — flagged for a decision rather than silently re-tuned.**
+
+- Reproduction: fresh load, single wheel event, no prior interaction — `scrollY` reached its target via Lenis correctly, but the rendered frame stayed pixel-identical to the hero baseline. Checked the existing init order first: Lenis was already created before the GSAP timeline, and `lenis.on('scroll', ScrollTrigger.update)` was already wired — not the gap.
+- Tested progression across 10/20/30/40/70% scroll fractions rather than one point: motion is real and continuous, not frozen — but a typical single scroll gesture lands around 30% of the page, which maps to only ~4-5% eased camera-path progress (the quintic-in ease from §4I is intentionally near-zero velocity at the very start), compounded by `scrub: 1.5` and Lenis's lag (both also raised in earlier rounds). Small-but-real movement, delayed and subtle enough to read as "not moving."
+- `ScrollTimelineProvider.jsx`: added explicit `scroller: window`; added an immediate `timeline.progress(0.0001); timeline.progress(0)` to wake GSAP's progress cache; added an rAF-deferred `ScrollTrigger.refresh()` after mount to re-measure against final layout.
+- `global.css`: added `overflow-x: hidden; height: auto` on `html, body`; made `.app-shell` `pointer-events: none` so scroll input always reaches Lenis's window listeners.
+- Verified: re-ran the same reproduction after the fix — unchanged (motion still small-but-real, still fully reversible), because the lifecycle/CSS items weren't the actual gap; frame-timing unchanged (~16.6ms avg, 0 over 33ms); production build succeeds; no React state anywhere in `src/`; mobile renders cleanly.
+- Flagged rather than resolved: the perceptual "isn't moving" complaint traces to three rounds of deliberately slowing the *start* of the motion for a softer feel (§4H's quintic-in, §4I's septic-out landing + scrub raised to 1.5). Fixing the feel would mean reversing part of that — asked whether the very start should be made snappier while keeping the soft landing, since that's a real trade-off decision, not something to change unilaterally again.
 
 ---
 
