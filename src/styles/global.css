@@ -17,10 +17,17 @@ body {
 
 #root {
   width: 100%;
-  height: var(--app-height);
 }
 
+/*
+ * The canvas stays pinned over the viewport while the page underneath it
+ * actually scrolls (see .scroll-spacer) — the scroll-driven camera reads
+ * progress from that real scroll position rather than the canvas itself
+ * moving or resizing.
+ */
 .app-shell {
+  position: fixed;
+  inset: 0;
   width: 100%;
   height: 100dvh;
   height: var(--app-height);
@@ -32,4 +39,9 @@ body {
   width: 100% !important;
   height: 100% !important;
   display: block;
+}
+
+.scroll-spacer {
+  position: relative;
+  width: 100%;
 }

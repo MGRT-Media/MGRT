@@ -1,12 +1,17 @@
 import { Canvas } from '@react-three/fiber'
 import Environment from './Environment.jsx'
 import { lightingParams } from './lighting/volumetricLighting.js'
+import ScrollCameraRig from './timeline/ScrollCameraRig.jsx'
 
 /**
- * Persistent Three.js scene and the architectural shell (Phase 1A,
- * approved) plus the primary volumetric lighting system (Phase 1B). No
- * scroll-driven camera (1C), portfolio content, audio, or post-processing
- * belong here yet.
+ * Persistent Three.js scene: the architectural shell (Phase 1A, approved),
+ * the primary volumetric lighting system (Phase 1B, approved), and the
+ * scroll-driven camera (Phase 1C). No Phase 1D cinema-camera/monitor
+ * meshes, portfolio content, audio, or post-processing belong here yet.
+ *
+ * The `camera` prop below only seeds the initial mount state — it matches
+ * `cameraPath.js`'s progress-0 keyframe exactly so there is no visible
+ * jump once `ScrollCameraRig` takes over on the first frame.
  */
 export default function CinematicExperience() {
   return (
@@ -24,6 +29,7 @@ export default function CinematicExperience() {
     >
       <color attach="background" args={['#0d0d0d']} />
       <fogExp2 attach="fog" args={[lightingParams.fog.color, lightingParams.fog.density]} />
+      <ScrollCameraRig />
       <Environment />
     </Canvas>
   )

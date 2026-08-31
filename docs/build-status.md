@@ -40,9 +40,9 @@ For a new project, the Current Phase may be Phase 1A even when no phase has yet 
 
 **Project:** MGRT Media
 **Status:** In active development
-**Current Phase:** Phase 1B — Atmosphere & Light
-**Phase Status:** In progress
-**Current Objective:** Introduce the primary cinematic volumetric light into the approved Phase 1A architectural shell.
+**Current Phase:** Phase 1C — Camera & Scroll
+**Phase Status:** Technically complete, pending human approval
+**Current Objective:** Establish the scroll-driven cinematic camera timeline through the approved Phase 1A/1B environment.
 
 ### Current approval state
 
@@ -51,7 +51,10 @@ PHASE 1A — Environment Shell
 STATUS: APPROVED (2026-08-31, human review)
 
 PHASE 1B — Atmosphere & Light
-STATUS: IN PROGRESS
+STATUS: APPROVED (2026-08-31, human review)
+
+PHASE 1C — Camera & Scroll
+STATUS: TECHNICALLY COMPLETE
 APPROVAL: NOT YET GRANTED
 ```
 
@@ -64,8 +67,8 @@ Claude must work only within the currently approved scope unless explicitly inst
 ```text
 PHASE 1
 ├── 1A — Environment Shell              APPROVED
-├── 1B — Atmosphere & Light             IN PROGRESS
-├── 1C — Camera & Scroll                NOT STARTED
+├── 1B — Atmosphere & Light             APPROVED
+├── 1C — Camera & Scroll                TECHNICALLY COMPLETE
 └── 1D — Digital / Monitor Foundation   NOT STARTED
 
 PHASE 2
@@ -105,49 +108,39 @@ Use the following status values consistently:
 
 ---
 
-## 4. Phase 1B — Atmosphere & Light
+## 4. Phase 1C — Camera & Scroll
 
-**Status:** IN PROGRESS
+**Status:** TECHNICALLY COMPLETE
 **Approval:** NOT YET GRANTED
 
 ### Objective
-Establish the opening visual language: primary directional/volumetric light, architectural shadows, initial atmospheric depth, dust within illuminated areas, opening darkness, and the light reveal, per `build-workflow.md` §8. The light must feel physically motivated.
+Establish the cinematic camera system and scroll-controlled timeline: continuous camera movement, scroll-to-progress mapping, reversible progression, camera smoothing, camera orientation, timeline state, and the initial Film approach, per `build-workflow.md` §9.
 
 ### In scope
-The primary cinematic light and its immediate physical effects on the approved Phase 1A shell: light source, visible volumetric shaft, light falloff/softness, floor/architecture interaction (shadows, light pool), and restrained dust within the illuminated volume.
+A single master GSAP/ScrollTrigger timeline mapping normalized scroll (0.0–1.0) to a continuous, reversible camera path through the approved Phase 1A/1B environment, ending near (not inside) the Phase 1B light beam's floor target as a provisional "central anchor" approach shot.
 
 ### Out of scope
-Scroll-driven or time-based lighting changes (Phase 1C), camera choreography, Film/Digital/Campaign content, new architecture materials, post-processing, audio.
+Phase 1D cinema-camera/monitor meshes, portfolio media, video reels, UI text layers, audio, Phase 2 content, section-snapping or auto-scroll behavior.
 
 ### Review criteria
-Light direction, contrast, architectural readability, dust subtlety, volumetric quality, atmospheric depth, and overall cinematic tone (per `build-workflow.md` §8).
+Camera should feel smooth → physical → responsive → deliberate, not sticky → delayed → mechanical → jittery (per `build-workflow.md` §9).
 
 ### Current implementation notes
 
-- `src/experience/lighting/volumetricLighting.js` — framework-agnostic controller (`createVolumetricLighting()`) exposing `init()` / `update(time)` / `dispose()` and an exported `lightingParams` data structure (color, intensity, position, target, angle, penumbra, decay, distance, shadow, ambient, fog, volumetric, dust) for Phase 1C to bind to later. Builds:
-  - A `THREE.SpotLight` (the primary light, shadow-casting, warm ~`#fff1dc`, intensity 55, positioned high at `[3.4, 8, 2.2]` aimed at `[0.6, 0, -3.5]`, 0.32 rad angle, **0.92 penumbra**, **2048×2048 shadow map, `shadow.radius: 6`** for a smooth, organic floor-pool/shadow edge with no visible polygonal artifacting).
-  - The visible shaft is now **two nested additive-blended `ShaderMaterial` cones** — a narrow brighter "core" (`coreScale: 0.42`, opacity 0.12) inside a wider softer "halo" (opacity 0.055) — plus a **fresnel (view-angle) term** in the fragment shader that boosts density at grazing/silhouette angles. The overlapping shells plus the angle-dependent density read as a beam with real physical volume and depth rather than a flat translucent surface, while remaining a plain mesh/shader technique — no raymarching, no depth-texture pass, no new dependency.
-  - A soft radial floor light-pool (analytic shader, no texture).
-  - A desaturated-grey `AmbientLight`, **raised across three review passes: color `#9a9aa2`→`#a6a6b0`→`#adadb8`, intensity 0.85→1.1→1.7→2.3** — the back wall, side walls, and column silhouettes are now clearly readable in the shadowed areas rather than reading as pure black.
-  - A small static `THREE.Points` dust field confined to the shaft volume, **raised from 140 to 170 points / 0.35 to 0.4 opacity** so it reads more clearly within the now-larger, doubled beam volume — still static (no per-frame motion), still restrained per `creative-reference.md` §10.
-- `src/experience/lighting/VolumetricLightingRig.jsx` — thin R3F adapter: instantiates the controller once, calls `init()` on mount and `dispose()` on unmount, adds `controller.group` via `<primitive dispose={null}>` (disposal is handled entirely by `controller.dispose()`; R3F's own auto-dispose traversal isn't a fit for imperatively-nested lights/groups). Deliberately does **not** call `update(time)` from a `useFrame` loop — Phase 1B lighting is static by requirement, so no per-frame work happens yet; Phase 1C will wire `update(time)` to the shared timeline.
-- `src/experience/Environment.jsx` — removed the Phase 1A placeholder hemisphere/ambient "visibility aid" light (as already flagged as provisional in the Phase 1A record) and mounted `<VolumetricLightingRig />` instead. Added `receiveShadow`/`castShadow` flags to the floor, walls, and columns so the architecture participates in the new shadow-casting light. **Floor geometry given 32×64 tessellation** (for smooth lighting/shadow reception, per review feedback — though note MeshStandardMaterial computes lighting per-fragment, so this is a defensive/compliance change more than a visible fix on its own). No geometry position, proportion, or material color was changed.
-- `src/experience/CinematicExperience.jsx` — added the `shadows` prop to the R3F `Canvas` to enable the renderer's shadow map; added `<fogExp2 attach="fog" args={[lightingParams.fog.color, lightingParams.fog.density]} />` for atmospheric distance separation between the foreground columns, the beam, and the back wall — applies automatically to the standard materials (floor/walls/columns/dust) via three.js's built-in fog support; the custom shaft/floor-pool shaders are intentionally not fogged (they're additive light, not physical surfaces — fogging them would dim the beam itself, which isn't the intent). Fog **color/density tuned across two review passes: `#08080a`→`#242428`→`#2c2c30`, density 0.05→0.032→0.028**. No other Canvas/camera change.
-- **Material tone — three-tier surface hierarchy (added this pass):** per explicit review feedback, `Environment.jsx` now defines a `SURFACE_TONE` constant and applies it consistently: columns (lightest, `#8c8c8c`) → walls (mid, back `#5e5e5e` / sides `#565656`) → floor (darkest, `#484848`). This supersedes the "evaluated, not changed" decision from the prior refinement pass — that earlier call was correct for the ambient/fog levels active at the time, but this pass's brief explicitly asked for a deliberate three-tier material hierarchy regardless. The floor's tone was tuned empirically (not just eyeballed): a pixel-level check found the initial darkest-tier candidate (`#303030`) rendered at RGB≈(7,7,8) in the near-camera foreground — effectively pitch black despite non-zero ambient — so the floor was lightened in two steps (`#303030`→`#404040`→`#484848`, verified via direct pixel sampling) until the near-camera floor read as a clearly legible dark grey (RGB≈19,19,22) rather than crushed black, while remaining visibly the darkest of the three tiers.
+- `src/experience/timeline/cameraPath.js` — a pure, stateless function `sampleCameraPath(progress)` that interpolates camera position and lookAt target across 4 keyframes (`t: 0, 0.35, 0.7, 1.0`) with a per-segment `easeInOutCubic`. Deterministic given `progress` alone — scrolling back to any value reproduces the exact same camera state, which is what makes the path trivially reversible. Keyframe `t: 0` matches the approved Phase 1A static hero framing exactly (`[0, 1.6, 9]`, looking level down −Z) so there is no jump at the top of the page. The path moves forward between the columns and settles facing the Phase 1B beam's floor target, staying just outside the beam's ~3.4-unit-radius dust volume (an approach shot, not a fly-through — an earlier attempt that ended inside that volume produced visible clipping/oversized-sprite artifacts against the dust and floor-pool geometry, caught and fixed during verification, not shipped).
+- `src/experience/timeline/ScrollTimelineProvider.jsx` — owns the single master `gsap.timeline({ scrollTrigger: {...} })` (registers the `ScrollTrigger` plugin) and exports `scrollProgress`, a plain mutable object (`{ value: 0 }`) — **not React state**. `ScrollTrigger`'s `scrub: 0.6` ties `scrollProgress.value` bidirectionally and smoothly to real scroll position: fully reversible, no section-snapping, no auto-scroll. Also renders `<ScrollSpacer>`, the DOM element that gives the document real scrollable height (`calc(var(--app-height) * 3)` — a provisional 3-viewport scroll length for this phase's proof of mechanism, not final act pacing, expressed via the cached viewport height rather than raw `vh` so it doesn't shift when mobile browser chrome resizes).
+- `src/experience/timeline/ScrollCameraRig.jsx` — inside the R3F `Canvas`, a `useFrame` callback that reads `scrollProgress.value`, samples `cameraPath.js`, and directly mutates `camera.position.set(...)` / `camera.lookAt(...)` every frame. No `useState`/`setState` anywhere in the scroll or camera path (verified by grep), per `technical-architecture.md` §7's explicit rule against dispatching React state from per-frame or scroll callbacks.
+- `src/App.jsx` / `src/styles/global.css` — restructured so the canvas stays fixed/pinned over the viewport (`.app-shell { position: fixed; inset: 0; ... }`) while `<ScrollSpacer>` (a plain block-level sibling) gives the actual document real scrollable height. `#root` no longer constrains height (previously `height: var(--app-height)`, which would have clipped the spacer and prevented scrolling). Reuses the existing Phase 1A `useViewportHeight` hook unchanged — mobile address-bar resize was already handled there (cached height, only re-reads on real width change) and now also protects the scroll-spacer's height from jittering.
+- `src/experience/CinematicExperience.jsx` — mounts `<ScrollCameraRig />` inside the `Canvas`; the `camera` prop's initial position still seeds the mount state and matches keyframe `t: 0` exactly.
+- Added `gsap` as a dependency (already the recommended stack in `technical-architecture.md` §3 for scroll orchestration — not a new/unlisted dependency).
 
 ### Known issues
-
-| Issue | Severity | Notes |
-|---|---|---|
-| ACES Filmic tone mapping (the R3F/three.js default) crushes low-radiance surfaces to near-literal black in 8-bit output | Low (resolved via tuning, documented for Phase 1C) | Discovered during tuning: a plausible-looking dark ambient color/intensity combination rendered the entire room pure black outside the beam, even though the light was genuinely present and correctly attached to the scene. Root-caused via isolated testing (bypassing the custom module with a plain declarative `<ambientLight>`) rather than guessing. Resolved by using a desaturated *light* grey ambient color at a moderate-to-higher intensity (progressively 0.85→1.1→1.7→2.3 across review passes) rather than a near-black color — same "dark room" result, but the underlying radiance stays above the tone-mapping's black-crush threshold. The same effect recurred with the floor's own base material color during the three-tier tonality pass: `#303030` measured at RGB≈(7,7,8) in the near-camera foreground despite non-zero ambient, and was lightened to `#484848` (verified by direct pixel sampling, not just eyeballing) to read as a legible dark grey. Relevant for Phase 1C/1B follow-on tuning: prefer lowering intensity or raising base albedo over pushing colors toward near-black when trying to dim something — verify low-light regions with an actual pixel sample when in doubt, not just a screenshot glance. |
-| R3F's default `<primitive>` auto-dispose traversal threw `Cannot read properties of undefined (reading 'dispose')` on unmount once the shaft became a nested `Group` of two meshes | Low (resolved) | R3F tries to auto-dispose objects passed to `<primitive>` on unmount; this traversal isn't built for a hand-assembled tree of imperatively-created lights/groups/meshes and choked once the shaft mesh became a `Group`. Fixed by passing `dispose={null}` on the `<primitive>` in `VolumetricLightingRig.jsx` so disposal is handled solely by `controller.dispose()`, which already explicitly disposes every geometry/material it owns. |
-
-See also §6 for the two known issues carried over from Phase 1A (bundle size, dev-only esbuild advisory).
+*None new.* See §6 for the carried-over Phase 1A/1B issues (bundle size, dev-only esbuild advisory — bundle size grew further with GSAP, still deferred to Phase 5).
 
 ### Required next step
-Phase 1B is implemented and awaiting human visual review and explicit approval before Phase 1C begins.
+Phase 1C is technically complete and awaiting human visual review and explicit approval before Phase 1D begins.
 
-Do not begin Phase 1C until Phase 1B is explicitly approved.
+Do not begin Phase 1D until Phase 1C is explicitly approved.
 
 ---
 
@@ -160,10 +153,14 @@ This section records visual decisions that have already received human approval 
 **Phase 1A — Environment Shell (approved 2026-08-31):**
 - Room dimensions and architectural proportions (14×32 floor, 9 unit wall height).
 - Column geometry, proportions (plinth/tapered shaft/capital LatheGeometry profile), count (8, 4 per side), and spacing.
-- Static initial camera position `[0, 1.6, 9]`, `fov: 45`, and the resulting negative space / composition.
+- Initial (progress-0) camera framing `[0, 1.6, 9]`, `fov: 45`, looking level down −Z, and the resulting negative space / composition.
 - Overall room layout (floor, back wall, two side walls, no ceiling).
 
-These are now protected foundations. Phase 1B must not alter them; see §4 of `build-workflow.md`'s Phase 1B objective for what may change (lighting/atmosphere only).
+**Phase 1B — Atmosphere & Light (approved 2026-08-31):**
+- The primary light system's character: warm SpotLight-driven volumetric shaft, floor light-pool, shadow-casting architecture, dust confined to the beam, and the ambient/fog/three-tier material tonality (columns lightest → walls mid → floor darkest) reached across three review passes.
+- Exact final parameter values live in `lightingParams` (`src/experience/lighting/volumetricLighting.js`) and `SURFACE_TONE` (`src/experience/Environment.jsx`).
+
+These are now protected foundations. Later phases must not alter them without identifying the conflict first — with one already-anticipated exception: Phase 1A's "static initial camera position" was always scoped as the **opening (progress-0) framing only** (`build-status.md` §4's Phase 1A record explicitly listed "full camera choreography" as out of scope, reserved for Phase 1C). Phase 1C making the camera scroll-driven for progress > 0 is that anticipated evolution, not a violation — the progress-0 framing itself is unchanged and still matches the approved composition exactly.
 
 ### Protected decisions
 
@@ -179,7 +176,7 @@ Record known technical, visual, browser, performance, or content issues here.
 
 | Issue | Phase Found | Severity | Current Action | Target Phase |
 |---|---|---|---|---|
-| Production bundle exceeds Vite's 500kB chunk-size warning (~960kB / ~265kB gzip) | 1A | Low | Documented only; no code-splitting attempted | Phase 5 (Performance) |
+| Production bundle exceeds Vite's 500kB chunk-size warning (~1082kB / ~314kB gzip as of Phase 1C, adding GSAP) | 1A | Low | Documented only; no code-splitting attempted | Phase 5 (Performance) |
 | `npm audit` moderate advisory in `esbuild`/Vite dev server (GHSA-67mh-4wv8-2f99) | 1A | Low | Documented only; fix requires breaking Vite v5→v8 upgrade | Deferred — revisit when a Vite major upgrade is otherwise warranted |
 
 ### Issue rules
@@ -236,13 +233,13 @@ Do not overwrite or discard an approved state without a recoverable Git history.
 
 ### Current phase testing
 
-**Phase:** 1B (including all three post-review refinement passes)
-**Functional testing:** COMPLETE — `npm run build` succeeds (Vite production build, 58 modules, no errors, after every refinement pass); dev server starts cleanly with no console errors from the application.
-**Visual testing:** COMPLETE (via the in-app Chromium browser pane) — the double-cone volumetric shaft with fresnel shading, softened floor light-pool, raised ambient fill, fog-assisted depth separation, and the three-tier surface tonality (columns lightest → walls mid → floor darkest) all render as intended and remain cinematic without washing out; verified no z-fighting, banding, or flicker; re-verified shadow-casting softness by temporarily aiming the beam at a column, then reverted to the approved baseline aim; verified the near-camera floor is a legible dark grey rather than crushed black via direct pixel sampling (not just visual inspection) — RGB≈(19,19,22) at the final floor tone, up from RGB≈(7,7,8) at the first candidate tone.
+**Phase:** 1C
+**Functional testing:** COMPLETE — `npm run build` succeeds (Vite production build, 66 modules, no errors); dev server starts cleanly with no console errors from the application, including after repeated scrolling and simulated resize events.
+**Visual testing:** COMPLETE (via the in-app Chromium browser pane) — verified camera framing at progress 0% (matches the approved Phase 1A/1B baseline exactly), 50%, and 100%; verified full reversibility (scroll to 100% then back to 0% reproduces the exact starting frame, as expected from `sampleCameraPath` being a pure function of progress); caught and fixed a clipping artifact from an earlier camera-path draft that ended inside the light beam's dust volume before marking the phase complete.
 **Chrome testing:** COMPLETE — verified in the Chromium-based browser pane (desktop viewport).
-**Safari testing:** NOT YET COMPLETE — no macOS/iOS Safari available in this environment; carried over from Phase 1A as an open gap, not silently skipped.
-**Mobile testing:** PARTIAL — verified via emulated 375×812 mobile viewport after every refinement pass: canvas/lighting renders correctly, no console errors, no context loss. Real-device touch/scroll and address-bar show/hide behavior not testable in this environment.
-**120Hz testing:** NOT APPLICABLE YET — Phase 1B lighting is static (no per-frame work runs; `update(time)` is defined but never called), so there is nothing frame-rate-dependent to test. Relevant starting in Phase 1C.
+**Safari testing:** NOT YET COMPLETE — no macOS/iOS Safari available in this environment; carried over from Phase 1A/1B as an open gap, not silently skipped. Scroll/GSAP behavior in Safari specifically has not been verified — flagging per `build-workflow.md` §9's explicit requirement to test Safari during the camera/scroll phase, not defer it to final polish.
+**Mobile testing:** PARTIAL — verified via emulated 375×812 mobile viewport: renders correctly, no console errors. Directly verified (via a simulated `resize` event with `innerHeight` changed and `innerWidth` held constant) that `--app-height` — and therefore canvas and scroll-spacer sizing — does not change on a height-only resize, which is the mechanism that prevents mobile address-bar show/hide from snapping the canvas or camera mid-scroll. Real-device touch/scroll momentum behavior not testable in this environment.
+**120Hz testing:** NOT DIRECTLY TESTABLE in this environment (no real 120Hz display). Frame-timing was measured during a continuous 2-second programmatic scroll: 156 frames, ~16.65ms average frame time (~60fps), 18.70ms max, 0 frames exceeding 33ms — no dropped-frame stutter observed at the display refresh rate available here. The camera path itself is refresh-rate-independent (driven by `scrollProgress.value` each frame via `useFrame`, not a fixed-step timer), so it should scale to higher-refresh displays, but this has not been observed directly on hardware.
 
 Testing status should be updated as the phase progresses.
 
@@ -260,11 +257,11 @@ Each completed phase should receive a concise record.
 
 **Implementation:** Complete
 **Technical completion:** Complete (2026-08-31)
-**Human approval:** Pending
+**Human approval:** Approved (2026-08-31, human review in chat)
 **Major changes:** Scaffolded Vite + React + React Three Fiber + Drei project from scratch; implemented the persistent architectural shell (floor, back wall, two side walls, 8 structural columns) and static initial camera; added viewport-height pinning per `technical-architecture.md` §16.
 **Testing performed:** Production build verification, dev-server console check, visual composition review (desktop), emulated mobile-viewport resize/resilience check. See §9 for full detail and gaps (Safari, real-device mobile, 120Hz not yet testable).
 **Known issues:** See §4 and §6 — bundle size and a dev-only `esbuild` advisory, both low severity and deferred to later phases.
-**Approved visual decisions:** None yet — pending human review of this phase.
+**Approved visual decisions:** See §5 — room dimensions, architectural proportions, column geometry/spacing, initial camera framing, overall layout.
 **Git checkpoint:** `main` branch; baseline docs commit `960243b`, Phase 1A commit `eea4e73`, column refinement `8f6784d`.
 **Next approved phase:** Approved 2026-08-31 (human review in chat) — Phase 1B (Atmosphere & Light) began.
 
@@ -272,13 +269,25 @@ Each completed phase should receive a concise record.
 
 **Implementation:** Complete
 **Technical completion:** Complete (2026-08-31)
-**Human approval:** Pending
+**Human approval:** Approved (2026-08-31, human review in chat)
 **Major changes:** Added `src/experience/lighting/volumetricLighting.js` (framework-agnostic controller with `init()`/`update(time)`/`dispose()` and an exported `lightingParams` data structure) and `src/experience/lighting/VolumetricLightingRig.jsx` (R3F adapter); replaced the Phase 1A placeholder hemisphere/ambient light in `Environment.jsx` with the real system; added shadow flags to the architecture and enabled `shadows` on the Canvas. **Refined three times (same session, human visual feedback):** (1) raised shadow map to 2048² with `shadow.radius` blur and higher penumbra for a smooth floor-pool edge; rebuilt the shaft as two nested cones with a fresnel view-angle term for true volumetric depth; raised ambient and added `FogExp2`; fixed an R3F disposal error surfaced by the new nested shaft structure. (2) Background walls still read as lost in black — raised ambient further (1.1→1.7) and lifted/thinned the fog (`#08080a`→`#242428`, density 0.05→0.032). (3) Raised ambient again (1.7→2.3, color →`#adadb8`), thinned fog slightly further (density→0.028), and introduced an explicit three-tier surface-tonality system (`SURFACE_TONE` in `Environment.jsx`): columns lightest (`#8c8c8c`) → walls mid (`#5e5e5e`/`#565656`) → floor darkest (`#484848`, tuned via direct pixel sampling after an initial darker candidate crushed to near-black); nudged the volumetric shaft's opacity up slightly (0.055→0.075 halo, 0.12→0.16 core) so it stays cinematically prominent against the now-lighter room.
 **Testing performed:** See §9. Production build, dev-server console check, visual verification, shadow-casting mechanics check, mobile-viewport resilience check, and direct pixel-level brightness sampling — each repeated after every refinement pass.
 **Known issues:** See §4 and §6 — an ACES tone-mapping tuning gotcha (recurred with material color, resolved via pixel sampling) and an R3F disposal fix (both resolved, documented for future work), plus the two carried-over Phase 1A issues (bundle size, dev-only esbuild advisory).
-**Approved visual decisions:** None yet — pending human review of this phase.
+**Approved visual decisions:** See §5 — the full Phase 1B lighting/material system as shipped.
 **Git checkpoint:** `main` branch; initial commit `9d7e5b2`, refinements `2da89c8`, `d36f88b`, `c574d5e`.
-**Next approved phase:** Pending human approval of Phase 1B before Phase 1C (Camera & Scroll) may begin.
+**Next approved phase:** Approved 2026-08-31 (human review in chat) — Phase 1C (Camera & Scroll) began.
+
+### Phase 1C
+
+**Implementation:** Complete
+**Technical completion:** Complete (2026-08-31)
+**Human approval:** Pending
+**Major changes:** Added `gsap` dependency. Added `src/experience/timeline/cameraPath.js` (pure keyframe/easing camera-path function), `src/experience/timeline/ScrollTimelineProvider.jsx` (master GSAP/ScrollTrigger timeline + scroll spacer, exporting a plain mutable `scrollProgress` object — not React state), and `src/experience/timeline/ScrollCameraRig.jsx` (a `useFrame` callback that directly mutates `camera.position`/`camera.lookAt` every frame). Restructured `App.jsx`/`global.css` so the canvas is pinned (`position: fixed`) while a real scrollable spacer drives native page scroll. No Phase 1A/1B geometry, lighting, or material values were changed.
+**Testing performed:** Production build, dev-server console check, visual verification at multiple scroll positions (0%, 50%, 100%), reversibility check (scroll to 100% then back to 0%, confirmed pixel-identical to the approved Phase 1B baseline), frame-timing measurement during continuous scroll (~60fps average, 0 frames over 33ms — see §9), grep-verified no `useState`/`setState` in the scroll/camera path, mobile-viewport resilience check, and a direct simulated-resize test confirming `--app-height` (and therefore canvas/spacer sizing) does not change when only `window.innerHeight` changes (mobile address-bar collapse/expand).
+**Known issues:** See §6 — bundle size grew further with GSAP (still low severity, deferred to Phase 5); no new issues introduced. One in-flight issue was caught and fixed during verification, not shipped: an earlier camera-path draft ended inside the Phase 1B dust/beam volume and produced visible clipping artifacts — the path was revised to stay outside that volume before this phase was marked complete.
+**Approved visual decisions:** None yet — pending human review of this phase.
+**Git checkpoint:** `main` branch; see §8 for the exact commit once recorded.
+**Next approved phase:** Pending human approval of Phase 1C before Phase 1D (Digital / Monitor Foundation) may begin.
 
 ---
 
@@ -362,6 +371,19 @@ Record meaningful implementation changes rather than every minor code edit.
 - Nudged the volumetric shaft opacity up slightly (halo 0.055→0.075, core 0.12→0.16) to confirm the beam and floor light-pool stay cinematically prominent against the brighter room rather than washing out — verified visually, no washout observed.
 - Verified: production build succeeds, no console errors (desktop + mobile viewport), no context loss, three-tier hierarchy clearly visible and matches lightest→darkest ordering (columns > walls > floor) both visually and via pixel sampling.
 - Phase 1B remains technically complete and awaiting human visual review and approval. Phase 1C has not been started.
+
+### 2026-08-31 (Phase 1C)
+
+**Phase 1B approved (human review in chat); Phase 1C — Camera & Scroll implemented and technically complete.**
+
+- Recorded Phase 1B approval: the full lighting/material system (§5) is now a protected foundation.
+- Added `gsap` as a dependency (the recommended stack for scroll orchestration per `technical-architecture.md` §3).
+- Implemented the scroll-driven camera: `src/experience/timeline/cameraPath.js` (pure keyframe interpolation, deterministic and therefore reversible), `src/experience/timeline/ScrollTimelineProvider.jsx` (the single master GSAP/ScrollTrigger timeline, `scrub: 0.6`, exporting a plain mutable `scrollProgress` object), `src/experience/timeline/ScrollCameraRig.jsx` (a `useFrame` callback that mutates `camera.position`/`camera.lookAt` directly — no React state anywhere in this path, grep-verified).
+- Restructured `App.jsx` and `global.css` so the canvas is pinned (`position: fixed`) while a real DOM spacer drives native page scroll; `#root`'s height constraint was removed since it would have clipped the spacer and prevented scrolling.
+- Caught and fixed an issue during verification, before marking the phase complete: an early camera-path draft ended inside the Phase 1B light beam's dust/particle volume, producing a visible clipping artifact against the shaft and an oversized dust sprite up close. Revised the final keyframe to approach the beam without entering it.
+- Verified: production build succeeds; camera framing at progress 0% is pixel-identical to the approved Phase 1B baseline; full reversibility confirmed (100%→0% reproduces the exact starting frame); ~60fps sustained during a continuous scroll stress test (156 frames sampled, 0 over 33ms); no `useState`/`setState` in the scroll/camera path; mobile-viewport rendering resilient; directly confirmed via a simulated height-only resize that `--app-height` (and therefore canvas/spacer sizing) does not change on mobile address-bar collapse/expand.
+- Safari and real-device testing remain open gaps, explicitly flagged rather than deferred silently — `build-workflow.md` §9 calls out Safari testing specifically for this phase.
+- Phase 1C is technically complete and awaiting human visual review and approval. Phase 1D has not been started.
 
 ---
 
