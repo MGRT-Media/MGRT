@@ -792,6 +792,29 @@ Visual review requested — please confirm the new hero framing and the straight
 
 ---
 
+## 4V. Fix — Camera Starting Position Adjustment (Inter-Pillar Frame & Diagonal Glide)
+
+**Status:** TECHNICALLY COMPLETE
+**Approval:** NOT YET GRANTED
+
+Human request: small correction to §4U's new hero start — sit it between the two entrance pillars (slightly behind the left one) so the left pillar crops the frame edge cleanly without blocking the monitor, while keeping the constant-slope, locked-target behavior from §4U.
+
+### What changed
+
+- **`cameraPath.js`** — `START_POSITION` moved from `[-3.6, 1.6, 3.2]` to `[-1.2, 1.6, 4.5]`: shifted right (now sits between the entrance pillars at `[∓2.2, 4]` rather than outside the left one) and slightly back (`z: 4.5` vs. the pillar's `z: 4`, "slightly behind the left pillar" per the request). Position-only change — the interpolation logic itself (`Vector3.lerpVectors`, no easing curve) and the locked constant `lookAt` from §4U are both unchanged, since they already satisfied this round's "constant slope, no drop" and "locked target" requirements; confirmed unchanged by reading the file rather than assumed.
+- **`ScrollCameraRig.jsx`** and **`CinematicExperience.jsx`** — seed ref and initial Canvas camera position both updated to match, avoiding a startup glide-in from stale values (same pattern followed for every start-position change this session).
+
+### Verification
+- Visual check at progress 0%: the left entrance pillar now crops the left edge of the frame cleanly, and the sightline to the monitor is unobstructed — matches the request directly (compare to §4U's initial attempt, which sat outside the pillar and read as a plain diagonal shot rather than "framed between two pillars").
+- Full scroll range (0%, 100%) and reversibility to 0%: clean, unchanged final shot (only the start point moved), exact reproduction on scroll-back.
+- Frame-timing under a simulated wheel-gesture burst: ~16.6ms avg, 0 frames over 33ms.
+- `grep -rn "useState\|setState" src/` — no matches; production build succeeds (72 modules, no errors); mobile viewport renders cleanly with no console errors.
+
+### Required next step
+Visual review requested — please confirm the inter-pillar framing now reads correctly and the diagonal glide still feels steady with no drop.
+
+---
+
 ## 5. Approved Visual Decisions
 
 This section records visual decisions that have already received human approval and therefore should be treated as protected foundations.
@@ -801,7 +824,7 @@ This section records visual decisions that have already received human approval 
 **Phase 1A — Environment Shell (approved 2026-08-31):**
 - Room dimensions and architectural proportions (14×32 floor, 9 unit wall height).
 - Column geometry, proportions (plinth/tapered shaft/capital LatheGeometry profile), and spacing.
-- Initial (progress-0) camera framing `[0, 1.6, 9]`, `fov: 45`, looking level down −Z, and the resulting negative space / composition. **Superseded post-approval (2026-08-31, pending re-review):** the hero position and orientation both changed to `[-3.6, 1.6, 3.2]`, locked onto the monitor from the first frame, per explicit human request — see §4U. Every round before §4U explicitly preserved this original framing byte-for-byte; §4U is the first to change it, flagged as a deliberate supersession rather than a silent drift.
+- Initial (progress-0) camera framing `[0, 1.6, 9]`, `fov: 45`, looking level down −Z, and the resulting negative space / composition. **Superseded post-approval (2026-08-31, pending re-review):** the hero position and orientation both changed, locked onto the monitor from the first frame, per explicit human request — see §4U. §4V then adjusted the exact position to `[-1.2, 1.6, 4.5]` (from §4U's initial `[-3.6, 1.6, 3.2]`) so it sits between the two entrance pillars rather than outside the left one. Every round before §4U explicitly preserved the original framing byte-for-byte; §4U was the first to change it, flagged as a deliberate supersession rather than a silent drift.
 - Overall room layout (floor, back wall, two side walls, no ceiling).
 - **Column layout revised post-approval (2026-08-31, pending re-review):** originally 8 columns in a straight two-sided colonnade (4 per side, `x: ∓6`) plus a two-pillar foreground "entrance" pair at `[∓2.2, 4]`. The straight colonnade was replaced with a 7-pillar semicircular arc (radius 6.5, center `[0, -4]`, 160° span) framing the monitor, per explicit human request — see §4P. The entrance pillars are unchanged. Individual column geometry/profile is untouched, only the side colonnade's *layout* changed. Not yet re-approved as part of the visual record.
 - **Wall layout and material revised post-approval (2026-08-31, pending re-review):** the right side wall's opening evolved from a 3-window band (§4O) to a single structured window (§4P) to its current form — a fractured, organic breach cut as a geometric hole via `ExtrudeGeometry`/`Shape` (§4Q) — and all three walls now use a procedurally generated old-stone PBR material (`stoneWallMaterial.js`, with real block/mortar structure and per-wall-computed texture scale as of §4Q) in place of the previous flat colored `meshStandardMaterial`, per explicit human request each round — the conflict with this approved "no ceiling, plain walls" layout was flagged in §4O's turn and the human chose to proceed as a deliberate revision, a decision carried forward into §4P and §4Q. The existing `wallBack`/`wallSide` tonal distinction is preserved as a color tint on top of the new stone texture. Not yet re-approved as part of the visual record.
@@ -896,6 +919,7 @@ The repository must maintain a recoverable implementation history.
 **Current commit (eliminate camera drop, reshape to 3 stages, technically complete):** `e958d45` — "Fix: eliminate camera drop with single monotonic ease, reshape to 3 stages" (on top of `d1941a5`)
 **Current commit (20° monitor yaw & camera roll/banking, technically complete):** `3f4fcf9` — "Feat: 20-degree monitor yaw and banked camera roll through the arc" (on top of `e958d45`)
 **Current commit (straight-line camera path, left-pillar start, technically complete):** `b33334a` — "Feat: rewrite camera path as a single straight line, remove all roll" (on top of `3f4fcf9`)
+**Current commit (inter-pillar hero start correction, technically complete):** `155ac1a` — "Fix: reposition hero start to sit framed between the entrance pillars" (on top of `b33334a`)
 
 The repository was initialized (`git init -b main`) with the five governing documents relocated into `docs/` as the first commit, giving a clean recovery point before any implementation began. Phase 1A (scaffold, environment shell, column refinement), Phase 1B (volumetric lighting, three review passes), and Phase 1C (scroll-driven camera, motion-physics refinement) were each committed and approved in sequence; Phase 1D (monitor foundation) is committed on top of the approved Phase 1C checkpoint and is recoverable independently of it.
 
@@ -1231,6 +1255,18 @@ Each completed phase should receive a concise record.
 **Known issues:** None identified.
 **Approved visual decisions:** Superseded, pending re-review — see the further-updated Phase 1A/1C entries in §5 (this is the first round to change the hero framing itself, not just the walls/lighting/mid-path).
 **Git checkpoint:** `main` branch; commit `b33334a`.
+**Next approved phase:** N/A — cross-cutting motion refinement, not a phase gate. Phase 2 remains on hold.
+
+### Camera starting position adjustment (inter-pillar frame & diagonal glide)
+
+**Implementation:** Complete
+**Technical completion:** Complete (2026-08-31)
+**Human approval:** Pending — visual review requested, see below
+**Major changes:** Position-only correction to §4U's hero start — moved from `[-3.6, 1.6, 3.2]` to `[-1.2, 1.6, 4.5]` so the camera sits between the two entrance pillars, cropped by the left one, rather than outside it. Interpolation logic and locked lookAt unchanged. See §4V.
+**Testing performed:** See §4V. Visual check at progress 0%, full scroll range (0/100%) and reversibility, frame-timing, grep for React state, production build, mobile re-check.
+**Known issues:** None identified.
+**Approved visual decisions:** Superseded, pending re-review — see the further-updated Phase 1A entry in §5.
+**Git checkpoint:** `main` branch; commit `155ac1a`.
 **Next approved phase:** N/A — cross-cutting motion refinement, not a phase gate. Phase 2 remains on hold.
 
 ---
@@ -1575,6 +1611,15 @@ Record meaningful implementation changes rather than every minor code edit.
 - `ScrollCameraRig.jsx`: removed the roll/up-tilt mechanism from the previous round entirely (not zeroed). Seed refs updated to match the new start exactly, avoiding a startup glide-in. `CinematicExperience.jsx`'s initial camera position prop updated to match.
 - Verified: full scroll range (0/50/100%) and reversibility clean, hero frame reads as an intentional diagonal shot (not pillar-occluded), no roll/tilt anywhere, frame-timing unchanged (~16.6ms avg, 0 over 33ms), production build succeeds, no React state anywhere in `src/`, mobile renders cleanly.
 - Updated §5's Phase 1A and 1C entries to record the hero-framing and path-mechanism supersession, following the same "superseded, pending re-review" pattern already used for the wall/pillar/lighting changes.
+
+### 2026-08-31 (Camera starting position adjustment — inter-pillar frame & diagonal glide)
+
+**Small position-only correction on top of §4U's straight-line rewrite — moved the hero start so it sits between the two entrance pillars instead of outside the left one.**
+
+- `cameraPath.js`: `START_POSITION` moved from `[-3.6, 1.6, 3.2]` to `[-1.2, 1.6, 4.5]` — shifted right and slightly back, per the request's "framed directly between two pillars... just slightly behind the left pillar." The interpolation logic (linear, no ease) and the locked constant `lookAt` from §4U were already correct for this round's "constant slope, no drop" and "locked target" requirements — confirmed unchanged by reading the file, not just assumed.
+- Seed refs in `ScrollCameraRig.jsx` and the initial camera position in `CinematicExperience.jsx` updated to match, avoiding a startup glide-in.
+- Verified: at progress 0%, the left pillar now crops the frame edge cleanly with the monitor's sightline unobstructed — matches the request directly. Full scroll range (0/100%) and reversibility clean; frame-timing unchanged (~16.6ms avg, 0 over 33ms); production build succeeds; no React state anywhere in `src/`; mobile renders cleanly.
+- Updated §5's Phase 1A entry to record the corrected position value.
 
 ---
 
