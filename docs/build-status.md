@@ -504,6 +504,32 @@ The literal "binding is broken" diagnosis didn't hold up under reproduction — 
 
 ---
 
+## 4L. Fix — Response & Motion Adjustment (Asymmetric Ease: Snappy Start, Soft Landing)
+
+**Status:** TECHNICALLY COMPLETE
+**Approval:** NOT YET GRANTED
+
+Human decision on §4K's flagged question: make the start snappier, keep the soft landing.
+
+### What changed
+
+- **`cameraPath.js`** — replaced the symmetric quintic-in/septic-out global ease with an asymmetric curve:
+  - **Progress 0 → 0.85: linear (1:1).** The camera responds at full velocity from the very first instant of scroll input — no ease-in dead zone at all. This is a more literal "instant response" than a named GSAP ease like `power1.out`/`sine.out` would give (both of those still taper to zero velocity by the end of whatever span they're applied to), and avoids reintroducing a piecewise-segment velocity-zeroing artifact like the one §4H fixed.
+  - **Progress 0.85 → 1: a cubic Hermite segment**, solved so its start slope exactly equals the linear portion's slope (`o'(0) = 1`, matching — no jerk at the handoff) and its end slope is exactly `0` (`o'(1) = 0` — a full, smooth stop right at the monitor-locked shot).
+  - **Known, unavoidable characteristic:** those four boundary conditions (`o(0)=0, o(1)=1, o'(0)=1, o'(1)=0`) can't be satisfied by a monotonically-decreasing-derivative curve — covering the required distance forces a brief speed-up just past the 0.85 junction (peak slope ≈1.33 around progress ≈0.90) before the true deceleration into the stop. Checked numerically (`node -e`) before committing to this shape: fully smooth (C¹-continuous, no discontinuity) and monotonic (no reversal) throughout — just not perfectly concave the whole way. Flagging this honestly rather than presenting it as a flawless "heavy friction decay" from the very start of the landing window.
+- **`ScrollTimelineProvider.jsx`** — `scrub` lowered `1.5 → 1`, per the request's item 3. With the path itself now fully responsive through progress 0.85, the extra half-second of scrub lag from §4I was compounding the dead-zone problem this round exists to fix, not softening anything.
+
+### Verification
+- Re-ran the exact single-scroll-gesture reproduction from §4K (fresh load, one wheel event landing at ~30% scroll): previously showed zero visible camera movement, now shows clear, immediate movement.
+- Full reversibility: progress 100% (clean, squarely-aligned final monitor shot) back to 0% reproduces the exact hero baseline.
+- Frame-timing under a simulated wheel-gesture burst: ~16.6ms avg, 0 frames over 33ms.
+- `grep -rn "useState\|setState" src/` — no matches; production build succeeds (71 modules, no errors); mobile viewport renders with no console errors.
+
+### Required next step
+Visual review requested — please confirm the opening scroll now feels immediately responsive, and that the monitor-lock landing still feels soft (the small speed-up-then-decelerate character described above is a real, minor property of the curve, not a bug — flag it if it reads as noticeable or undesirable in practice).
+
+---
+
 ## 5. Approved Visual Decisions
 
 This section records visual decisions that have already received human approval and therefore should be treated as protected foundations.
@@ -596,6 +622,7 @@ The repository must maintain a recoverable implementation history.
 **Current commit (motion polish & lighting fix, technically complete):** `0952617` — "Fix: softer landing ease and beam fade through monitor approach" (on top of `4c85661`)
 **Current commit (atmospheric polish, technically complete):** `3c2b6b7` — "Fix: keep beam/dust ambient presence through the monitor approach" (on top of `0952617`)
 **Current commit (first-scroll sync hardening, technically complete):** `eca309a` — "Fix: harden Lenis/ScrollTrigger init lifecycle and scroll-input CSS" (on top of `3c2b6b7`)
+**Current commit (asymmetric ease — snappy start, soft landing, technically complete):** `325eac1` — "Fix: asymmetric ease -- linear responsive start, soft Hermite landing" (on top of `eca309a`)
 
 The repository was initialized (`git init -b main`) with the five governing documents relocated into `docs/` as the first commit, giving a clean recovery point before any implementation began. Phase 1A (scaffold, environment shell, column refinement), Phase 1B (volumetric lighting, three review passes), and Phase 1C (scroll-driven camera, motion-physics refinement) were each committed and approved in sequence; Phase 1D (monitor foundation) is committed on top of the approved Phase 1C checkpoint and is recoverable independently of it.
 
@@ -811,6 +838,18 @@ Each completed phase should receive a concise record.
 **Known issues:** The perceptual "camera isn't moving" symptom is not resolved by this commit — it's a property of the current easing/scrub tuning, not a binding bug. Flagged for a human decision: faster initial response vs. keep the current slow launch.
 **Approved visual decisions:** None yet.
 **Git checkpoint:** `main` branch; commit `eca309a`.
+**Next approved phase:** N/A — cross-cutting motion refinement, not a phase gate.
+
+### Response & motion adjustment (asymmetric ease — snappy start, soft landing)
+
+**Implementation:** Complete
+**Technical completion:** Complete (2026-08-31)
+**Human approval:** Pending — visual review requested, see below
+**Major changes:** Replaced the symmetric quintic-in/septic-out global ease with an asymmetric curve — linear (fully responsive) from progress 0 to 0.85, then a slope-matched cubic Hermite decelerating smoothly to a complete stop by progress 1. `scrub` lowered `1.5 → 1`. See §4L.
+**Testing performed:** See §4L. Re-ran §4K's exact reproduction (now shows immediate movement instead of none), full reversibility, frame-timing, grep for React state, production build, mobile re-check.
+**Known issues:** The Hermite landing segment has an unavoidable brief speed-up (peak slope ≈1.33 around progress ≈0.90) before it decelerates — a consequence of matching both the junction slope and the full-stop end condition. Fully smooth and monotonic, not a bug, but flagged in case it reads as noticeable.
+**Approved visual decisions:** None yet.
+**Git checkpoint:** `main` branch; commit `325eac1`.
 **Next approved phase:** N/A — cross-cutting motion refinement, not a phase gate.
 
 ---
@@ -1047,6 +1086,15 @@ Record meaningful implementation changes rather than every minor code edit.
 - `global.css`: added `overflow-x: hidden; height: auto` on `html, body`; made `.app-shell` `pointer-events: none` so scroll input always reaches Lenis's window listeners.
 - Verified: re-ran the same reproduction after the fix — unchanged (motion still small-but-real, still fully reversible), because the lifecycle/CSS items weren't the actual gap; frame-timing unchanged (~16.6ms avg, 0 over 33ms); production build succeeds; no React state anywhere in `src/`; mobile renders cleanly.
 - Flagged rather than resolved: the perceptual "isn't moving" complaint traces to three rounds of deliberately slowing the *start* of the motion for a softer feel (§4H's quintic-in, §4I's septic-out landing + scrub raised to 1.5). Fixing the feel would mean reversing part of that — asked whether the very start should be made snappier while keeping the soft landing, since that's a real trade-off decision, not something to change unilaterally again.
+
+### 2026-08-31 (Response & motion adjustment — asymmetric ease: snappy start, soft landing)
+
+**Human decision on §4K's flagged question: make the start snappier, keep the soft landing. Implemented an asymmetric ease and re-ran the exact reproduction from the previous round to confirm it actually fixes the complaint.**
+
+- `cameraPath.js`: replaced the symmetric quintic-in/septic-out global ease with linear (1:1, fully responsive) from progress 0 to 0.85, handing off into a cubic Hermite segment for 0.85 to 1 solved so its start slope exactly matches the linear portion (`o'(0) = 1`, no jerk at the handoff) and its end slope is exactly 0 (full stop at the monitor lock). Matching the junction slope is what avoids reintroducing the piecewise "hard stop" pattern from §4H — the two pieces meet at identical velocity, not zero.
+- Numerically verified the Hermite segment before committing to it (`node -e`): fully smooth and monotonic, but the four boundary conditions (value 0→1, start slope 1, end slope 0) can only be satisfied with a brief, unavoidable speed-up just past the 0.85 junction (peak slope ≈1.33 around progress ≈0.90) before the true deceleration begins. Documented honestly rather than described as a flawless decel from the very start of the landing window.
+- `ScrollTimelineProvider.jsx`: `scrub` lowered `1.5 → 1`, since the extra half-second of lag was compounding the dead-zone this round exists to fix.
+- Verified: re-ran §4K's exact single-scroll-gesture reproduction (fresh load, one wheel event landing at ~30% scroll) — previously showed zero visible movement, now shows clear, immediate movement; full reversibility to the hero baseline; clean landing at progress 100%; frame-timing unchanged (~16.6ms avg, 0 over 33ms); production build succeeds; no React state anywhere in `src/`; mobile renders cleanly.
 
 ---
 
