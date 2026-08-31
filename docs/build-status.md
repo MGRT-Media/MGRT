@@ -125,7 +125,7 @@ Before Phase 1A can be approved, verify: the physical environment feels intentio
 Project scaffolded from scratch (Vite + React + React Three Fiber + Drei; see `package.json`). Application structure follows `technical-architecture.md` §4's cinematic/explore separation — only the cinematic layer exists so far.
 
 - `src/experience/CinematicExperience.jsx` — mounts the persistent R3F `Canvas`, static camera (`position: [0, 1.6, 9]`, `fov: 45`), capped `dpr={[1,2]}`, no post-processing.
-- `src/experience/Environment.jsx` — the architectural shell: a floor (14×32), back wall, two side walls, and 8 structural columns (4 per side) establishing an enclosed hall with perspective depth. A flat hemisphere + ambient light is used purely as a **visibility aid** for reviewing scale and composition — it is explicitly not the Phase 1B lighting design (no directional light, shadows, or atmosphere).
+- `src/experience/Environment.jsx` — the architectural shell: a floor (14×32), back wall, two side walls, and 8 structural columns (4 per side) establishing an enclosed hall with perspective depth. Columns use a single shared `LatheGeometry` (plinth → subtly tapered shaft → capital, 16 radial segments, no fluting or ornamentation) revolved from a restrained profile, rather than the original box placeholders — same positions, spacing, and overall height as before. A flat hemisphere + ambient light is used purely as a **visibility aid** for reviewing scale and composition — it is explicitly not the Phase 1B lighting design (no directional light, shadows, or atmosphere).
 - `src/hooks/useViewportHeight.js` — pins `--app-height` to `window.innerHeight` at mount, and only re-reads it when `window.innerWidth` changes (real resize/orientation change) rather than on every height fluctuation, so mobile Safari/Chrome address-bar collapse/expand during scroll won't trigger a canvas/camera resize. `global.css` uses `100dvh` with this cached value as a fallback, per `technical-architecture.md` §16.
 - No scroll system, camera choreography, portfolio content, audio, or post-processing has been added — out of scope for this phase.
 
@@ -286,6 +286,14 @@ Record meaningful implementation changes rather than every minor code edit.
 - Verified production build, dev-server console cleanliness, and visual composition; verified canvas/camera resilience across a desktop→mobile-emulated→desktop viewport cycle.
 - Documented two low-severity known issues (bundle size, dev-only esbuild advisory) and two testing gaps (Safari, real-device mobile/120Hz) rather than resolving or silently skipping them.
 - Phase 1A is technically complete and awaiting human visual review and approval. Phase 1B has not been started.
+
+### 2026-08-31 (refinement)
+
+**Phase 1A column geometry refined — still within Phase 1A, still pending approval.**
+
+- Replaced the placeholder box columns in `src/experience/Environment.jsx` with a single shared, restrained `LatheGeometry` profile (plinth, subtly tapered shaft, capital — no fluting or ornamentation), per human review feedback.
+- Column positions, spacing, count, and overall height are unchanged; this is a geometry-only refinement, not a composition change.
+- Verified: dev server renders with no console errors, production build succeeds.
 
 ---
 
