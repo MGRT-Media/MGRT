@@ -40,9 +40,9 @@ For a new project, the Current Phase may be Phase 1A even when no phase has yet 
 
 **Project:** MGRT Media
 **Status:** In active development
-**Current Phase:** Phase 1C — Camera & Scroll
+**Current Phase:** Phase 1D — Digital / Monitor Foundation
 **Phase Status:** Technically complete, pending human approval
-**Current Objective:** Establish the scroll-driven cinematic camera timeline through the approved Phase 1A/1B environment.
+**Current Objective:** Establish the physical monitor anchor, provisional screen surface, and the Phase 1C→1D scroll handshake that aligns the camera with the screen face.
 
 ### Current approval state
 
@@ -54,6 +54,9 @@ PHASE 1B — Atmosphere & Light
 STATUS: APPROVED (2026-08-31, human review)
 
 PHASE 1C — Camera & Scroll
+STATUS: APPROVED (2026-08-31, human review)
+
+PHASE 1D — Digital / Monitor Foundation
 STATUS: TECHNICALLY COMPLETE
 APPROVAL: NOT YET GRANTED
 ```
@@ -68,8 +71,8 @@ Claude must work only within the currently approved scope unless explicitly inst
 PHASE 1
 ├── 1A — Environment Shell              APPROVED
 ├── 1B — Atmosphere & Light             APPROVED
-├── 1C — Camera & Scroll                TECHNICALLY COMPLETE
-└── 1D — Digital / Monitor Foundation   NOT STARTED
+├── 1C — Camera & Scroll                APPROVED
+└── 1D — Digital / Monitor Foundation   TECHNICALLY COMPLETE
 
 PHASE 2
 ├── Film                                NOT STARTED
@@ -108,41 +111,42 @@ Use the following status values consistently:
 
 ---
 
-## 4. Phase 1C — Camera & Scroll
+## 4. Phase 1D — Digital / Monitor Foundation
 
 **Status:** TECHNICALLY COMPLETE
 **Approval:** NOT YET GRANTED
 
+### Scope note — cinema-camera object deferred to Phase 2
+
+The initial Phase 1D authorization prompt asked for both a cinema-camera mesh and a monitor mesh. This conflicted with `build-workflow.md` §10, which explicitly states *"Phase 2 will build the final Film act and integrate the final cinema-camera object"* and scopes Phase 1D's objective to monitor-only work. Flagged to the human rather than silently resolved; the human confirmed monitor-only scope and re-issued the authorization accordingly. **No cinema-camera mesh exists yet — it remains Phase 2 scope**, per the governing document.
+
 ### Objective
-Establish the cinematic camera system and scroll-controlled timeline: continuous camera movement, scroll-to-progress mapping, reversible progression, camera smoothing, camera orientation, timeline state, and the initial Film approach, per `build-workflow.md` §9.
+Establish and prove the technical and cinematic foundation of the Film → Digital transition: monitor geometry, monitor placement, screen surface, provisional screen content treatment, the camera→monitor scroll handshake, spatial relationship between camera and monitor, and continuous lighting relationship, per `build-workflow.md` §10.
 
 ### In scope
-A single master GSAP/ScrollTrigger timeline mapping normalized scroll (0.0–1.0) to a continuous, reversible camera path through the approved Phase 1A/1B environment, ending near (not inside) the Phase 1B light beam's floor target as a provisional "central anchor" approach shot.
+A provisional/simplified physical monitor anchor positioned within the Phase 1B light beam's path; an unlit procedural test-pattern screen shader with a glow read; extending the Phase 1C camera path with a final scroll segment that glides the camera into a shot squarely aligned with the screen face, using the same Lenis+damp motion physics as the rest of the path (no separate/abrupt transition mechanism).
 
 ### Out of scope
-Phase 1D cinema-camera/monitor meshes, portfolio media, video reels, UI text layers, audio, Phase 2 content, section-snapping or auto-scroll behavior.
+The cinema-camera mesh (Phase 2, see scope note above), final portfolio/Digital media, Phase 2 Film/Digital/Campaign content, interactive UI, audio.
 
 ### Review criteria
-Camera should feel smooth → physical → responsive → deliberate, not sticky → delayed → mechanical → jittery (per `build-workflow.md` §9).
+No brightness/exposure/fog/volumetric snap, no camera jump, no monitor pop-in, no scene reset, no animation discontinuity, no screen-content pop-in, no timeline desynchronization, per `build-workflow.md` §10's mandatory verification list.
 
 ### Current implementation notes
 
-- `src/experience/timeline/cameraPath.js` — a pure, stateless function `sampleCameraPath(progress)` that interpolates camera position and lookAt target across 4 keyframes (`t: 0, 0.35, 0.7, 1.0`) with a per-segment `easeInOutCubic`. Deterministic given `progress` alone — scrolling back to any value reproduces the exact same camera state, which is what makes the path trivially reversible. Keyframe `t: 0` matches the approved Phase 1A static hero framing exactly (`[0, 1.6, 9]`, looking level down −Z) so there is no jump at the top of the page. The path moves forward between the columns and settles facing the Phase 1B beam's floor target, staying just outside the beam's ~3.4-unit-radius dust volume (an approach shot, not a fly-through — an earlier attempt that ended inside that volume produced visible clipping/oversized-sprite artifacts against the dust and floor-pool geometry, caught and fixed during verification, not shipped).
-- `src/experience/timeline/ScrollTimelineProvider.jsx` — owns the single master `gsap.timeline({ scrollTrigger: {...} })` (registers the `ScrollTrigger` plugin) and exports `scrollProgress`, a plain mutable object (`{ value: 0 }`) — **not React state**. Also renders `<ScrollSpacer>`, the DOM element that gives the document real scrollable height (`calc(var(--app-height) * 3)` — a provisional 3-viewport scroll length for this phase's proof of mechanism, not final act pacing, expressed via the cached viewport height rather than raw `vh` so it doesn't shift when mobile browser chrome resizes).
-- **Motion physics refinement (this pass):** `src/experience/timeline/smoothScroll.js` (new) wraps [Lenis](https://github.com/darkroomengineering/lenis) — raw wheel/touch input is normalized into smooth, inertial scroll motion (`duration: 1.1`, a custom `easeOutCubic` "glide to rest" curve, `lerp: 0.1`, `smoothWheel: true`, `syncTouch: true` so touch gets the identical physics as desktop wheel) before `ScrollTrigger` ever sees it, following the standard documented Lenis/GSAP integration (`lenis.on('scroll', ScrollTrigger.update)`, driven by `gsap.ticker` with `lagSmoothing(0)`). `ScrollTrigger`'s own `scrub` was reduced `0.6→0.15` accordingly — Lenis now carries the primary "glide to rest" feel, so `scrub` only needs to add a light extra touch of catch-up smoothing rather than double up on it. Lenis's `respectReducedMotion` (on by default) automatically collapses smoothing to a 1:1 lerp for `prefers-reduced-motion` users, which happens to align with `technical-architecture.md` §18 with no extra code. A small CSS rule (`html.lenis { scroll-behavior: auto !important; }`) in `global.css` keeps the browser's own smooth-scroll from fighting Lenis's.
-- `src/experience/timeline/ScrollCameraRig.jsx` — inside the R3F `Canvas`, a `useFrame` callback that reads `scrollProgress.value`, samples `cameraPath.js` for the **target** position/lookAt, then **damps** the camera toward that target every frame via `THREE.MathUtils.damp` (per-axis, on both position and lookAt, `DAMP_LAMBDA: 4`, frame-rate independent using the real `delta`) rather than snapping straight to it — this is what removes the hard-stop feel: the camera keeps easing toward wherever scroll currently points even after input stops, instead of teleporting frame-to-frame. The damped position/lookAt are held in `useRef` `Vector3`s seeded to the `t: 0` keyframe (so there's no startup glide-in from an arbitrary default). Still a direct `camera.position`/`camera.lookAt` mutation inside `useFrame` — no `useState`/`setState` anywhere in the scroll or camera path (verified by grep), per `technical-architecture.md` §7.
-- `src/App.jsx` / `src/styles/global.css` — restructured so the canvas stays fixed/pinned over the viewport (`.app-shell { position: fixed; inset: 0; ... }`) while `<ScrollSpacer>` (a plain block-level sibling) gives the actual document real scrollable height. `#root` no longer constrains height (previously `height: var(--app-height)`, which would have clipped the spacer and prevented scrolling). Reuses the existing Phase 1A `useViewportHeight` hook unchanged — mobile address-bar resize was already handled there (cached height, only re-reads on real width change) and now also protects the scroll-spacer's height from jittering; re-verified this still holds after adding Lenis (see §9).
-- `src/experience/CinematicExperience.jsx` — mounts `<ScrollCameraRig />` inside the `Canvas`; the `camera` prop's initial position still seeds the mount state and matches keyframe `t: 0` exactly.
-- Added `gsap` (already the recommended stack in `technical-architecture.md` §3 for scroll orchestration) and `lenis` (this pass, for input-level inertia — the task explicitly named it as the primary option; `GSAP ScrollSmoother` was the offered alternative but is a paid Club GreenSock plugin not available via a plain `npm install gsap`, and plain damping math alone smooths the camera's *follow* of scroll but can't fix chunky raw wheel-delta input at its source, which is what Lenis addresses) as dependencies.
-- No layout-thrashing DOM reads were added: Lenis/ScrollTrigger/damp all operate on numbers already tracked internally (`scrollY`, `progress`, `delta`) rather than calling `getBoundingClientRect()` or similar per frame; the only DOM read is the spacer's own height calc, once, on mount. No component in the scroll/camera path holds React state, so nothing here re-renders on scroll.
+- `src/experience/digital/Monitor.jsx` — a declarative R3F component (base, neck, body/frame, screen, glass), following the same pattern as `Environment.jsx`. Exports `MONITOR_ANCHOR` (position, screen dimensions, screen center height) as the single source of truth for the monitor's placement — **positioned exactly at `lightingParams.target`** (`[0.6, 0, -3.5]`, imported from `volumetricLighting.js`), so the monitor stands physically within the Phase 1B beam's floor target rather than being placed independently and coincidentally overlapping it. Body/base/neck use a dark brushed-metal `MeshStandardMaterial` (`metalness: 0.7–0.75`, moderate roughness) so they pick up the ambient and volumetric light naturally; a thin `MeshPhysicalMaterial` glass pane (`transmission: 0.85`, low roughness) sits just in front of the screen for a subtle reflective read. `castShadow`/`receiveShadow` enabled so the monitor participates in the existing shadow-casting light like the rest of the architecture.
+- `src/experience/digital/screenTestPatternMaterial.js` — a small unlit `ShaderMaterial`: an 8-bar SMPTE-style color-bar test pattern with a faint scanline modulation and a soft vignette. `toneMapped: false` so the pattern reads as a genuinely glowing/illuminated surface against the dark, tone-mapped room without needing a real light source or post-processing bloom — satisfies "slight emission/glow" without adding actual scene illumination (kept the "one light" narrative thread from `creative-reference.md` intact; the screen looks lit, it doesn't cast light).
+- `src/experience/timeline/cameraPath.js` — extended from 4 to 5 keyframes: the existing hero→approach→anchor path (now at `t: 0, 0.25, 0.5, 0.75`) plus a new `t: 1.0` keyframe computed from `MONITOR_ANCHOR` itself (not hand-tuned numbers) — centered on the screen's X/Y, offset `+2.1` along Z from the screen face for a comfortably framed, squarely-aligned shot. Because it derives from `MONITOR_ANCHOR`, this final shot stays correct automatically if the monitor's position or dimensions ever change. Same deterministic, stateless, reversible `sampleCameraPath(progress)` function as Phase 1C — no separate transition mechanism, so the glide into monitor alignment uses the exact same Lenis-smoothed, `THREE.MathUtils.damp`-eased motion as the rest of the path, with no special-cased jump.
+- `src/experience/CinematicExperience.jsx` — mounts `<Monitor />` as a sibling to `<Environment />` (matching `technical-architecture.md` §5's scene hierarchy, where Digital/Monitor is its own branch, not nested under Environment).
+- No Phase 1A/1B/1C code was changed beyond `cameraPath.js`'s keyframe extension (additive — the first four keyframes and their positions/lookAts are untouched).
 
 ### Known issues
-*None new.* See §6 for the carried-over Phase 1A/1B issues (bundle size, dev-only esbuild advisory — bundle size grew further with GSAP and now Lenis, still deferred to Phase 5).
+*None new.* See §6 for the carried-over Phase 1A/1B/1C issues (bundle size, dev-only esbuild advisory — bundle size effectively unchanged this phase, no new dependency added).
 
 ### Required next step
-Phase 1C is technically complete and awaiting human visual review and explicit approval before Phase 1D begins.
+Phase 1D is technically complete and awaiting human visual review and explicit approval before Phase 2 begins.
 
-Do not begin Phase 1D until Phase 1C is explicitly approved.
+Do not begin Phase 2 until Phase 1D is explicitly approved.
 
 ---
 
@@ -162,7 +166,11 @@ This section records visual decisions that have already received human approval 
 - The primary light system's character: warm SpotLight-driven volumetric shaft, floor light-pool, shadow-casting architecture, dust confined to the beam, and the ambient/fog/three-tier material tonality (columns lightest → walls mid → floor darkest) reached across three review passes.
 - Exact final parameter values live in `lightingParams` (`src/experience/lighting/volumetricLighting.js`) and `SURFACE_TONE` (`src/experience/Environment.jsx`).
 
-These are now protected foundations. Later phases must not alter them without identifying the conflict first — with one already-anticipated exception: Phase 1A's "static initial camera position" was always scoped as the **opening (progress-0) framing only** (`build-status.md` §4's Phase 1A record explicitly listed "full camera choreography" as out of scope, reserved for Phase 1C). Phase 1C making the camera scroll-driven for progress > 0 is that anticipated evolution, not a violation — the progress-0 framing itself is unchanged and still matches the approved composition exactly.
+**Phase 1C — Camera & Scroll (approved 2026-08-31):**
+- The scroll-driven camera mechanism: a single master GSAP/ScrollTrigger timeline, Lenis-smoothed input, `THREE.MathUtils.damp`-eased camera follow, and the deterministic/reversible keyframe-based path through the environment.
+- The hero→approach keyframes (`t: 0, 0.25, 0.5, 0.75` as of Phase 1D — originally `0, 0.35, 0.7, 1.0` before Phase 1D's extension) and their exact position/lookAt values, in `src/experience/timeline/cameraPath.js`.
+
+These are now protected foundations. Later phases must not alter them without identifying the conflict first — with two already-anticipated exceptions: (1) Phase 1A's "static initial camera position" was always scoped as the **opening (progress-0) framing only** (`build-status.md` §4's Phase 1A record explicitly listed "full camera choreography" as out of scope, reserved for Phase 1C) — Phase 1C making the camera scroll-driven for progress > 0 was that anticipated evolution, not a violation. (2) Phase 1C's approved path was always understood to extend rather than freeze at its final keyframe once later phases introduced new physical anchors to travel toward — build-workflow.md's own Phase 1C entry describes the approach as "the initial Film approach," implying more path would follow. Phase 1D's keyframe extension is additive: the original four keyframes' *positions/lookAts* (the actual approved waypoint compositions) are byte-for-byte unchanged; their `t` values were rescaled from `0, 0.35, 0.7, 1.0` to `0, 0.25, 0.5, 0.75` to make room for the new final segment, which does shift exactly which scroll percentage shows which waypoint. Re-verified visually after the change: progress 0 still reproduces the exact approved hero frame, and the same waypoint compositions still appear in the same order with smooth continuity — just at different scroll percentages than before.
 
 ### Protected decisions
 
@@ -236,13 +244,15 @@ Do not overwrite or discard an approved state without a recoverable Git history.
 
 ### Current phase testing
 
-**Phase:** 1C (including the motion-physics/smoothing refinement pass)
-**Functional testing:** COMPLETE — `npm run build` succeeds (Vite production build, 68 modules, no errors, after the smoothing pass); dev server starts cleanly with no console errors from the application, including after repeated scrolling and simulated resize events.
-**Visual testing:** COMPLETE (via the in-app Chromium browser pane) — verified camera framing at progress 0% (matches the approved Phase 1A/1B baseline exactly), 50%, and 100%; verified full reversibility (scroll to 100% then back to 0% reproduces the exact starting frame); caught and fixed a clipping artifact from an earlier camera-path draft that ended inside the light beam's dust volume before marking the phase complete. **Smoothing-specific:** dispatched a single synthetic `wheel` event and sampled `window.scrollY` over time — confirmed a smooth decaying glide-to-rest curve (`104, 257, 388, 493, 579, 648, 700, 739, 762, 781, 792, 798, 800, 800, ...`) rather than an instant jump to the target; confirmed the camera visually mid-glide during that decay and settled with no oscillation/overshoot at rest.
+**Phase:** 1D
+**Functional testing:** COMPLETE — `npm run build` succeeds (Vite production build, 70 modules, no errors); dev server starts cleanly with no console errors from the application.
+**Visual testing:** COMPLETE (via the in-app Chromium browser pane) — verified the monitor renders correctly at progress 0% (standing in the beam, visible from the hero framing, no pop-in); verified the mid-transition approach (progress ≈60%, correcting an earlier test-script math error that mis-scaled the sample point — see note below) frames the monitor and stand cleanly with no clipping; verified the final progress-100% shot is squarely aligned with the screen face, well-framed, glass/scanline detail visible, no artifacts; verified full reversibility (scroll to 100% then back to 0% reproduces the exact approved hero frame with the monitor now present).
 **Chrome testing:** COMPLETE — verified in the Chromium-based browser pane (desktop viewport).
-**Safari testing:** NOT YET COMPLETE — no macOS/iOS Safari available in this environment; carried over from Phase 1A/1B as an open gap, not silently skipped. Scroll/GSAP/Lenis behavior in Safari specifically has not been verified — flagging per `build-workflow.md` §9's explicit requirement to test Safari during the camera/scroll phase, not defer it to final polish.
-**Mobile testing:** PARTIAL — verified via emulated 375×812 mobile viewport: renders correctly, no console errors, both before and after adding Lenis. Re-confirmed (via a simulated `resize` event with `innerHeight` changed and `innerWidth` held constant) that `--app-height` — and therefore canvas and scroll-spacer sizing — still does not change on a height-only resize with Lenis active. `syncTouch: true` is configured so touch gestures use the identical lerp/duration physics as desktop wheel, per this pass's requirement — this is a configuration-level guarantee; an actual physical touchscreen drag gesture was **not** directly simulated, since this environment's mobile viewport emulation doesn't reliably dispatch real multi-touch sequences. Flagging as an assumption to verify on a real device rather than claiming it was empirically observed.
-**120Hz testing:** NOT DIRECTLY TESTABLE in this environment (no real 120Hz display). Frame-timing was re-measured during a simulated wheel-gesture burst (40 wheel events over ~640ms) with the full smoothing stack active: 180 frames, ~16.62ms average frame time (~60fps), 17.60ms max, 0 frames exceeding 33ms — no dropped-frame stutter observed at the display refresh rate available here, and no regression from the pre-smoothing measurement (~16.65ms avg). Both the damp step and Lenis's own tick are frame-rate independent (driven by real `delta`/timestamp, not a fixed-step timer), so this should scale to higher-refresh displays, but that has not been observed directly on hardware.
+**Safari testing:** NOT YET COMPLETE — no macOS/iOS Safari available in this environment; carried over from Phase 1A/1B/1C as an open gap, not silently skipped.
+**Mobile testing:** PARTIAL — verified via emulated 375×812 mobile viewport: renders correctly, no console errors. Re-confirmed the `--app-height` mobile address-bar resize guard still holds with the monitor mesh/shader added.
+**120Hz testing:** NOT DIRECTLY TESTABLE in this environment (no real 120Hz display). Frame-timing re-measured during a simulated wheel-gesture burst with the monitor mesh and screen shader active: 180 frames, ~16.62ms average (~60fps), 17.70ms max, 0 frames over 33ms — no regression from the Phase 1C measurement.
+
+**Testing note:** an early manual scroll-position test in this pass computed a target scroll offset as `document.documentElement.scrollHeight * 0.6`, which is wrong — the correct calculation is `(scrollHeight - innerHeight) * 0.6`, since `window.scrollTo`'s maximum is capped at the former minus the viewport height. The bug produced a sample at progress ≈90% while labeled 60%, which briefly looked like a possible camera-path defect (unexpectedly close framing) before the arithmetic error was found and corrected. No code changes resulted — this was a test-script bug, not a product bug — but it's recorded here since it consumed real verification time and is a mistake worth not repeating.
 
 Testing status should be updated as the phase progresses.
 
@@ -284,13 +294,25 @@ Each completed phase should receive a concise record.
 
 **Implementation:** Complete
 **Technical completion:** Complete (2026-08-31)
-**Human approval:** Pending
+**Human approval:** Approved (2026-08-31, human review in chat)
 **Major changes:** Added `gsap` dependency. Added `src/experience/timeline/cameraPath.js` (pure keyframe/easing camera-path function), `src/experience/timeline/ScrollTimelineProvider.jsx` (master GSAP/ScrollTrigger timeline + scroll spacer, exporting a plain mutable `scrollProgress` object — not React state), and `src/experience/timeline/ScrollCameraRig.jsx` (a `useFrame` callback that directly mutates `camera.position`/`camera.lookAt` every frame). Restructured `App.jsx`/`global.css` so the canvas is pinned (`position: fixed`) while a real scrollable spacer drives native page scroll. **Refined (same session, human feedback — motion physics):** added `lenis` and `src/experience/timeline/smoothScroll.js` to normalize raw wheel/touch input into smooth inertial motion (`duration: 1.1`, ease-out-cubic, `syncTouch: true`); reduced `ScrollTrigger`'s own `scrub` (`0.6→0.15`) now that Lenis carries the primary smoothing; changed `ScrollCameraRig.jsx` to damp the camera toward its scroll-derived target every frame via `THREE.MathUtils.damp` (position and lookAt, both frame-rate independent) instead of snapping directly to it. No Phase 1A/1B geometry, lighting, or material values were changed.
 **Testing performed:** Production build, dev-server console check, visual verification at multiple scroll positions (0%, 50%, 100%), reversibility check (scroll to 100% then back to 0%, confirmed pixel-identical to the approved Phase 1B baseline), frame-timing measurement during continuous/gestural scroll (~60fps average both before and after the smoothing pass, 0 frames over 33ms — see §9), grep-verified no `useState`/`setState` in the scroll/camera path, mobile-viewport resilience check, a direct simulated-resize test confirming `--app-height` doesn't change on a height-only resize (re-confirmed after adding Lenis), and a synthetic-wheel-event glide-to-rest measurement confirming smooth exponential decay rather than an instant snap.
 **Known issues:** See §6 — bundle size grew further with GSAP and Lenis (still low severity, deferred to Phase 5); no new issues introduced. One in-flight issue was caught and fixed during verification, not shipped: an earlier camera-path draft ended inside the Phase 1B dust/beam volume and produced visible clipping artifacts — the path was revised to stay outside that volume before this phase was marked complete.
-**Approved visual decisions:** None yet — pending human review of this phase.
+**Approved visual decisions:** See §5 — the scroll-driven camera mechanism and the Phase 1C keyframe path as shipped.
 **Git checkpoint:** `main` branch; initial commit `e566d3f`, motion-physics refinement `b953859`.
-**Next approved phase:** Pending human approval of Phase 1C before Phase 1D (Digital / Monitor Foundation) may begin.
+**Next approved phase:** Approved 2026-08-31 (human review in chat) — Phase 1D (Digital / Monitor Foundation) began.
+
+### Phase 1D
+
+**Implementation:** Complete
+**Technical completion:** Complete (2026-08-31)
+**Human approval:** Pending
+**Major changes:** Added `src/experience/digital/Monitor.jsx` (declarative monitor mesh: base, neck, body, screen, glass — positioned exactly at the Phase 1B beam target via `lightingParams.target`) and `src/experience/digital/screenTestPatternMaterial.js` (unlit SMPTE-bar test-pattern shader, `toneMapped: false` for a glow read without real scene illumination). Extended `src/experience/timeline/cameraPath.js` from 4 to 5 keyframes, adding a final shot squarely aligned with the monitor screen, computed from `MONITOR_ANCHOR` rather than hand-tuned numbers. Mounted `<Monitor />` in `CinematicExperience.jsx` as a sibling to `<Environment />`. A scope conflict was caught before implementation began: the authorization prompt requested a cinema-camera mesh in addition to the monitor, which conflicts with `build-workflow.md` §10's explicit assignment of that object to Phase 2 — flagged to the human, who confirmed monitor-only scope (see §4's scope note). No cinema-camera mesh was built. No Phase 1A/1B/1C code changed beyond the additive keyframe extension.
+**Testing performed:** See §9. Production build, dev-server console check, visual verification at progress 0%/~60%/100%, reversibility check, frame-timing re-measurement (no regression), mobile-viewport and address-bar-resize guard re-check, grep-verified no `useState`/`setState`.
+**Known issues:** See §9's testing note (a test-script scroll-offset calculation bug, not a product bug) and §6 for carried-over issues.
+**Approved visual decisions:** None yet — pending human review of this phase.
+**Git checkpoint:** `main` branch; see §8 for the exact commit once recorded.
+**Next approved phase:** Pending human approval of Phase 1D before Phase 2 (Film / Digital / Campaigns) may begin.
 
 ---
 
@@ -400,6 +422,18 @@ Record meaningful implementation changes rather than every minor code edit.
 - Verified: dispatched a synthetic wheel event and sampled `scrollY` over time, confirming a smooth decaying glide-to-rest curve (not an instant jump); confirmed no oscillation/overshoot once settled; re-ran the frame-timing measurement with the full smoothing stack active under a simulated wheel-gesture burst — ~60fps sustained, 0 frames over 33ms, no regression from the pre-smoothing baseline; re-confirmed the mobile address-bar resize guard (`--app-height` unchanged on height-only resize) still holds with Lenis active; grep-confirmed no `useState`/`setState` anywhere in the scroll/camera path.
 - `syncTouch: true` gives touch gestures the same physics as wheel by configuration, but an actual physical touch-drag gesture could not be reliably simulated in this environment — flagged as unverified-on-hardware rather than claimed as tested.
 - Phase 1C remains technically complete and awaiting human visual review and approval. Phase 1D has not been started.
+
+### 2026-08-31 (Phase 1D)
+
+**Phase 1C approved (human review in chat); Phase 1D — Digital / Monitor Foundation implemented and technically complete.**
+
+- Recorded Phase 1C approval: the scroll-driven camera mechanism and keyframe path are now a protected foundation (§5).
+- **Scope conflict caught before implementation:** the Phase 1D authorization prompt asked for a cinema-camera mesh in addition to the monitor. `build-workflow.md` §10 explicitly states "Phase 2 will build the final Film act and integrate the final cinema-camera object" and scopes Phase 1D to monitor-only work. Flagged to the human via `AskUserQuestion` rather than silently resolved either way; the human confirmed monitor-only scope and re-issued the authorization accordingly. No cinema-camera mesh was built.
+- Implemented the monitor: `src/experience/digital/Monitor.jsx` (base, neck, body, screen, glass — dark brushed-metal `MeshStandardMaterial`, `MeshPhysicalMaterial` glass pane) positioned exactly at the Phase 1B beam's floor target via `lightingParams.target`, so it stands physically within the volumetric beam rather than coincidentally near it.
+- Implemented the screen: `src/experience/digital/screenTestPatternMaterial.js`, an unlit SMPTE-style color-bar shader with `toneMapped: false` so it reads as a genuinely glowing screen against the tone-mapped dark room, without adding a real light source (kept the "one light" narrative thread intact).
+- Extended `src/experience/timeline/cameraPath.js` from 4 to 5 keyframes: the original hero→approach path's positions/lookAts are unchanged, only rescaled to `t: 0, 0.25, 0.5, 0.75` to make room for a new final `t: 1.0` keyframe — computed from `MONITOR_ANCHOR` (not hand-tuned numbers) so it stays correct if the monitor's placement or size ever changes. Same deterministic, reversible, Lenis+damp-smoothed path mechanism as Phase 1C — no separate/special-cased transition into monitor alignment.
+- Verified: production build succeeds; monitor renders cleanly in the beam at progress 0%; the approach and final alignment shots are clean with no clipping (caught and corrected a test-script arithmetic bug during verification — not a product bug — see §9's testing note); full reversibility confirmed; ~60fps sustained, no regression from Phase 1C; mobile viewport and address-bar-resize guard re-confirmed; no `useState`/`setState` anywhere in the scroll/camera/digital path (grep-verified).
+- Phase 1D is technically complete and awaiting human visual review and approval. Phase 2 has not been started.
 
 ---
 
