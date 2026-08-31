@@ -1,0 +1,35 @@
+:root {
+  --color-void: #0d0d0d;
+  --app-height: 100vh;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--color-void);
+  overscroll-behavior: none;
+}
+
+#root {
+  width: 100%;
+  height: var(--app-height);
+}
+
+.app-shell {
+  width: 100%;
+  height: 100dvh;
+  height: var(--app-height);
+  overflow: hidden;
+  background: var(--color-void);
+}
+
+.experience-canvas {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+}

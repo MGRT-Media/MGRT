@@ -41,14 +41,14 @@ For a new project, the Current Phase may be Phase 1A even when no phase has yet 
 **Project:** MGRT Media
 **Status:** In active development
 **Current Phase:** Phase 1A — Environment Shell
-**Phase Status:** Not yet approved
+**Phase Status:** Technically complete, pending human approval
 **Current Objective:** Establish the persistent Three.js physical environment before introducing cinematic lighting, atmosphere, camera choreography, or final portfolio content.
 
 ### Current approval state
 
 ```text
 PHASE 1A — Environment Shell
-STATUS: IN PROGRESS
+STATUS: TECHNICALLY COMPLETE
 APPROVAL: NOT YET GRANTED
 ```
 
@@ -60,7 +60,7 @@ Claude must work only within the currently approved scope unless explicitly inst
 
 ```text
 PHASE 1
-├── 1A — Environment Shell              IN PROGRESS
+├── 1A — Environment Shell              TECHNICALLY COMPLETE
 ├── 1B — Atmosphere & Light             NOT STARTED
 ├── 1C — Camera & Scroll                NOT STARTED
 └── 1D — Digital / Monitor Foundation   NOT STARTED
@@ -104,7 +104,7 @@ Use the following status values consistently:
 
 ## 4. Phase 1A — Environment Shell
 
-**Status:** IN PROGRESS
+**Status:** TECHNICALLY COMPLETE
 **Approval:** NOT YET GRANTED
 
 ### Objective
@@ -121,13 +121,26 @@ Final portfolio content, campaign media, final Digital content, complex atmosphe
 Before Phase 1A can be approved, verify: the physical environment feels intentional, architectural scale is credible, spatial depth is established, camera starting position is appropriate, composition provides sufficient negative space, the environment supports the intended cinematic experience, scene structure is suitable for later phases, and no unnecessary complexity has been introduced.
 
 ### Current implementation notes
-*No implementation notes yet.*
+
+Project scaffolded from scratch (Vite + React + React Three Fiber + Drei; see `package.json`). Application structure follows `technical-architecture.md` §4's cinematic/explore separation — only the cinematic layer exists so far.
+
+- `src/experience/CinematicExperience.jsx` — mounts the persistent R3F `Canvas`, static camera (`position: [0, 1.6, 9]`, `fov: 45`), capped `dpr={[1,2]}`, no post-processing.
+- `src/experience/Environment.jsx` — the architectural shell: a floor (14×32), back wall, two side walls, and 8 structural columns (4 per side) establishing an enclosed hall with perspective depth. A flat hemisphere + ambient light is used purely as a **visibility aid** for reviewing scale and composition — it is explicitly not the Phase 1B lighting design (no directional light, shadows, or atmosphere).
+- `src/hooks/useViewportHeight.js` — pins `--app-height` to `window.innerHeight` at mount, and only re-reads it when `window.innerWidth` changes (real resize/orientation change) rather than on every height fluctuation, so mobile Safari/Chrome address-bar collapse/expand during scroll won't trigger a canvas/camera resize. `global.css` uses `100dvh` with this cached value as a fallback, per `technical-architecture.md` §16.
+- No scroll system, camera choreography, portfolio content, audio, or post-processing has been added — out of scope for this phase.
+
+**Placeholder note:** material tones are a neutral mid-grey "blockout" palette (e.g. `#4a4a4a` floor, `#5c5c5c` back wall), not the near-black palette from `creative-reference.md` §5. This is intentional — legible scale/composition review now, with the final dark tonal values and physically-motivated light introduced in Phase 1B. This palette must not be treated as a final material decision.
 
 ### Known issues
-*None currently recorded.*
+
+| Issue | Severity | Notes |
+|---|---|---|
+| Production bundle exceeds Vite's 500kB chunk-size warning (~960kB / ~265kB gzip) | Low | Expected at this stage (three.js baseline cost); no code-splitting attempted yet. Revisit under Phase 5 performance work, not before. |
+| `npm audit` reports a moderate `esbuild`/Vite dev-server advisory (GHSA-67mh-4wv8-2f99) | Low | Dev-server-only (local requests to the Vite dev server), does not affect production builds. A fix requires a breaking Vite major upgrade (v5 → v8) — deferred rather than forced in this phase. |
+| No ceiling geometry | None (by design) | Not required by `build-workflow.md` §7's Phase 1A scope; the open volume above reads as intentional negative space. Revisit only if a later phase's composition needs it. |
 
 ### Required next step
-Complete Phase 1A implementation, test the application, visually inspect the environment, and present the result for human review.
+Phase 1A is technically complete. Awaiting human visual review and explicit approval before Phase 1B begins.
 
 Do not begin Phase 1B until Phase 1A is explicitly approved.
 
@@ -154,7 +167,8 @@ Record known technical, visual, browser, performance, or content issues here.
 
 | Issue | Phase Found | Severity | Current Action | Target Phase |
 |---|---|---|---|---|
-| None currently recorded | — | — | — | — |
+| Production bundle exceeds Vite's 500kB chunk-size warning (~960kB / ~265kB gzip) | 1A | Low | Documented only; no code-splitting attempted | Phase 5 (Performance) |
+| `npm audit` moderate advisory in `esbuild`/Vite dev server (GHSA-67mh-4wv8-2f99) | 1A | Low | Documented only; fix requires breaking Vite v5→v8 upgrade | Deferred — revisit when a Vite major upgrade is otherwise warranted |
 
 ### Issue rules
 
@@ -191,11 +205,12 @@ The repository must maintain a recoverable implementation history.
 
 ### Current checkpoint
 
-**Current approved checkpoint:** *To be recorded*
-**Current working branch:** *To be recorded*
-**Current commit:** *To be recorded*
+**Current working branch:** `main`
+**Baseline commit (docs only, pre-implementation):** `960243b` — "Initial commit: governing documentation"
+**Current commit (Phase 1A, technically complete):** *recorded at the time of this commit — see `git log` on `main`*
+**Current approved checkpoint:** *To be recorded once Phase 1A receives explicit human approval*
 
-> **These fields must be populated with real values (branch name and commit SHA) as soon as the repository is initialized, before any Phase 1A implementation work begins.** An unfilled placeholder here means the Git safety net required by `build-workflow.md` §5.4 is not yet active.
+The repository was initialized (`git init -b main`) with the five governing documents relocated into `docs/` as the first commit, giving a clean recovery point before any implementation began. The Phase 1A scaffold and environment shell were committed on top of that baseline.
 
 ### Checkpoint rules
 
@@ -210,12 +225,12 @@ Do not overwrite or discard an approved state without a recoverable Git history.
 ### Current phase testing
 
 **Phase:** 1A
-**Functional testing:** NOT YET COMPLETE
-**Visual testing:** NOT YET COMPLETE
-**Chrome testing:** NOT YET COMPLETE
-**Safari testing:** NOT YET COMPLETE
-**Mobile testing:** NOT YET COMPLETE
-**120Hz testing:** NOT YET COMPLETE
+**Functional testing:** COMPLETE — `npm run build` succeeds (Vite production build, 56 modules, no errors); dev server starts cleanly with no console errors or warnings from the application (one unrelated Canvas2D debug-tooling warning from a manual pixel-readback check, not from the app itself).
+**Visual testing:** COMPLETE (via the in-app Chromium browser pane) — architectural hall, floor, back wall, side walls, and 8 columns render with credible perspective, spatial depth, and negative space above the hall; composition matches the review criteria in §4.
+**Chrome testing:** COMPLETE — verified in the Chromium-based browser pane (desktop viewport).
+**Safari testing:** NOT YET COMPLETE — no macOS/iOS Safari available in this environment; must be tested before this phase can be considered fully verified per `build-workflow.md` §9's Safari requirement. Flagging as a gap rather than silently skipping.
+**Mobile testing:** PARTIAL — verified via emulated 375×812 mobile viewport: canvas resizes correctly, no context loss, no console errors, scene continues rendering (composition itself is the unmodified desktop framing — mobile-specific recomposition is explicitly Phase 1C/Phase 4 scope, not 1A). Real-device touch/scroll and address-bar show/hide behavior not testable in this environment.
+**120Hz testing:** NOT YET COMPLETE — no scroll or per-frame animation exists yet in Phase 1A (static camera only), so there is nothing frame-rate-dependent to test. Relevant starting in Phase 1C.
 
 Testing status should be updated as the phase progresses.
 
@@ -231,15 +246,15 @@ Each completed phase should receive a concise record.
 
 ### Phase 1A
 
-**Implementation:** Pending
-**Technical completion:** Pending
+**Implementation:** Complete
+**Technical completion:** Complete (2026-08-31)
 **Human approval:** Pending
-**Major changes:** None recorded
-**Testing performed:** None recorded
-**Known issues:** None recorded
-**Approved visual decisions:** None recorded
-**Git checkpoint:** Pending
-**Next approved phase:** Pending human approval
+**Major changes:** Scaffolded Vite + React + React Three Fiber + Drei project from scratch; implemented the persistent architectural shell (floor, back wall, two side walls, 8 structural columns) and static initial camera; added viewport-height pinning per `technical-architecture.md` §16.
+**Testing performed:** Production build verification, dev-server console check, visual composition review (desktop), emulated mobile-viewport resize/resilience check. See §9 for full detail and gaps (Safari, real-device mobile, 120Hz not yet testable).
+**Known issues:** See §4 and §6 — bundle size and a dev-only `esbuild` advisory, both low severity and deferred to later phases.
+**Approved visual decisions:** None yet — pending human review of this phase.
+**Git checkpoint:** `main` branch; baseline docs commit `960243b`, Phase 1A commit recorded in §8.
+**Next approved phase:** Pending human approval of Phase 1A before Phase 1B (Atmosphere & Light) may begin.
 
 ---
 
@@ -258,6 +273,19 @@ Record meaningful implementation changes rather than every minor code edit.
 - Established protected visual decisions.
 - Established Git checkpoint tracking.
 - Established testing status tracking.
+
+### 2026-08-31
+
+**Project setup and Phase 1A (Environment Shell) technically complete.**
+
+- Moved the five governing documents into `docs/` to match the paths referenced throughout the documentation set.
+- Initialized Git (`git init -b main`); committed the governing documentation as the baseline checkpoint (`960243b`).
+- Scaffolded a minimal Vite + React + React Three Fiber (+ Drei) project.
+- Implemented the persistent architectural shell: floor, back wall, two side walls, 8 structural columns, and a static initial camera position, per `build-status.md` §4 and `build-workflow.md` §7.
+- Implemented viewport-height pinning (`--app-height`, resize-only-on-width-change) per `technical-architecture.md` §16, ahead of any scroll system.
+- Verified production build, dev-server console cleanliness, and visual composition; verified canvas/camera resilience across a desktop→mobile-emulated→desktop viewport cycle.
+- Documented two low-severity known issues (bundle size, dev-only esbuild advisory) and two testing gaps (Safari, real-device mobile/120Hz) rather than resolving or silently skipping them.
+- Phase 1A is technically complete and awaiting human visual review and approval. Phase 1B has not been started.
 
 ---
 
