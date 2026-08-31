@@ -30,13 +30,14 @@ const MONITOR_YAW_DEGREES = 20
  * Phase 2, per build-workflow.md §10).
  *
  * The support was originally a retro AV-cart (four legs + a thin metal
- * platform); replaced with a single minimal stone plinth per explicit
- * request — "a visual bridge between ancient physical stone architecture
- * and the modern digital monitor," not a desk or an ornate museum
- * pedestal. One solid `RoundedBoxGeometry` block (no taper, no base/cap
- * moldings — those would read as pedestal ornamentation, which the
- * request explicitly excludes), using the same procedural stone material
- * as the walls (`stoneWallMaterial.js`) for the material-language match.
+ * platform), then a clean `RoundedBoxGeometry` monolith; now a raw,
+ * naturally-broken stone block (`buildRockGeometry`, below) per explicit
+ * request for organic/irregular geometry rather than a primitive-shaped
+ * placeholder — jagged sides and a flat, undisplaced top plateau sized to
+ * the monitor's own footprint, so it still sits genuinely (not just
+ * approximately) grounded. Uses the same procedural stone material as the
+ * walls (`stoneWallMaterial.js`) for the material-language match, applied
+ * to the rock's own UVs unchanged from the source `BoxGeometry`.
  *
  * `screenCenterHeight` is computed from the console's actual stacked
  * dimensions below (plinth height + housing offset), not hand-picked — it
@@ -49,9 +50,58 @@ const PLINTH = {
   width: 1.0,
   depth: 0.75,
   height: 0.72,
-  // Small, restrained bevel — enough to avoid a razor-sharp CG edge under
-  // the beam's raking light, not a decorative chamfer.
-  cornerRadius: 0.015,
+}
+
+/** Deterministic 3D hash, matching the approach already used in stoneWallMaterial.js. */
+function hash3(x, y, z) {
+  const s = Math.sin(x * 12.9898 + y * 78.233 + z * 37.719) * 43758.5453
+  return s - Math.floor(s)
+}
+
+/**
+ * A raw, naturally-broken stone block: a subdivided `BoxGeometry` with each
+ * vertex displaced outward by layered noise, EXCEPT vertices at or near the
+ * exact top face — those are left undisplaced, so the monitor always has a
+ * genuinely flat plane to sit on no matter how the noise seed shakes out,
+ * rather than a "probably flat enough" approximation. The falloff is a
+ * smooth blend (not a hard cutoff), so the flat plateau eases into the
+ * jagged sides rather than showing a visible seam.
+ *
+ * `BoxGeometry` gives each face its own vertex copies at shared edges/
+ * corners (so normals stay correct per-face), but since the hash is a
+ * pure function of position, coincident vertices at an edge get identical
+ * displacement — the mesh stays watertight, no cracks open up at the
+ * corners despite the per-face vertex duplication.
+ */
+function buildRockGeometry(width, height, depth) {
+  const segments = 6
+  const geometry = new THREE.BoxGeometry(width, height, depth, segments, segments, segments)
+  const pos = geometry.attributes.position
+  const halfH = height / 2
+  const maxJag = Math.min(width, depth) * 0.22
+
+  for (let i = 0; i < pos.count; i += 1) {
+    const x = pos.getX(i)
+    const y = pos.getY(i)
+    const z = pos.getZ(i)
+
+    // 0 well below the top, ramping to 1 right at the exact top face —
+    // vertices at topFactor 1 get zero displacement (the flat plateau).
+    const topFactor = THREE.MathUtils.smoothstep(y, halfH * 0.35, halfH * 0.98)
+    if (topFactor >= 1) continue
+
+    const n1 = hash3(x * 3.1, y * 3.1, z * 3.1)
+    const n2 = hash3(x * 7.7 + 11, y * 7.7 + 11, z * 7.7 + 11) * 0.5
+    const bump = (n1 + n2 - 0.75) * maxJag * (1 - topFactor)
+
+    const dir = new THREE.Vector3(x, y, z)
+    const len = dir.length() || 1
+    dir.multiplyScalar(bump / len)
+    pos.setXYZ(i, x + dir.x, y + dir.y, z + dir.z)
+  }
+
+  geometry.computeVertexNormals()
+  return geometry
 }
 
 const HOUSING = {
@@ -99,10 +149,7 @@ export default function Monitor() {
     () => new RoundedBoxGeometry(HOUSING.rearWidth, HOUSING.rearHeight, HOUSING.rearDepth, 3, HOUSING.cornerRadius),
     [],
   )
-  const plinthGeometry = useMemo(
-    () => new RoundedBoxGeometry(PLINTH.width, PLINTH.height, PLINTH.depth, 2, PLINTH.cornerRadius),
-    [],
-  )
+  const plinthGeometry = useMemo(() => buildRockGeometry(PLINTH.width, PLINTH.height, PLINTH.depth), [])
   // repeat: [1, 1] — a single stone-block face rather than a tiled
   // multi-block pattern, so the plinth reads as one solid monolith with a
   // naturally weathered edge (the mortar-groove effect from
