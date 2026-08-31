@@ -212,10 +212,10 @@ The repository must maintain a recoverable implementation history.
 
 **Current working branch:** `main`
 **Baseline commit (docs only, pre-implementation):** `960243b` — "Initial commit: governing documentation"
-**Current commit (Phase 1A, technically complete):** `eea4e73` — "Phase 1A: scaffold project and implement environment shell"
-**Current approved checkpoint:** *To be recorded once Phase 1A receives explicit human approval*
+**Approved Phase 1A checkpoint:** `8f6784d` — "Phase 1A: refine column geometry to classical cylindrical profile" (Phase 1A approved 2026-08-31 in chat, against this commit)
+**Current commit (Phase 1B, technically complete):** `9d7e5b2` — "Phase 1B: volumetric lighting system"
 
-The repository was initialized (`git init -b main`) with the five governing documents relocated into `docs/` as the first commit, giving a clean recovery point before any implementation began. The Phase 1A scaffold and environment shell were committed on top of that baseline.
+The repository was initialized (`git init -b main`) with the five governing documents relocated into `docs/` as the first commit, giving a clean recovery point before any implementation began. Phase 1A (scaffold, environment shell, column refinement) was committed and approved on top of that baseline; Phase 1B (volumetric lighting) is committed on top of the approved Phase 1A checkpoint and is recoverable independently of it.
 
 ### Checkpoint rules
 
@@ -270,7 +270,7 @@ Each completed phase should receive a concise record.
 **Testing performed:** See §9. Production build, dev-server console check, visual verification, shadow-casting mechanics check, mobile-viewport resilience check.
 **Known issues:** See §4 and §6 — an ACES tone-mapping tuning gotcha (resolved, documented for future lighting tuning), plus the two carried-over Phase 1A issues (bundle size, dev-only esbuild advisory).
 **Approved visual decisions:** None yet — pending human review of this phase.
-**Git checkpoint:** `main` branch; see §8 for the exact commit once recorded.
+**Git checkpoint:** `main` branch; commit `9d7e5b2`.
 **Next approved phase:** Pending human approval of Phase 1B before Phase 1C (Camera & Scroll) may begin.
 
 ---
