@@ -866,6 +866,41 @@ Visual review requested — please confirm the denser field and size/velocity va
 
 ---
 
+## 4Y. Feature — Monitor Support Refinement (Stone Plinth Update)
+
+**Status:** TECHNICALLY COMPLETE
+**Approval:** NOT YET GRANTED
+
+Human request: replace the retro AV-cart supporting the monitor with a minimal architectural stone plinth — a monolith, not a desk or an ornate museum pedestal — matching the room's stone material language, while leaving columns, breach, camera, and room dimensions untouched.
+
+### Changes Made
+
+- **`Monitor.jsx`** — removed the four-leg + thin-platform "AV cart" support entirely. Added a single solid `PLINTH` block (`RoundedBoxGeometry`, `1.0 × 0.72 × 0.75`, `cornerRadius: 0.015` — enough bevel to avoid a razor CG edge under the breach's raking light, not a decorative chamfer). No taper, no base/cap moldings, no carving — those would read as pedestal ornamentation, which the request explicitly excludes.
+- Material: `createStoneWallMaterial` (the same procedural stone module already used for the room's walls, `stoneWallMaterial.js`) with `repeat: [1, 1]`, so the plinth reads as one solid stone-block monolith — the material's mortar-groove effect lands at the block's own edge as a natural weathered boundary rather than tiling into visible brickwork.
+- `screenCenterHeight` derivation kept the same *structure* (plinth height + housing offset, not hand-picked) that was already established for the cart — `cameraPath.js`'s monitor-aligned shot re-derives from it automatically, so no camera code needed touching.
+- The monitor's 20° yaw, the breach lighting, and shadow casting/receiving are all unchanged — the plinth casts and receives shadows exactly like the housing already did.
+
+### Files Modified
+
+`src/experience/digital/Monitor.jsx` only — no other file touched, per the request's own phase-boundary constraints (columns, breach, camera timelines, room dimensions, Phase 2 systems all untouched, confirmed by scoping the diff to this one file).
+
+### Composition Assessment
+
+Verified visually across the full scroll range (0%, 100%) and reversibility to 0%: the plinth reads as a clean, restrained monolith at every distance tested — no legs, table silhouette, or ornamentation visible even close-up at the monitor-locked shot. A visible contact shadow lands correctly beneath it from the breach's raking light. The monitor remains the clear visual focal point; the plinth reads as quiet physical support, not a competing element.
+
+### Safari/Performance Verification
+
+- **Performance:** frame-timing under a simulated wheel-gesture burst unchanged (~16.6ms avg, 0 frames over 33ms) — the plinth is a single low-poly `RoundedBoxGeometry`, cheaper than the four-cylinder-leg geometry it replaced.
+- **Depth-sorting / blending:** the plinth material is fully opaque (`MeshStandardMaterial`-based, no `transparent`/custom blending), so it introduces no new depth-sort risk. The scene's only blended elements (the screen's glow and the glass pane) are unrelated to this change and untouched.
+- **Safari:** could not be tested on an actual Safari browser in this environment (no such browser available here). No Safari-specific APIs or exotic blending modes are involved — `RoundedBoxGeometry` and `MeshStandardMaterial` are both already used elsewhere in the approved scene without incident. Risk is judged low, but this is flagged rather than claimed as verified — an on-device Safari check is still worth doing before final approval.
+- No console or shader errors on desktop or mobile; production build succeeds (72 modules); `grep -rn "useState\|setState" src/` — no matches.
+
+### Required next step (STOP — awaiting explicit approval)
+
+Per the request's stop condition: implementation is complete and validated to the extent this environment allows. Holding here for your review — please confirm the plinth's proportions/material read correctly, and let me know if you'd like the Safari check done on your end before this is folded into the approved record.
+
+---
+
 ## 5. Approved Visual Decisions
 
 This section records visual decisions that have already received human approval and therefore should be treated as protected foundations.
@@ -973,6 +1008,7 @@ The repository must maintain a recoverable implementation history.
 **Current commit (inter-pillar hero start correction, technically complete):** `155ac1a` — "Fix: reposition hero start to sit framed between the entrance pillars" (on top of `b33334a`)
 **Current commit (deep gateway establishing shot, technically complete):** `1ec920a` — "Fix: pull hero start much further back for a wide gateway establishing shot" (on top of `155ac1a`)
 **Current commit (particle density & variance, technically complete):** `09e587f` — "Feat: denser dust field with per-particle size and velocity variance" (on top of `1ec920a`)
+**Current commit (stone plinth monitor support, technically complete):** `d9369d0` — "Feat: replace retro AV-cart monitor support with a minimal stone plinth" (on top of `09e587f`)
 
 The repository was initialized (`git init -b main`) with the five governing documents relocated into `docs/` as the first commit, giving a clean recovery point before any implementation began. Phase 1A (scaffold, environment shell, column refinement), Phase 1B (volumetric lighting, three review passes), and Phase 1C (scroll-driven camera, motion-physics refinement) were each committed and approved in sequence; Phase 1D (monitor foundation) is committed on top of the approved Phase 1C checkpoint and is recoverable independently of it.
 
@@ -1346,6 +1382,18 @@ Each completed phase should receive a concise record.
 **Git checkpoint:** `main` branch; commit `09e587f`.
 **Next approved phase:** N/A — cross-cutting atmospheric polish, not a phase gate. Phase 2 remains on hold.
 
+### Monitor support refinement (stone plinth update)
+
+**Implementation:** Complete
+**Technical completion:** Complete (2026-08-31)
+**Human approval:** Pending — explicit approval requested before proceeding further, per the request's own stop condition
+**Major changes:** Replaced the retro AV-cart (four legs + platform) supporting the monitor with a single minimal stone plinth (`RoundedBoxGeometry`, using the walls' procedural stone material with `repeat: [1,1]` for a single-monolith read). `screenCenterHeight` derivation kept the same structure, so `cameraPath.js` needed no changes. Only `Monitor.jsx` touched. See §4Y.
+**Testing performed:** See §4Y. Full scroll range (0/100%) and reversibility, frame-timing, grep for React state, production build, mobile re-check.
+**Known issues:** Not tested on an actual Safari browser (unavailable in this environment) — no Safari-specific risk identified (standard, already-proven geometry/material types), but flagged rather than claimed verified.
+**Approved visual decisions:** None yet.
+**Git checkpoint:** `main` branch; commit `d9369d0`.
+**Next approved phase:** N/A — cross-cutting geometry/material refinement, not a phase gate. Phase 2 remains on hold.
+
 ---
 
 ## 11. Change Log
@@ -1716,6 +1764,17 @@ Record meaningful implementation changes rather than every minor code edit.
 - The continuous upward drift is bounded via `mod()` into a small cycling range rather than an unbounded climb — the one departure from the existing "bounded oscillation only" dust design (§4M) — called out explicitly in the code.
 - `transparent`/`depthWrite`/`AdditiveBlending` were already all correct on the dust material — checked, not changed.
 - Verified: full scroll range (0/100%) and reversibility clean, visibly denser field with clear size variance (larger motes near the monitor/floor, smaller near the breach), no shader errors, frame-timing unchanged (~16.6ms avg, 0 over 33ms) despite 2.4× the particle count, production build succeeds, no React state anywhere in `src/`, mobile renders cleanly.
+
+### 2026-08-31 (Monitor support refinement — stone plinth update)
+
+**Replaced the retro AV-cart supporting the monitor with a single minimal stone plinth — a monolith, not a desk or an ornate pedestal — matching the room's stone material language. Smallest clean modification: only `Monitor.jsx` touched.**
+
+- Removed the four-leg + platform cart support entirely. Added one `PLINTH` block (`RoundedBoxGeometry`, `1.0 × 0.72 × 0.75`, small 0.015 bevel — enough to avoid a razor CG edge, not a decorative chamfer). No taper, no base/cap moldings — those would read as pedestal ornamentation, explicitly excluded by the request.
+- Material: the same procedural stone module already used for the walls (`stoneWallMaterial.js`), with `repeat: [1, 1]` so it reads as one solid stone-block monolith rather than tiled brickwork.
+- `screenCenterHeight`'s derivation structure (support height + housing offset) is unchanged, so `cameraPath.js`'s monitor-aligned shot re-derived automatically — no camera code touched. 20° yaw, breach lighting, and shadow casting/receiving all unchanged.
+- Verified: full scroll range (0/100%) and reversibility clean, plinth reads as a clean minimal monolith with no ornamentation at any distance tested, correct contact shadow beneath it, no console/shader errors, frame-timing unchanged (~16.6ms avg, 0 over 33ms — the plinth is cheaper geometry than the four legs it replaced), production build succeeds, no React state anywhere in `src/`, mobile renders cleanly.
+- Safari: not tested on an actual Safari browser (unavailable in this environment) — flagged rather than claimed verified. No new depth-sort risk: the plinth material is fully opaque, no transparency/custom blending involved.
+- Per the request's stop condition: holding here for explicit approval before any further work.
 
 ---
 
