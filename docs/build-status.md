@@ -563,6 +563,30 @@ Visual review needed specifically for the motion itself, since this environment'
 
 ---
 
+## 4N. Fix — Atmospheric Refinement (Concentrate Dust Near Light Source Origin)
+
+**Status:** TECHNICALLY COMPLETE
+**Approval:** NOT YET GRANTED
+
+Human note: Phase 2 (video texture, extended camera trajectory, billboards, cinema-camera mesh — see the §4M-adjacent Phase 2 kickoff request that was paused pending a phase-gate decision) stays on hold; this is Phase 1 atmospheric polish only.
+
+### What changed
+
+- **`volumetricLighting.js`** — `lightingParams.dust` gained a `topBias` exponent (2.4) applied to the uniform random sample that picks each point's position along the beam axis in `buildDust` (`t = Math.random() ** topBias`, where `t=0` is the light source/top and `t=1` is the floor target). For any exponent > 1 this skews the distribution toward `t=0` — verified numerically before committing to it (`node -e`, 100k-sample histogram): ~51% of points now land in the top 20% of the beam versus an even ~20% before, with a long, sparse tail still reaching the floor. `dust.count` raised `170 → 230`; because the extra points are concentrated near the top by the bias rather than spread evenly, the field reads as "denser near the light" specifically, not just a uniformly busier field.
+- Radius-at-`t` (already `lerp(0.05, maxRadius, t)`, tight near the top, wide near the floor) was untouched — it already kept points near the origin tightly clustered by construction, so no change was needed there for the "cluster near the top" half of the request.
+- GPU drift motion (§4M's `uTime`-driven shader), `transparent: true`/`depthWrite: false`, and the approach-fade mechanism (§4I/§4J) are all unchanged.
+
+### Verification
+- Numerically verified the distribution bias before committing (see above) rather than assuming the exponent direction was correct.
+- Visual check: hero frame shows a visibly denser cluster of dust in the upper wall region near the beam's origin compared to the pre-change baseline; full scroll range to the monitor-locked shot and reversibility both clean, no artifacts.
+- Frame-timing under a simulated wheel-gesture burst with the higher point count: ~16.6ms avg, 0 frames over 33ms — no measurable cost from the extra 60 points.
+- `grep -rn "useState\|setState" src/` — no matches; production build succeeds (71 modules, no errors); mobile viewport renders with no console errors.
+
+### Required next step
+Visual review requested — please confirm the density concentration near the light source reads correctly, and that the sparse drift into the rest of the room still feels atmospheric rather than empty. Phase 2 remains on hold pending your decision from the prior turn.
+
+---
+
 ## 5. Approved Visual Decisions
 
 This section records visual decisions that have already received human approval and therefore should be treated as protected foundations.
@@ -657,6 +681,7 @@ The repository must maintain a recoverable implementation history.
 **Current commit (first-scroll sync hardening, technically complete):** `eca309a` — "Fix: harden Lenis/ScrollTrigger init lifecycle and scroll-input CSS" (on top of `3c2b6b7`)
 **Current commit (asymmetric ease — snappy start, soft landing, technically complete):** `325eac1` — "Fix: asymmetric ease -- linear responsive start, soft Hermite landing" (on top of `eca309a`)
 **Current commit (GPU dust particle drift, technically complete):** `6bbd50a` — "Feat: continuous GPU-driven dust particle drift (Brownian/air-current)" (on top of `325eac1`)
+**Current commit (dust concentration near light source, technically complete):** `413727e` — "Fix: concentrate dust density near the beam origin/light source" (on top of `6bbd50a`)
 
 The repository was initialized (`git init -b main`) with the five governing documents relocated into `docs/` as the first commit, giving a clean recovery point before any implementation began. Phase 1A (scaffold, environment shell, column refinement), Phase 1B (volumetric lighting, three review passes), and Phase 1C (scroll-driven camera, motion-physics refinement) were each committed and approved in sequence; Phase 1D (monitor foundation) is committed on top of the approved Phase 1C checkpoint and is recoverable independently of it.
 
@@ -897,6 +922,18 @@ Each completed phase should receive a concise record.
 **Approved visual decisions:** None yet.
 **Git checkpoint:** `main` branch; commit `6bbd50a`.
 **Next approved phase:** N/A — cross-cutting atmospheric polish, not a phase gate.
+
+### Atmospheric refinement (concentrate dust near light source origin)
+
+**Implementation:** Complete
+**Technical completion:** Complete (2026-08-31)
+**Human approval:** Pending — visual review requested, see below
+**Major changes:** Added `dust.topBias` (2.4) — a power-exponent applied to the per-point beam-axis position sample, skewing the distribution toward the light source; verified numerically before committing (~51% of points now in the top 20% of the beam vs. an even 20% before). Raised `dust.count` 170 → 230, concentrated by the same bias rather than spread evenly. See §4N.
+**Testing performed:** See §4N. Numerical distribution verification, visual density check at the hero frame, full scroll range/reversibility, frame-timing with the higher point count, grep for React state, production build, mobile re-check.
+**Known issues:** None identified.
+**Approved visual decisions:** None yet.
+**Git checkpoint:** `main` branch; commit `413727e`.
+**Next approved phase:** N/A — cross-cutting atmospheric polish, not a phase gate. Phase 2 remains explicitly on hold per human instruction.
 
 ---
 
@@ -1150,6 +1187,21 @@ Record meaningful implementation changes rather than every minor code edit.
 - `VolumetricLightingRig.jsx`: added `controller.setTime(state.clock.elapsedTime)` to the existing `useFrame`, using R3F's own clock rather than scroll progress — drift continues while the user is completely still.
 - Verified: no console/shader errors on desktop or mobile (a GLSL failure would surface immediately); full scroll range, approach-fade, and reversibility all unaffected; frame-timing unchanged (~16.6ms avg, 0 over 33ms); production build succeeds; no React state anywhere in `src/`.
 - Honestly flagged, not silently claimed: could not independently confirm the actual pixel-level motion — two automated canvas-readback methods (`gl.readPixels`, `drawImage`-to-2D-canvas) both returned a static buffer across a several-second gap, which is inconsistent with this session's own repeated frame-timing tests confirming `useFrame`/rAF fires every ~16ms throughout. Read as a canvas-readback limitation of this tooling environment rather than evidence against the fix — confidence rests on the clean shader compile and the simple, direct uniform-mutation wiring — but this one specifically needs a human visual check.
+
+### 2026-08-31 (Phase 2 kickoff paused at the phase gate)
+
+**A request bundling a duplicate of the already-complete dust-motion fix with a full Phase 2 kickoff (video texture, extended camera trajectory past the monitor lock, campaign billboards, cinema-camera mesh) was flagged before any Phase 2 work began.**
+
+- `docs/build-workflow.md` §10 explicitly reserves final Digital content, the final Film/camera choreography, and the cinema-camera object for Phase 2 — a separate, gated phase — and `docs/build-status.md` §2 shows Phase 1D itself still awaiting approval. Asked the human how to proceed (approve Phase 1D then start Phase 2 properly; hold Phase 2 entirely; or explicitly override the gate) rather than silently building Phase 2 content into what was framed as routine atmospheric polish.
+- The human cancelled the question without selecting an option. No Phase 2 code was written or committed. The dust-motion half of that request needed no action — it was already implemented and committed in the previous turn (`6bbd50a`).
+- Phase 2 remains on hold; the next turn's request (§4N, dust concentration near the light source) explicitly confirmed staying in Phase 1 atmospheric polish only.
+
+### 2026-08-31 (Atmospheric refinement — concentrate dust near light source origin)
+
+**Biased the dust field's spatial distribution so particles cluster near the beam's origin (the light source) with a sparse tail drifting down, per explicit Phase-1-only follow-up instruction.**
+
+- `volumetricLighting.js`: added `dust.topBias` (2.4), an exponent applied to the uniform random sample (`t = Math.random() ** topBias`) that picks each point's position along the beam axis — skews toward `t=0` (the light source) for any exponent > 1. Verified numerically before committing (`node -e`, 100k-sample histogram): ~51% of points now land in the top 20% of the beam vs. an even ~20% before. Raised `dust.count` 170 → 230 so the increase reads as "more dust near the light," not a generally busier field, since the extra points are concentrated by the same bias.
+- Verified: visible density increase in the upper wall region near the beam origin at the hero frame; full scroll range and reversibility clean; frame-timing unchanged (~16.6ms avg, 0 over 33ms) despite the higher point count; production build succeeds; no React state anywhere in `src/`; mobile renders cleanly.
 
 ---
 
