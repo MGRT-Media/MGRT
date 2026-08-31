@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import { lightingParams } from '../lighting/volumetricLighting.js'
 import { createScreenTestPatternMaterial } from './screenTestPatternMaterial.js'
+import { createStoneWallMaterial } from '../materials/stoneWallMaterial.js'
 
 // A dynamic, off-square yaw rather than facing dead-center forward, per
 // explicit request. Rotating around the group's own origin (the cart's
@@ -24,23 +25,33 @@ const MONITOR_YAW_DEGREES = 20
 
 /**
  * Provisional Phase 1D monitor geometry — a retro/mid-century industrial
- * reference-monitor console, standing on a stout equipment cart within the
+ * reference-monitor console, standing on a stone plinth within the
  * Phase 1B beam's floor target. Not the final Digital composition (that's
  * Phase 2, per build-workflow.md §10).
  *
+ * The support was originally a retro AV-cart (four legs + a thin metal
+ * platform); replaced with a single minimal stone plinth per explicit
+ * request — "a visual bridge between ancient physical stone architecture
+ * and the modern digital monitor," not a desk or an ornate museum
+ * pedestal. One solid `RoundedBoxGeometry` block (no taper, no base/cap
+ * moldings — those would read as pedestal ornamentation, which the
+ * request explicitly excludes), using the same procedural stone material
+ * as the walls (`stoneWallMaterial.js`) for the material-language match.
+ *
  * `screenCenterHeight` is computed from the console's actual stacked
- * dimensions below (cart height + housing offset), not hand-picked — it
- * lands close to the previous flat-panel design's value by construction of
+ * dimensions below (plinth height + housing offset), not hand-picked — it
+ * lands close to the previous cart-supported value by construction of
  * realistic proportions, and `cameraPath.js` re-derives its monitor-aligned
  * shot from whatever this value actually is, so the two stay in sync
  * automatically if the console's proportions change again later.
  */
-const CART = {
-  legHeight: 0.75,
-  legRadius: 0.035,
-  platformWidth: 1.3,
-  platformDepth: 0.9,
-  platformHeight: 0.06,
+const PLINTH = {
+  width: 1.0,
+  depth: 0.75,
+  height: 0.72,
+  // Small, restrained bevel — enough to avoid a razor-sharp CG edge under
+  // the beam's raking light, not a decorative chamfer.
+  cornerRadius: 0.015,
 }
 
 const HOUSING = {
@@ -59,8 +70,8 @@ const BEZEL = {
   bottom: 0.22,
 }
 
-const platformTopY = CART.legHeight + CART.platformHeight
-const housingCenterY = platformTopY + HOUSING.height / 2
+const plinthTopY = PLINTH.height
+const housingCenterY = plinthTopY + HOUSING.height / 2
 const screenWidth = HOUSING.width - BEZEL.side * 2
 const screenHeight = HOUSING.height - BEZEL.top - BEZEL.bottom
 // Bottom bezel is deliberately taller (control-panel area), so the screen
@@ -88,10 +99,16 @@ export default function Monitor() {
     () => new RoundedBoxGeometry(HOUSING.rearWidth, HOUSING.rearHeight, HOUSING.rearDepth, 3, HOUSING.cornerRadius),
     [],
   )
-  const platformGeometry = useMemo(
-    () => new RoundedBoxGeometry(CART.platformWidth, CART.platformHeight, CART.platformDepth, 2, 0.02),
+  const plinthGeometry = useMemo(
+    () => new RoundedBoxGeometry(PLINTH.width, PLINTH.height, PLINTH.depth, 2, PLINTH.cornerRadius),
     [],
   )
+  // repeat: [1, 1] — a single stone-block face rather than a tiled
+  // multi-block pattern, so the plinth reads as one solid monolith with a
+  // naturally weathered edge (the mortar-groove effect from
+  // stoneWallMaterial.js lands at the block's own boundary) instead of
+  // brickwork, which would fight "minimalist... minimal detailing."
+  const plinthMaterial = useMemo(() => createStoneWallMaterial('#6e685e', [1, 1]), [])
 
   const screenCenterY = MONITOR_ANCHOR.screenCenterHeight
 
@@ -101,26 +118,13 @@ export default function Monitor() {
 
   return (
     <group position={MONITOR_ANCHOR.position} rotation={[0, THREE.MathUtils.degToRad(MONITOR_YAW_DEGREES), 0]}>
-      {/* Equipment cart — four short legs and a platform, retro AV-cart styling */}
-      {[
-        [-CART.platformWidth / 2 + 0.08, -CART.platformDepth / 2 + 0.08],
-        [CART.platformWidth / 2 - 0.08, -CART.platformDepth / 2 + 0.08],
-        [-CART.platformWidth / 2 + 0.08, CART.platformDepth / 2 - 0.08],
-        [CART.platformWidth / 2 - 0.08, CART.platformDepth / 2 - 0.08],
-      ].map(([x, z], i) => (
-        <mesh key={i} position={[x, CART.legHeight / 2, z]} castShadow receiveShadow>
-          <cylinderGeometry args={[CART.legRadius, CART.legRadius, CART.legHeight, 12]} />
-          <meshStandardMaterial color="#19191a" roughness={0.5} metalness={0.5} />
-        </mesh>
-      ))}
-      <mesh
-        position={[0, CART.legHeight + CART.platformHeight / 2, 0]}
-        geometry={platformGeometry}
-        castShadow
-        receiveShadow
-      >
-        <meshStandardMaterial color="#1d1d1e" roughness={0.55} metalness={0.4} />
-      </mesh>
+      {/*
+        Stone plinth — a single solid monolith, not a desk or a museum
+        pedestal. `receiveShadow` (so contact shadows from the housing and
+        the breach's raking light land on it) and `castShadow` (so it
+        casts its own shadow onto the floor, grounding it physically).
+      */}
+      <mesh position={[0, PLINTH.height / 2, 0]} geometry={plinthGeometry} material={plinthMaterial} castShadow receiveShadow />
 
       {/* Rear hump — a smaller, recessed box suggesting the CRT tube's depth */}
       <mesh
