@@ -441,6 +441,38 @@ Visual review requested — please confirm the landing at the monitor now reads 
 
 ---
 
+## 4J. Fix — Atmospheric Polish (Preserve Lens Flare & Dust Particles During Scroll Transition)
+
+**Status:** TECHNICALLY COMPLETE
+**Approval:** NOT YET GRANTED
+
+Human report: the light flare and atmospheric dust disappear when scrolling from the opening room view into the retro monitor screen lock.
+
+### Scope check before changing anything
+
+Two of the request's specific mechanisms don't match what's actually in this codebase, checked directly rather than assumed:
+
+- **No lens-flare / screen-space glare component exists.** `grep`-confirmed: there is no `LensFlare`, bloom, or postprocessing pipeline anywhere in `src/`, and no postprocessing package in `package.json` (`three`, `@react-three/fiber`, `@react-three/drei`, `gsap`, `lenis` only). The only "glow" in this scene is the volumetric beam mesh from `volumetricLighting.js` — a plain additive cone, not a lens-flare effect with its own occlusion test. There's nothing with an "occlusion test radius" to adjust. Building an actual screen-space lens-flare/bloom system would mean a new postprocessing dependency and render pipeline — a real architectural addition, not a parameter tweak — so it wasn't added; the fix below addresses the visible symptom (the beam disappearing) using the beam that already exists.
+- **Dust is confined to the light beam volume by design, and that's a protected Phase 1B decision** (`build-status.md` §5: "dust confined to the beam"). Expanding the particle field to cover "the full camera trajectory volume from the entrance pillars to the monitor screen" would directly conflict with that approved foundation, so it wasn't done. In practice this is a smaller gap than it sounds: the beam's floor target *is* the monitor's base position, so the existing dust cloud already extends to surround the monitor at the near/lower end of its cone — it just needed to stop being faded to zero (see below), not be spatially expanded.
+- Item 2's material flags (`transparent: true`, `depthWrite: false` on the dust `PointsMaterial`) were already exactly as requested, confirmed by reading `volumetricLighting.js` — no change needed.
+
+### What actually caused the disappearance, and what changed
+
+The real cause was the previous round's own fix (§4I): the beam/dust approach-fade introduced there faded both **all the way to fully transparent** between scroll progress 0.30–0.42, to keep the additive beam cone out of the camera's view during the monitor approach. That fully solved the transition concern §4I targeted, but as a side effect it made the atmosphere vanish for the rest of the scroll — exactly this report.
+
+- **`VolumetricLightingRig.jsx`** — changed the fade from going to `0` to dipping to a `0.3` floor instead, and holding there (not returning to full) through the monitor lock. The beam and dust still thin during the 0.30–0.42 approach window (preserving §4I's reasoning), but never fully disappear — a subtle glow and dust presence now persists all the way to the final monitor-filling shot.
+
+### Verification
+- Visual check at progress 0.35 (mid-fade) and 1.0 (monitor-filling final shot): beam and dust both clearly visible, dimmed but present, at both points — dust motes visible in the background even with the monitor filling the frame.
+- Full reversibility: scroll to 100% then back to 0% reproduces the exact hero baseline.
+- Frame-timing under a simulated wheel-gesture burst: ~16.6ms avg, 0 frames over 33ms.
+- `grep -rn "useState\|setState" src/` — no matches; production build succeeds (71 modules, no errors); mobile viewport renders with no console errors.
+
+### Required next step
+Visual review requested — please confirm the atmosphere (beam glow + dust) now stays visible through to the monitor-locked shot, and let us know if an actual lens-flare/bloom effect (a real new addition, not present today) is something you'd like scoped as its own piece of work.
+
+---
+
 ## 5. Approved Visual Decisions
 
 This section records visual decisions that have already received human approval and therefore should be treated as protected foundations.
@@ -531,6 +563,7 @@ The repository must maintain a recoverable implementation history.
 **Current commit (retro monitor shadow/lighting investigation, technically complete):** `c46afd7` — "Investigate: retro monitor shadow/lighting report" (on top of `6925400`)
 **Current commit (choreography & scroll polish, technically complete):** `4c85661` — "Fix: replace piecewise keyframe easing with continuous spline camera path" (on top of `c46afd7`)
 **Current commit (motion polish & lighting fix, technically complete):** `0952617` — "Fix: softer landing ease and beam fade through monitor approach" (on top of `4c85661`)
+**Current commit (atmospheric polish, technically complete):** `3c2b6b7` — "Fix: keep beam/dust ambient presence through the monitor approach" (on top of `0952617`)
 
 The repository was initialized (`git init -b main`) with the five governing documents relocated into `docs/` as the first commit, giving a clean recovery point before any implementation began. Phase 1A (scaffold, environment shell, column refinement), Phase 1B (volumetric lighting, three review passes), and Phase 1C (scroll-driven camera, motion-physics refinement) were each committed and approved in sequence; Phase 1D (monitor foundation) is committed on top of the approved Phase 1C checkpoint and is recoverable independently of it.
 
@@ -722,6 +755,18 @@ Each completed phase should receive a concise record.
 **Known issues:** The reported light glitch could not be reproduced in this environment (consistent with §4G) — the beam/dust fade is hardening, not a confirmed fix; on-device confirmation requested.
 **Approved visual decisions:** None yet.
 **Git checkpoint:** `main` branch; commit `0952617`.
+**Next approved phase:** N/A — cross-cutting motion refinement, not a phase gate.
+
+### Atmospheric polish (preserve lens flare & dust during scroll transition)
+
+**Implementation:** Complete
+**Technical completion:** Complete (2026-08-31)
+**Human approval:** Pending — visual review requested, see below
+**Major changes:** Changed the §4I approach-fade from going to fully transparent to dipping to a 0.3 floor and holding there — the beam/dust now persist (dimmed, not gone) through the monitor lock. No lens-flare/bloom component exists in this codebase (confirmed by grep and `package.json`) and none was added; dust's spatial confinement to the beam volume is a protected Phase 1B decision and wasn't changed. See §4J for the full scope-check reasoning.
+**Testing performed:** See §4J. Visual check at progress 0.35 and 1.0, reversibility, frame-timing, grep for React state, production build, mobile re-check.
+**Known issues:** None identified. Flagged for the human: an actual lens-flare/bloom effect would be a new addition (new dependency + render pipeline), not present today — noted in §4J's "required next step" for scoping if wanted.
+**Approved visual decisions:** None yet.
+**Git checkpoint:** `main` branch; commit `3c2b6b7`.
 **Next approved phase:** N/A — cross-cutting motion refinement, not a phase gate.
 
 ---
@@ -938,6 +983,15 @@ Record meaningful implementation changes rather than every minor code edit.
 - `volumetricLighting.js`/`VolumetricLightingRig.jsx`: added `setApproachFade(fade)`, called every frame from a new `useFrame` in the rig (direct mutation of `scrollProgress.value`-derived uniforms/opacity, no React state) that fades the beam and dust to fully transparent between scroll progress 0.30 and 0.42, keeping the additive beam cone out of the camera's view during the approach into the monitor.
 - Checked (not changed, already satisfied or not applicable): the screen mesh already has `castShadow={false}`; the spotlight's shadow map camera is independent of the main viewing camera's near plane in Three.js, so there's no "shadow buffer vs. camera near plane" interaction to fix.
 - Verified: static and 60-frame temporal pixel sampling through the 0.30–0.42 fade window shows no oscillation (consistent with §4G's prior finding that this artifact isn't reproducible here); beam/dust visibly fade by 0.35 and are fully gone by 0.45 while the floor pool still reads as the light's landing point; full reversibility; frame-timing unchanged (~16.6ms avg, 0 over 33ms); production build succeeds; no React state anywhere in `src/`; mobile renders cleanly.
+
+### 2026-08-31 (Atmospheric polish — preserve lens flare & dust during scroll transition)
+
+**Fixed the atmosphere fully disappearing during the monitor approach — a direct side effect of the previous round's own fade-to-zero fix — and flagged two request items that don't match this codebase's actual architecture.**
+
+- Root cause: §4I's approach-fade faded the beam and dust all the way to `0` opacity between scroll progress 0.30–0.42 to solve a light-transition concern; that fix worked, but it also meant the atmosphere stayed invisible for the rest of the scroll, which is exactly this report.
+- `VolumetricLightingRig.jsx`: changed the fade to dip to a `0.3` floor instead of `0`, and hold there through the monitor lock — beam/dust now thin during the same approach window as before, but never fully vanish; a subtle glow and dust presence now persists to the final monitor-filling shot.
+- Scope-checked rather than assumed: no lens-flare/bloom/postprocessing component exists anywhere in `src/` or `package.json` — not added, since that would be a new dependency and render pipeline, a real architectural addition. Dust's confinement to the light-beam volume is a protected Phase 1B decision (§5) — not expanded to cover the full camera trajectory; in practice the beam's floor target already coincides with the monitor's base position, so the existing dust cloud already reaches the monitor without needing to be spatially larger. The dust material's `transparent`/`depthWrite` flags were already exactly as requested.
+- Verified: beam and dust both visibly present (dimmed, not gone) at progress 0.35 and at the final progress-1 monitor-filling shot; full reversibility; frame-timing unchanged (~16.6ms avg, 0 over 33ms); production build succeeds; no React state anywhere in `src/`; mobile renders cleanly.
 
 ---
 
