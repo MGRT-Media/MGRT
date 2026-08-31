@@ -379,6 +379,37 @@ On-device confirmation needed — please re-check whether the flicker persists, 
 
 ---
 
+## 4H. Fix — Choreography & Scroll Polish (Remove Hard Stops)
+
+**Status:** TECHNICALLY COMPLETE
+**Approval:** NOT YET GRANTED
+
+Human report: camera scroll motion had become mechanical and glitchy again, ending in abrupt hard stops between scroll sections.
+
+### Root-cause diagnosis
+
+Three prior rounds (§4C motion-physics refinement, the organic-camera-weight pass, and general Lenis/damping tuning) had already tuned dampening lambdas, Lenis lerp, and scrub — all surface-level smoothing parameters — without resolving repeated reports of the same "mechanical/hard stop" complaint. Rather than re-tune those constants a fourth time, inspected the actual path architecture in `cameraPath.js` and found the real cause: the path was 5 keyframes, each independently eased with its own `easeInOutQuint` per segment. Easing each segment independently forces the camera's velocity to zero at *every* keyframe boundary — with 5 keyframes that's 5 stop-start events, which reads as a series of small hard stops rather than one continuous glide, no matter how well the surrounding damping/scroll layers are tuned.
+
+### What changed
+
+- **`cameraPath.js`** — replaced the piecewise per-segment easing with a single `THREE.CatmullRomCurve3` through the same position and lookAt waypoints, sampled with **one** global ease (`easeInOutQuint` applied to overall progress, not per-segment). Only progress 0 (at rest) and progress 1 (settling at the monitor) actually decelerate to zero; the interior waypoints are passed through at continuous velocity. The lookAt path's first waypoint was changed from `[0, 1.6, -50]` to `[0, 1.6, -10]` — the original was a "look far down -Z" hack whose magnitude (~50) would have been a severe outlier control point in a Catmull-Rom spline, distorting the curve's shape near the start; the new point produces a visually equivalent look direction without that risk. `sampleCameraPath(progress)` remains a pure function of `progress` alone (verified `getPoint(0)`/`getPoint(1)` return the exact first/last waypoints), so scroll-back reversibility is unaffected.
+- **`smoothScroll.js`** — Lenis retuned to `duration: 1.2`, `lerp: 0.11`, `syncTouchLerp: 0.11` (within the requested 0.1–0.12 window), `smoothWheel: true` confirmed already active.
+- **`ScrollTimelineProvider.jsx`** — ScrollTrigger `scrub` changed from `0.15` to `1`, adding a full second of its own catch-up smoothing on top of Lenis's input normalization so individual wheel notches/trackpad steps absorb into one continuous motion.
+- `ScrollCameraRig.jsx` was already using `THREE.MathUtils.damp` for position and a synchronized lerp for lookAt from a prior round — not modified, already satisfied the frame-rate-independent dampening requirement.
+
+### Verification
+- `positionCurve.getPoint(0)`/`getPoint(1)` confirmed to exactly match the hero and monitor-aligned waypoints (no jump at either end).
+- Visual check across progress 0%, 15%, 40%, 65%, 100%, and back to 0%: clean framing throughout, no spline-overshoot artifacts, exact reversibility to the hero baseline.
+- Synthetic wheel-burst test: `scrollY` settles via smooth exponential decay (no oscillation or snapping) over roughly 1.1s.
+- Instant scroll-jump test (jump to 50% mid-glide): camera visibly continues gliding toward the new target rather than snapping instantly, confirming the added `scrub: 1` lag is actually smoothing motion rather than a no-op.
+- Frame-timing under a simulated wheel-gesture burst: ~16.6ms avg, 0 frames over 33ms.
+- `grep -rn "useState\|setState" src/` — no matches; production build succeeds (71 modules, no errors); mobile viewport (375×812) renders the correct hero frame at scroll 0 with no console errors — the monitor appears more prominent than desktop only because the fixed vertical fov crops tighter horizontally at a narrow aspect ratio, not a regression.
+
+### Required next step
+Visual review requested — please confirm the hard-stop/mechanical feeling is resolved and the motion now reads as one continuous glide.
+
+---
+
 ## 5. Approved Visual Decisions
 
 This section records visual decisions that have already received human approval and therefore should be treated as protected foundations.
@@ -467,6 +498,7 @@ The repository must maintain a recoverable implementation history.
 **Current commit (retro/industrial monitor redesign, technically complete):** `ae8ebdf` — "Monitor: retro/industrial CRT-console redesign" (on top of `4adfb38`)
 **Current commit (organic camera weight, technically complete):** `6925400` — "Motion: organic camera weight via easing, lag, and scroll tuning" (on top of `ae8ebdf`)
 **Current commit (retro monitor shadow/lighting investigation, technically complete):** `c46afd7` — "Investigate: retro monitor shadow/lighting report" (on top of `6925400`)
+**Current commit (choreography & scroll polish, technically complete):** `4c85661` — "Fix: replace piecewise keyframe easing with continuous spline camera path" (on top of `c46afd7`)
 
 The repository was initialized (`git init -b main`) with the five governing documents relocated into `docs/` as the first commit, giving a clean recovery point before any implementation began. Phase 1A (scaffold, environment shell, column refinement), Phase 1B (volumetric lighting, three review passes), and Phase 1C (scroll-driven camera, motion-physics refinement) were each committed and approved in sequence; Phase 1D (monitor foundation) is committed on top of the approved Phase 1C checkpoint and is recoverable independently of it.
 
@@ -635,6 +667,18 @@ Each completed phase should receive a concise record.
 **Approved visual decisions:** None yet.
 **Git checkpoint:** `main` branch; commit `c46afd7`.
 **Next approved phase:** N/A — cross-cutting investigation/fix, not a phase gate.
+
+### Choreography & scroll polish (remove hard stops)
+
+**Implementation:** Complete
+**Technical completion:** Complete (2026-08-31)
+**Human approval:** Pending — visual review requested, see below
+**Major changes:** Replaced `cameraPath.js`'s piecewise per-segment-eased keyframes (5 waypoints, each independently eased, forcing zero velocity at every one) with a single `THREE.CatmullRomCurve3` sampled with one global ease. Retuned Lenis (`duration: 1.2`, `lerp: 0.11`, `syncTouchLerp: 0.11`) and ScrollTrigger `scrub` (0.15 → 1). See §4H.
+**Testing performed:** See §4H. Spline endpoint exactness check, full-range visual pass (0/15/40/65/100%, reversibility), wheel-burst decay test, mid-glide scroll-jump test, frame-timing, grep for React state, production build, mobile re-check.
+**Known issues:** None identified.
+**Approved visual decisions:** None yet.
+**Git checkpoint:** `main` branch; commit `4c85661`.
+**Next approved phase:** N/A — cross-cutting motion refinement, not a phase gate.
 
 ---
 
@@ -830,6 +874,15 @@ Record meaningful implementation changes rather than every minor code edit.
 - Applied one real, targeted fix: disabled shadow casting on the new control knobs (`Monitor.jsx`, small 0.028-radius cylinders — exactly the kind of thin geometry prone to shadow-map aliasing, for negligible visual value, per `technical-architecture.md` §8).
 - Verified: full reversibility, no frame-timing regression, production build succeeds, no React state anywhere in `src/`, mobile renders cleanly.
 - Flagged rather than claimed resolved: as with §4B, the reported artifact couldn't be reproduced here — likely GPU/driver-specific if it's real. Requested on-device confirmation and, if it persists, the browser/GPU and approximate scroll position.
+
+### 2026-08-31 (Choreography & scroll polish — remove hard stops)
+
+**Diagnosed and fixed the root architectural cause of recurring "mechanical/hard stop" reports, after three prior rounds of surface-level damping/Lenis tuning failed to resolve it.**
+
+- Root cause: `cameraPath.js` eased each of 5 keyframe segments independently, forcing camera velocity to zero at every waypoint — read as repeated small hard stops, not one continuous motion, regardless of how well the surrounding damping/scroll layers were tuned.
+- Replaced the piecewise keyframes with a single `THREE.CatmullRomCurve3` through the same waypoints, sampled with one global ease — only progress 0 and progress 1 actually decelerate to rest; interior waypoints are passed through at continuous velocity. Changed the lookAt path's first waypoint from `[0, 1.6, -50]` to `[0, 1.6, -10]` so it isn't a severe outlier that would distort the spline's shape near the start, while producing a visually equivalent look direction.
+- Retuned Lenis (`duration: 1.2`, `lerp: 0.11`, `syncTouchLerp: 0.11`) and ScrollTrigger `scrub` (`0.15 → 1`) per the request's explicit parameters.
+- Verified: spline endpoints exactly match the hero and monitor-aligned framing (no jump at either end); full-range visual pass (0/15/40/65/100%, reversibility) clean with no spline-overshoot artifacts; wheel-burst decay test shows smooth exponential settle (~1.1s, no oscillation); mid-glide scroll-jump test confirms the added `scrub: 1` lag is visibly smoothing motion, not a no-op; frame-timing unchanged (~16.6ms avg, 0 over 33ms); production build succeeds; no React state anywhere in `src/`; mobile renders the correct hero frame with no console errors.
 
 ---
 
