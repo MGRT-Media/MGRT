@@ -587,6 +587,36 @@ Visual review requested — please confirm the density concentration near the li
 
 ---
 
+## 4O. Feature — Architectural & Lighting Update (Windows & Transition Key Light)
+
+**Status:** TECHNICALLY COMPLETE
+**Approval:** NOT YET GRANTED — deliberate revision of two prior approvals, see below
+
+Human request: add window geometry to the room and reposition the primary light so it streams directly through them, with dust/shadows following.
+
+### Scope conflict flagged and confirmed before implementing
+
+This directly changes two protected §5 decisions: Phase 1A's "Overall room layout (floor, back wall, two side walls, **no ceiling**)" and Phase 1B's "primary light system's character... reached across **three review passes**." Flagged this conflict per the explicit rule ("Claude must identify the conflict and report it before making the change") via `AskUserQuestion` before writing any code. Human chose "proceed — treat as a deliberate revision," so this is recorded as a conscious supersession of those specific parts of the Phase 1A/1B approval, not a violation slipped past review.
+
+### What changed
+
+- **`Environment.jsx`** — added a `Window` component (an unlit, bright glass pane using the same `toneMapped: false` treatment as the monitor screen — ACES tonemapping crushes low-radiance colors, established this session — plus a simple dark frame) and a 3-window clerestory band on the right side wall (`x: +7`), upper band (`y: 6.3`), at `z: 3 / -3 / -9`. Each window sits between a pair of the existing structural columns (`z: 6, 0, -6, -12`) so none overlaps a column. This also happens to align with `creative-reference.md`'s own environmental-lighting brief ("strong directional sunlight through high apertures") — not just the request, independent supporting rationale.
+- **`volumetricLighting.js`** — `spot.position` moved to `[6.85, 6.3, -3]`, coinciding with the `z: -3` window so the beam visually originates there. **`spot.target` was deliberately left unchanged** at `[0.6, 0, -3.5]` — `Monitor.jsx`'s `MONITOR_ANCHOR.position` and `cameraPath.js`'s monitor-aligned camera endpoint both derive from this exact point; moving it would have silently relocated the monitor and the scroll destination, a much larger change than "reposition the light" asked for.
+- **`beam.lengthFraction`** recalculated `0.75 → 0.65`. The beam's lowest point is `Y = spot.position[1] * (1 - fraction)`; with the new, shallower window-angle light (`Y0 = 6.3` vs. the old `8`), leaving the fraction at 0.75 would have dropped the beam's bottom to ≈1.57 — inside the camera's reachable height range (max ≈1.7), breaking the "camera can never enter the beam volume" invariant from the §4D/§4G rebuild. Recomputed rather than left at the old value: 0.65 restores ≈2.2 of clearance.
+- **Dust and shadows** — no code changes needed. Dust already clusters at `spot.position` by construction (the `topBias` distribution from §4N), so repositioning the light automatically re-anchors the dust cluster to the new window. Shadow-camera angle/frustum are derived automatically from the spotlight's position/angle by Three.js each frame — no manual "shadow matrix" code exists or was needed.
+- **No separate "smoke" system** exists in this codebase — the request's "volumetric smoke layer" is read as referring to the existing beam+dust volumetrics, which already satisfy it.
+- Ceiling geometry (none exists) and Phase 2 both untouched, per explicit instruction.
+
+### Verification
+- Visual check across the full scroll range (0%, 50%, 100%) and reversibility back to 0%: beam clearly streams from the glowing window, floor/pillar shadows read correctly from the new angle, no clipping or artifacts at the monitor-locked shot, exact reproduction of the new hero baseline on scroll-back.
+- Frame-timing under a simulated wheel-gesture burst: ~16.6ms avg, 0 frames over 33ms.
+- `grep -rn "useState\|setState" src/` — no matches; production build succeeds (71 modules, no errors); mobile viewport renders cleanly with no console errors.
+
+### Required next step
+Visual review requested — please confirm the window/relighting treatment reads correctly, since this is a conscious change to previously-approved Phase 1A/1B work: does the new light angle, shadow direction, and window placement match what you had in mind?
+
+---
+
 ## 5. Approved Visual Decisions
 
 This section records visual decisions that have already received human approval and therefore should be treated as protected foundations.
@@ -599,10 +629,12 @@ This section records visual decisions that have already received human approval 
 - Initial (progress-0) camera framing `[0, 1.6, 9]`, `fov: 45`, looking level down −Z, and the resulting negative space / composition.
 - Overall room layout (floor, back wall, two side walls, no ceiling).
 - **Column count revised post-approval (2026-08-31, pending re-review):** originally 8 (4 per side, side colonnade only); a two-pillar foreground "entrance" pair was added at `[∓2.2, 4]` per explicit human request — see the geometry-refinement entry below. Not yet re-approved as part of the visual record; flagged here so the count doesn't silently drift from what §4/§11 describe.
+- **Wall layout revised post-approval (2026-08-31, pending re-review):** the right side wall gained a 3-window clerestory band per explicit human request, after the conflict with this approved "no ceiling, plain walls" layout was flagged and the human chose to proceed as a deliberate revision — see §4O. Not yet re-approved as part of the visual record.
 
 **Phase 1B — Atmosphere & Light (approved 2026-08-31):**
 - The primary light system's character: warm SpotLight-driven volumetric shaft, floor light-pool, shadow-casting architecture, dust confined to the beam, and the ambient/fog/three-tier material tonality (columns lightest → walls mid → floor darkest) reached across three review passes.
 - Exact final parameter values live in `lightingParams` (`src/experience/lighting/volumetricLighting.js`) and `SURFACE_TONE` (`src/experience/Environment.jsx`).
+- **Light position/direction revised post-approval (2026-08-31, pending re-review):** `spot.position` moved from `[3.4, 8, 2.2]` to `[6.85, 6.3, -3]` so the beam originates at the new clerestory window rather than an unmarked point in space, per explicit human request — the conflict with this approved "reached across three review passes" light character was flagged and the human chose to proceed. `spot.target` (and therefore the monitor position and camera-path endpoint) is unchanged. See §4O. Not yet re-approved as part of the visual record.
 
 **Phase 1C — Camera & Scroll (approved 2026-08-31):**
 - The scroll-driven camera mechanism: a single master GSAP/ScrollTrigger timeline, Lenis-smoothed input, `THREE.MathUtils.damp`-eased camera follow, and the deterministic/reversible keyframe-based path through the environment.
@@ -682,6 +714,7 @@ The repository must maintain a recoverable implementation history.
 **Current commit (asymmetric ease — snappy start, soft landing, technically complete):** `325eac1` — "Fix: asymmetric ease -- linear responsive start, soft Hermite landing" (on top of `eca309a`)
 **Current commit (GPU dust particle drift, technically complete):** `6bbd50a` — "Feat: continuous GPU-driven dust particle drift (Brownian/air-current)" (on top of `325eac1`)
 **Current commit (dust concentration near light source, technically complete):** `413727e` — "Fix: concentrate dust density near the beam origin/light source" (on top of `6bbd50a`)
+**Current commit (windows & transition key light, technically complete):** `92c8e83` — "Feat: add clerestory windows and reposition key light to stream through them" (on top of `413727e`)
 
 The repository was initialized (`git init -b main`) with the five governing documents relocated into `docs/` as the first commit, giving a clean recovery point before any implementation began. Phase 1A (scaffold, environment shell, column refinement), Phase 1B (volumetric lighting, three review passes), and Phase 1C (scroll-driven camera, motion-physics refinement) were each committed and approved in sequence; Phase 1D (monitor foundation) is committed on top of the approved Phase 1C checkpoint and is recoverable independently of it.
 
@@ -934,6 +967,18 @@ Each completed phase should receive a concise record.
 **Approved visual decisions:** None yet.
 **Git checkpoint:** `main` branch; commit `413727e`.
 **Next approved phase:** N/A — cross-cutting atmospheric polish, not a phase gate. Phase 2 remains explicitly on hold per human instruction.
+
+### Architectural & lighting update (windows & transition key light)
+
+**Implementation:** Complete
+**Technical completion:** Complete (2026-08-31)
+**Human approval:** Pending — deliberate revision of Phase 1A/1B approvals, see below
+**Major changes:** Added a 3-window clerestory band to the right side wall; repositioned the primary spotlight to `[6.85, 6.3, -3]`, coinciding with the central window, `spot.target` unchanged to protect the monitor/camera-path anchor; recalculated `beam.lengthFraction` (0.75 → 0.65) to preserve the camera-clearance invariant under the new, shallower beam angle. Flagged as a conflict with two protected §5 decisions and confirmed via `AskUserQuestion` before implementing. See §4O.
+**Testing performed:** See §4O. Full scroll range (0/50/100%) and reversibility, frame-timing, grep for React state, production build, mobile re-check.
+**Known issues:** None identified.
+**Approved visual decisions:** Superseded, pending re-review — see the updated Phase 1A/1B entries in §5.
+**Git checkpoint:** `main` branch; commit `92c8e83`.
+**Next approved phase:** N/A — cross-cutting architectural/lighting revision, not a phase gate. Phase 2 remains on hold.
 
 ---
 
@@ -1202,6 +1247,17 @@ Record meaningful implementation changes rather than every minor code edit.
 
 - `volumetricLighting.js`: added `dust.topBias` (2.4), an exponent applied to the uniform random sample (`t = Math.random() ** topBias`) that picks each point's position along the beam axis — skews toward `t=0` (the light source) for any exponent > 1. Verified numerically before committing (`node -e`, 100k-sample histogram): ~51% of points now land in the top 20% of the beam vs. an even ~20% before. Raised `dust.count` 170 → 230 so the increase reads as "more dust near the light," not a generally busier field, since the extra points are concentrated by the same bias.
 - Verified: visible density increase in the upper wall region near the beam origin at the hero frame; full scroll range and reversibility clean; frame-timing unchanged (~16.6ms avg, 0 over 33ms) despite the higher point count; production build succeeds; no React state anywhere in `src/`; mobile renders cleanly.
+
+### 2026-08-31 (Architectural & lighting update — windows & transition key light)
+
+**Added a clerestory window band and repositioned the primary light to stream through it, after flagging and confirming this as a deliberate revision of two previously-approved Phase 1A/1B decisions.**
+
+- Flagged the conflict before writing any code: this changes Phase 1A's approved "no ceiling, plain walls" room layout and Phase 1B's approved light character (both protected in §5). Asked via `AskUserQuestion` how to proceed; human chose to proceed as a deliberate revision.
+- `Environment.jsx`: added a `Window` component (unlit bright glass pane, `toneMapped: false` like the monitor screen so ACES doesn't crush the glow, plus a dark frame) and a 3-window band on the right side wall at `z: 3/-3/-9`, each positioned between a pair of existing structural columns so none overlap. Matches `creative-reference.md`'s own "strong directional sunlight through high apertures" brief.
+- `volumetricLighting.js`: `spot.position` moved to `[6.85, 6.3, -3]`, coinciding with the central window. `spot.target` deliberately left unchanged — it's the anchor for both the monitor's position and the camera path's monitor-aligned endpoint, so moving it would have been a much larger, unrequested change. Recalculated `beam.lengthFraction` (0.75 → 0.65): the new, shallower beam angle would otherwise have dropped the beam's lowest point to ≈1.57, inside the camera's reachable height range, breaking the established "camera never enters the beam volume" invariant — recomputed to restore ≈2.2 of clearance.
+- No dust or shadow code changes needed: dust already clusters at `spot.position` by construction (the §4N `topBias` distribution), and Three.js derives the shadow camera from the light's position/angle automatically each frame.
+- Verified: full scroll range (0/50/100%) and reversibility clean, beam/shadows read correctly from the new angle, no artifacts; frame-timing unchanged (~16.6ms avg, 0 over 33ms); production build succeeds; no React state anywhere in `src/`; mobile renders cleanly.
+- Updated §5's Approved Visual Decisions to flag both superseded items (wall layout, light position/direction) as "pending re-review," following the same pattern already used for the entrance-pillar column-count revision.
 
 ---
 
