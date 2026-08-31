@@ -338,6 +338,47 @@ Awaiting human visual review — please confirm the camera now reads as having p
 
 ---
 
+## 4G. Fix — Retro Monitor Shadow/Lighting Investigation
+
+**Status:** TECHNICALLY COMPLETE
+**Approval:** NOT YET GRANTED
+
+Human report: switching to the bulkier retro monitor casing reintroduced light flickering and surface flashing.
+
+### Investigation
+
+Before changing anything, checked each specific mechanism the request named, computing exact numbers rather than assuming:
+
+- **Beam/housing clearance:** the beam mesh (from the §4D rebuild) is geometrically truncated to stop at world Y ≈ 2.0. The retro housing's actual top, computed from its real stacked dimensions (`platformTopY = 0.81`, `housingCenterY = 1.235`, `housing top = housingCenterY + height/2 = 1.66`), sits **0.34 units below** where the beam mesh ends. No intersection — confirmed by calculation, not assumption.
+- **Camera near-clip clearance:** the final aligned camera sits `MONITOR_VIEW_DISTANCE (2.1)` in front of the screen plane; the screen's actual world Z (`target.z + HOUSING.frontDepth/2 + 0.002`) leaves **≈1.82 units of clearance** from the `near: 0.05` plane — several orders of margin beyond what could clip.
+- **Screen shadow exclusion:** already `castShadow={false} receiveShadow={false}` on both the screen and glass meshes (from the §4C fix) — already satisfied the request's item 1 without any change needed.
+- **Beam material flags:** `transparent: true`, `depthWrite: false`, `side: THREE.DoubleSide` were already exactly as requested (from the §4D rebuild) — confirmed by reading the file, not changed.
+- **Suggested `shadow.bias = -0.00015`:** not applied. The current tuned `bias` is `-0.0012`; `-0.00015` has a *smaller* magnitude, which (per the same reasoning as §4B) would move shadow-acne risk in the wrong direction. `normalBias: 0.02` — the request's own alternative — was already in place from §4B.
+
+### Empirical testing (couldn't reproduce the reported flicker)
+
+- Static 90-frame pixel sampling at four points (housing top, housing/rear-hump seam, screen bezel, cart shadow) while at rest: perfectly stable, one unique value each.
+- Temporal 181-frame pixel sampling on a plain housing surface during active scroll through the approach segment: a single smooth, monotonic gradient — no oscillation.
+- A first attempt at this same test, sampling a point that happened to cross the screen's color-bar test pattern during camera translation, showed apparent "flips" — traced to the sample point sweeping across different colored bars as expected scene content, not a rendering bug; the same test on a plain surface nearby was clean. Documented as a methodology pitfall so it isn't mistaken for a finding.
+- Rechecked stability specifically near the new control-knob shadow-casting area (90 frames, fully settled): perfectly stable.
+
+### One real, targeted fix applied
+
+- **Disabled shadow casting on the control knobs** (`Monitor.jsx`, `castShadow={false}`, was `true`). These are new geometry from the retro redesign — small cylinders (0.028 radius) that are exactly the kind of thin detail prone to shadow-map aliasing relative to the light's full shadow-camera frustum, for negligible visual payoff. This is the one plausible, specific technical regression the retro redesign could have introduced (the previous flat-panel design had no comparably small shadow-casting geometry) — applied per `technical-architecture.md` §8's explicit guidance to disable shadows on objects with negligible visual value, rather than guessed at generically.
+
+### Honest summary
+
+As with §4B, the reported artifact could not be reproduced or measured in this sandboxed environment despite targeted static, temporal, and geometric verification of every mechanism the request named. Every specific claim in the request (beam/housing intersection, camera clipping, missing shadow flags, missing material flags) checked out as **already fine or not actually occurring** once measured. The one change made — disabling shadow casting on the tiny control knobs — is a real, defensible hardening step, not a confirmed bug fix. Flagging rather than claiming resolution: if the flicker is still visible on the original hardware/browser, it's likely GPU/driver-specific shadow-map behavior this environment doesn't reproduce, and I'd need the browser/GPU and the approximate scroll position it's most visible at to investigate further.
+
+### Verification
+- Production build succeeds (71 modules, no errors); grep-confirmed no `useState`/`setState` anywhere in `src/`.
+- Full reversibility (90% → 0% reproduces the exact hero frame); frame-timing under a simulated scroll-gesture burst unchanged (~16.6ms avg, 0 over 33ms); mobile viewport renders cleanly, no console errors.
+
+### Required next step
+On-device confirmation needed — please re-check whether the flicker persists, and if so, note the browser/GPU and roughly where in the scroll it appears.
+
+---
+
 ## 5. Approved Visual Decisions
 
 This section records visual decisions that have already received human approval and therefore should be treated as protected foundations.
@@ -766,6 +807,16 @@ Record meaningful implementation changes rather than every minor code edit.
 - `smoothScroll.js`: Lenis `duration` raised `1.1s → 1.3s`, `lerp` lowered `0.1 → 0.085`, explicit `syncTouchLerp: 0.085` added so touch and wheel share the same decay weight.
 - Verified: smooth glide-to-rest (slightly longer settle than before, consistent with the raised duration), full reversibility, no frame-timing regression (~16.6ms avg, 0 over 33ms), production build succeeds, no React state anywhere in `src/`, mobile renders cleanly.
 - Another stale-HMR false alarm during this pass (an `easeInOutCubic is not defined` error persisting across reloads after a rename) — traced to the tab's own error-overlay state via a fresh tab, not a real code issue; grep-confirmed the file had no remaining reference to the old name.
+
+### 2026-08-31 (Retro monitor shadow/lighting investigation)
+
+**Investigated a reported flicker/flashing after the retro monitor redesign; every specific claim in the request checked out as already fine once measured, except one real hardening fix.**
+
+- Computed exact clearances rather than assuming: beam mesh vs. housing top — 0.34 units clear; camera near-clip vs. screen plane — ≈1.82 units clear. Confirmed the screen's shadow exclusion and the beam's material flags (`transparent`, `depthWrite: false`, `DoubleSide`) were already exactly as requested from earlier fixes (§4C, §4D). Did not apply the suggested `shadow.bias = -0.00015` — smaller magnitude than the already-tuned `-0.0012`, would likely worsen acne risk (same reasoning as §4B); the request's own alternative, `normalBias: 0.02`, was already in place.
+- Static and temporal pixel sampling (90–181 frames each) at rest and during active scroll: no flicker reproduced. One test run showed apparent instability that turned out to be the sample point sweeping across the screen's color-bar test pattern during camera motion — a methodology artifact, not a bug, confirmed by retesting on a plain surface nearby.
+- Applied one real, targeted fix: disabled shadow casting on the new control knobs (`Monitor.jsx`, small 0.028-radius cylinders — exactly the kind of thin geometry prone to shadow-map aliasing, for negligible visual value, per `technical-architecture.md` §8).
+- Verified: full reversibility, no frame-timing regression, production build succeeds, no React state anywhere in `src/`, mobile renders cleanly.
+- Flagged rather than claimed resolved: as with §4B, the reported artifact couldn't be reproduced here — likely GPU/driver-specific if it's real. Requested on-device confirmation and, if it persists, the browser/GPU and approximate scroll position.
 
 ---
 

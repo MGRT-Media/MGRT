@@ -118,13 +118,21 @@ export default function Monitor() {
         <meshStandardMaterial {...casingProps} />
       </mesh>
 
-      {/* Control knobs — small retro detail on the lower bezel */}
+      {/*
+        Control knobs — small retro detail on the lower bezel. Shadow
+        casting deliberately off: at this scale (0.028 radius) relative to
+        the shadow map's texel density across the light's full frustum,
+        thin geometry like this is exactly what's prone to shadow-map
+        aliasing/shimmer, for negligible visual payoff — per
+        technical-architecture.md §8's "disable shadows on objects where
+        they provide negligible visual value."
+      */}
       {[-0.14, 0].map((x, i) => (
         <mesh
           key={i}
           position={[x, screenCenterY - screenHeight / 2 - 0.08, screenFrontZ - 0.01]}
           rotation={[Math.PI / 2, 0, 0]}
-          castShadow
+          castShadow={false}
         >
           <cylinderGeometry args={[0.028, 0.028, 0.03, 16]} />
           <meshStandardMaterial color="#111112" roughness={0.6} metalness={0.3} />
