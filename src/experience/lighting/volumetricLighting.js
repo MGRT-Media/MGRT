@@ -178,10 +178,17 @@ function buildFloorPool(params, origin, target) {
 }
 
 /**
- * A small, static dust field confined to the full beam volume (origin to
- * floor target — dust can sit lower than the visible beam mesh itself,
- * since individual points don't create the "camera inside a shell" issue
- * a hollow cone does). Positions are generated once; no per-frame motion.
+ * A dust field confined to the full beam volume (origin to floor target —
+ * dust can sit lower than the visible beam mesh itself, since individual
+ * points don't create the "camera inside a shell" issue a hollow cone
+ * does). Base positions are generated once; each point then drifts around
+ * its own base position every frame, entirely on the GPU (a per-vertex
+ * sine/cosine offset driven by a `uTime` uniform, updated from
+ * `VolumetricLightingRig`'s `useFrame`) — a slow, gentle air-current
+ * wobble, not a particle simulation with velocity or state. Because the
+ * offset is a bounded oscillation around each point's fixed base position
+ * (not an accumulating drift), points never need to be wrapped/looped
+ * back into bounds — they can't wander out in the first place.
  */
 function buildDust(params, origin, target) {
   const { count, size, color, opacity } = params.dust
@@ -191,6 +198,10 @@ function buildDust(params, origin, target) {
   const maxRadius = Math.tan(params.spot.angle) * fullLength
 
   const positions = new Float32Array(count * 3)
+  // A per-point random phase offset so all 170 points don't oscillate in
+  // lockstep (which would read as the whole field pulsing rather than
+  // individual specks drifting independently).
+  const phases = new Float32Array(count)
   for (let i = 0; i < count; i += 1) {
     const t = Math.random()
     const center = origin.clone().lerp(target, t)
@@ -207,19 +218,55 @@ function buildDust(params, origin, target) {
     positions[i * 3] = point.x
     positions[i * 3 + 1] = point.y
     positions[i * 3 + 2] = point.z
+    phases[i] = Math.random() * Math.PI * 2
   }
 
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geometry.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1))
 
-  const material = new THREE.PointsMaterial({
-    color,
-    size,
-    opacity,
+  const material = new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
-    sizeAttenuation: true,
     blending: THREE.AdditiveBlending,
+    uniforms: {
+      uTime: { value: 0 },
+      uColor: { value: new THREE.Color(color) },
+      uOpacity: { value: opacity },
+      uSize: { value: size },
+    },
+    vertexShader: /* glsl */ `
+      uniform float uTime;
+      uniform float uSize;
+      attribute float aPhase;
+      void main() {
+        // Cinematic air-current drift — slow, small-amplitude, and
+        // self-bounded (a sine/cosine wobble around the base position,
+        // never a cumulative drift), so points stay put on screen and
+        // simply breathe in place rather than traveling anywhere.
+        vec3 pos = position;
+        pos.x += sin(uTime * 0.3 + position.y + aPhase) * 0.05;
+        pos.y += cos(uTime * 0.2 + position.x + aPhase) * 0.03;
+        pos.z += sin(uTime * 0.25 + position.z + aPhase) * 0.04;
+
+        vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+        gl_Position = projectionMatrix * mvPosition;
+        // Perspective size attenuation, matching THREE.PointsMaterial's
+        // own approach (size shrinks with distance from camera).
+        gl_PointSize = uSize * (400.0 / -mvPosition.z);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform vec3 uColor;
+      uniform float uOpacity;
+      void main() {
+        // Soft circular sprite instead of a hard-edged square point.
+        float d = distance(gl_PointCoord, vec2(0.5));
+        float fade = 1.0 - smoothstep(0.3, 0.5, d);
+        if (fade <= 0.0) discard;
+        gl_FragColor = vec4(uColor, uOpacity * fade);
+      }
+    `,
   })
 
   return new THREE.Points(geometry, material)
@@ -300,7 +347,12 @@ export function createVolumetricLighting(params = lightingParams) {
    */
   function setApproachFade(fade) {
     if (beam) beam.material.uniforms.uOpacity.value = params.beam.opacity * fade
-    if (dust) dust.material.opacity = params.dust.opacity * fade
+    if (dust) dust.material.uniforms.uOpacity.value = params.dust.opacity * fade
+  }
+
+  /** Advances the dust field's GPU drift animation — see `buildDust`. */
+  function setTime(t) {
+    if (dust) dust.material.uniforms.uTime.value = t
   }
 
   function update() {
@@ -318,5 +370,5 @@ export function createVolumetricLighting(params = lightingParams) {
     group.clear()
   }
 
-  return { group, params, init, update, dispose, setApproachFade }
+  return { group, params, init, update, dispose, setApproachFade, setTime }
 }

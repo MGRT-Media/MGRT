@@ -33,10 +33,13 @@ export default function VolumetricLightingRig() {
     return () => controller.dispose()
   }, [controller])
 
-  useFrame(() => {
+  useFrame((state) => {
     const dip = THREE.MathUtils.smoothstep(scrollProgress.value, FADE_START, FADE_END)
     const fade = THREE.MathUtils.lerp(1, FADE_FLOOR, dip)
     controller.setApproachFade(fade)
+    // R3F's own clock, not tied to scroll — the dust keeps drifting even
+    // while the user is completely still.
+    controller.setTime(state.clock.elapsedTime)
   })
 
   // dispose={null}: disposal is handled by controller.dispose() above; R3F's
