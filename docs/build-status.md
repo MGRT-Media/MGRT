@@ -708,6 +708,35 @@ Visual review requested — please confirm the two-stage trajectory reads as smo
 
 ---
 
+## 4S. Fix — Camera Motion Smoothing (Eliminate Drop & Reshape Sweep Path)
+
+**Status:** TECHNICALLY COMPLETE
+**Approval:** NOT YET GRANTED
+
+Human report: a sudden drop near the monitor; requested reshaping the path into 3 continuous stages (entry, right-side arc toward the breach, monitor approach).
+
+### Root-cause diagnosis
+
+Before changing anything, re-ran the derivative check from §4L's own notes on the ease function it introduced (`node -e`, numeric sampling of the piecewise linear-then-Hermite-landing curve) and reconfirmed its documented speed-up bump: peak slope ≈1.33 right around progress ≈0.90, immediately before the final decel to a stop. That bump lands exactly where the camera is also descending toward the monitor's lower screen-center height — the combination of "briefly moving faster than cruise" and "mostly moving downward" in that narrow window is what read as a "sudden drop." Reshaping the waypoints alone would not have fixed this — the ease function itself was the actual cause, confirmed numerically rather than assumed from the report.
+
+### What changed
+
+- **`cameraPath.js`** — replaced the piecewise ease with a single monotonic ease-out spanning the whole 0–1 domain: `f(t) = 1 - (1-t)^1.5`. Verified numerically before committing: strictly monotonically decreasing derivative throughout (no hump anywhere), opens at 1.5× the old cruise velocity (keeps the §4K/§4L dead-zone fix intact — still responsive from the first instant), decelerates smoothly to exactly zero velocity at `t=1` (soft landing preserved, without needing a separate landing segment or a slope-matching knot to force one).
+- **Deliberately did not adopt `power1.inOut`**, named explicitly in the request — same reasoning as §4R: that shape has zero velocity at `t=0`, reintroducing the first-scroll dead zone. A pure ease-out (not ease-in-out) is what satisfies "responsive start" and "zero abrupt acceleration" simultaneously.
+- **Waypoints reshaped from 3 to 4** (position and lookAt), forming the requested 3 continuous stages: **Entry** (hero → a wide, centered, level view down the sanctuary), **Right-side arc** (drifts to `x: 1.6` to catch the breach's light shaft — checked against every arc pillar position before committing: all arc pillars sit at `z ≤ -4` while this waypoint is at `z: 1`, so there's no proximity to check, confirmed rather than assumed), **Monitor approach** (unchanged end anchor). Start and end waypoints are byte-for-byte the same as every prior round — both load-bearing.
+- **`ScrollCameraRig.jsx` already satisfies the lookAt-smoothing request** — checked, not changed: position and lookAt have shared one damp lambda since §4L, specifically to prevent pitch mismatches at the monitor lock, which is exactly what "prevent sharp pitch shifts near the monitor lock" asks for.
+
+### Verification
+- Numerically verified the new ease function's monotonicity before implementing (see above) — strictly non-increasing derivative across the full domain, confirmed via sampled finite differences.
+- Visual check across the full scroll range (0%, 50%, 100%) and reversibility to 0%: the rightward drift toward the breach is clearly visible mid-scroll, no visible drop/jump anywhere near the monitor lock, clean squarely-aligned final shot, exact hero-baseline match on scroll-back.
+- Frame-timing under a simulated wheel-gesture burst: ~16.6ms avg, 0 frames over 33ms.
+- `grep -rn "useState\|setState" src/` — no matches; production build succeeds (72 modules, no errors); mobile viewport renders cleanly with no console errors.
+
+### Required next step
+Visual review requested — please confirm the drop is actually gone and the three stages (entry, right-arc toward the light, monitor approach) read as one continuous, intentional glide.
+
+---
+
 ## 5. Approved Visual Decisions
 
 This section records visual decisions that have already received human approval and therefore should be treated as protected foundations.
@@ -809,6 +838,7 @@ The repository must maintain a recoverable implementation history.
 **Current commit (pillar arc, stone walls, single window, technically complete):** `d315d96` — "Feat: half-moon pillar arc, procedural old-stone walls, single window" (on top of `92c8e83`)
 **Current commit (broken-stone breach & wall readability, technically complete):** `015c39d` — "Feat: organic broken-stone breach and wall material readability fix" (on top of `d315d96`)
 **Current commit (camera smoothness & beam stability, technically complete):** `d1941a5` — "Fix: simplify camera path to 2 stages, disable beam approach-fade dip" (on top of `015c39d`)
+**Current commit (eliminate camera drop, reshape to 3 stages, technically complete):** `e958d45` — "Fix: eliminate camera drop with single monotonic ease, reshape to 3 stages" (on top of `d1941a5`)
 
 The repository was initialized (`git init -b main`) with the five governing documents relocated into `docs/` as the first commit, giving a clean recovery point before any implementation began. Phase 1A (scaffold, environment shell, column refinement), Phase 1B (volumetric lighting, three review passes), and Phase 1C (scroll-driven camera, motion-physics refinement) were each committed and approved in sequence; Phase 1D (monitor foundation) is committed on top of the approved Phase 1C checkpoint and is recoverable independently of it.
 
@@ -1109,6 +1139,18 @@ Each completed phase should receive a concise record.
 **Approved visual decisions:** None yet.
 **Git checkpoint:** `main` branch; commit `d1941a5`.
 **Next approved phase:** N/A — cross-cutting motion/lighting refinement, not a phase gate. Phase 2 remains on hold.
+
+### Camera motion smoothing (eliminate drop & reshape sweep path)
+
+**Implementation:** Complete
+**Technical completion:** Complete (2026-08-31)
+**Human approval:** Pending — visual review requested, see below
+**Major changes:** Diagnosed and fixed the actual cause of the reported "sudden drop" — §4L's ease function had a documented, now-reconfirmed speed-up bump right before its final stop. Replaced it with a single monotonic ease-out (`f(t) = 1 - (1-t)^1.5`, verified numerically) spanning the whole domain. Reshaped the camera path from 3 to 4 waypoints for the requested 3 continuous stages, including a rightward drift toward the breach's light shaft. See §4S.
+**Testing performed:** See §4S. Numeric ease-monotonicity verification, full scroll range (0/50/100%) and reversibility, frame-timing, grep for React state, production build, mobile re-check.
+**Known issues:** None identified.
+**Approved visual decisions:** None yet.
+**Git checkpoint:** `main` branch; commit `e958d45`.
+**Next approved phase:** N/A — cross-cutting motion refinement, not a phase gate. Phase 2 remains on hold.
 
 ---
 
@@ -1420,6 +1462,17 @@ Record meaningful implementation changes rather than every minor code edit.
 - `VolumetricLightingRig.jsx`: disabled the approach-fade dip from §4I/§4J (`FADE_FLOOR` `0.3 → 1`) so the beam stays visible and stable through the entire scroll, per the request. That dip guarded against a monitor-transition light glitch that was never actually reproduced in this environment (§4H's dedicated investigation) — disabling it trades a hedge against an unconfirmed issue for the requested constant presence.
 - `depthWrite: false`/`side: THREE.DoubleSide`/`blending: THREE.AdditiveBlending` were already all present on the beam material from the original §4D/§4G rebuild — checked by reading the file, no change needed.
 - Verified: full scroll range (0/35/100%) and reversibility clean, beam stays bright through the previously-dipped 0.30–0.42 window, no console errors, frame-timing unchanged (~16.6ms avg, 0 over 33ms), production build succeeds, no React state anywhere in `src/`, mobile renders cleanly.
+
+### 2026-08-31 (Camera motion smoothing — eliminate drop & reshape sweep path)
+
+**Diagnosed the actual cause of a reported "sudden drop" near the monitor — a numerically-reconfirmed speed-up bump in the previous round's own ease function — and fixed it with a single monotonic curve instead of only reshaping waypoints (which would not have fixed the real cause).**
+
+- Re-ran the derivative check on §4L's linear-then-Hermite-landing ease before touching anything: reconfirmed its documented bump (peak slope ≈1.33 right around progress ≈0.90). That bump coincides with the camera also descending toward the monitor's lower screen-center height — the combination is what read as a drop.
+- `cameraPath.js`: replaced the piecewise ease with one monotonic ease-out for the whole domain, `f(t) = 1 - (1-t)^1.5` — verified numerically (strictly non-increasing derivative throughout, no hump anywhere) before committing. Opens at 1.5× cruise velocity (keeps the §4K/§4L responsive-start fix), decelerates smoothly to a full stop at `t=1`.
+- Deliberately did not adopt the requested `power1.inOut` — same reasoning as §4R: zero velocity at `t=0` would reintroduce the first-scroll dead zone.
+- Reshaped the path from 3 to 4 waypoints for the requested 3 stages: Entry (wide, centered, level), Right-side arc (drifts to `x: 1.6` toward the breach's light — checked against all 7 arc pillar positions before committing, none are near this waypoint since the arc stays at `z ≤ -4`), Monitor approach (unchanged end anchor).
+- `ScrollCameraRig.jsx` already satisfies the "smooth lookAt to prevent pitch shifts" request via its existing shared position/lookAt damp lambda (unified in §4L for exactly this reason) — checked, not changed.
+- Verified: full scroll range (0/50/100%) and reversibility clean, rightward drift toward the breach visible mid-scroll, no visible drop near the monitor lock, frame-timing unchanged (~16.6ms avg, 0 over 33ms), production build succeeds, no React state anywhere in `src/`, mobile renders cleanly.
 
 ---
 
