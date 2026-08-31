@@ -387,6 +387,7 @@ The repository must maintain a recoverable implementation history.
 **Current commit (shadow/frustum hardening fix, technically complete):** `c3c79f1` — "Fix: shadow normalBias and tighter near-clip after entrance pillars" (on top of `cdba4d9`)
 **Current commit (camera/monitor transition light-pop fix, technically complete):** `38b568e` — "Fix: fade volumetric beam across camera-monitor transition" (on top of `c3c79f1`)
 **Current commit (Phase 1B lighting rebuild, technically complete):** `4adfb38` — "Phase 1B rebuild: clean lighting architecture" (on top of `38b568e`)
+**Current commit (retro/industrial monitor redesign, technically complete):** `ae8ebdf` — "Monitor: retro/industrial CRT-console redesign" (on top of `4adfb38`)
 
 The repository was initialized (`git init -b main`) with the five governing documents relocated into `docs/` as the first commit, giving a clean recovery point before any implementation began. Phase 1A (scaffold, environment shell, column refinement), Phase 1B (volumetric lighting, three review passes), and Phase 1C (scroll-driven camera, motion-physics refinement) were each committed and approved in sequence; Phase 1D (monitor foundation) is committed on top of the approved Phase 1C checkpoint and is recoverable independently of it.
 
@@ -519,6 +520,18 @@ Each completed phase should receive a concise record.
 **Approved visual decisions:** None yet.
 **Git checkpoint:** `main` branch; commit `4adfb38`.
 **Next approved phase:** N/A — this rebuild doesn't advance the phase gate; Phase 1D approval is still what's pending for Phase 2 to begin.
+
+### Retro/industrial monitor redesign
+
+**Implementation:** Complete
+**Technical completion:** Complete (2026-08-31)
+**Human approval:** Pending
+**Major changes:** `Monitor.jsx` rebuilt with a retro AV-cart stand, deep rounded-corner boxy CRT-style housing, thick asymmetric bezel with control knobs, and matte industrial casing material. Added `RoundedBoxGeometry` (bundled with `three`, not a new dependency). See §4E for full detail.
+**Testing performed:** See §4E. Hero/approach/aligned scroll checks, reversibility, frame-timing re-measurement, production build, mobile re-check, grep for React state.
+**Known issues:** None new.
+**Approved visual decisions:** None yet.
+**Git checkpoint:** `main` branch; commit `ae8ebdf`.
+**Next approved phase:** N/A — cross-cutting visual revision, not a phase gate.
 
 ---
 
