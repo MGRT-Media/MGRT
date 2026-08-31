@@ -45,3 +45,13 @@ body {
   position: relative;
   width: 100%;
 }
+
+/*
+ * Lenis (smoothScroll.js) drives scroll position itself via its own
+ * inertia curve — CSS scroll-behavior: smooth would fight it, so make
+ * sure it stays off while Lenis is active.
+ */
+html.lenis,
+html.lenis-smooth {
+  scroll-behavior: auto !important;
+}
