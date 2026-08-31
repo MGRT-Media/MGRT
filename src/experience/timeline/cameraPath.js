@@ -61,12 +61,16 @@ const LOOKAT_WAYPOINTS = [
 const positionCurve = new THREE.CatmullRomCurve3(POSITION_WAYPOINTS, false, 'catmullrom', 0.5)
 const lookAtCurve = new THREE.CatmullRomCurve3(LOOKAT_WAYPOINTS, false, 'catmullrom', 0.5)
 
-// Quintic in/out — the single global ease controlling overall pacing: a
-// gentle accel out of rest and a long, soft tail into the final monitor
-// alignment, applied once to `progress` rather than re-applied (and
-// re-zeroing velocity) at every interior waypoint.
-function easeInOutQuint(t) {
-  return t < 0.5 ? 16 * t ** 5 : 1 - (-2 * t + 2) ** 5 / 2
+// Asymmetric single global ease: quintic accel out of rest for the first
+// half, then a softer septic (power 7) decel for the second half — a
+// longer, gentler tail than a symmetric quintic gives, so the final
+// approach into the monitor-locked shot coasts down rather than arriving
+// briskly. Continuous in value at t=0.5 (both halves equal 0.5 there).
+function easeCameraPath(t) {
+  if (t < 0.5) {
+    return 16 * t ** 5
+  }
+  return 1 - (-2 * t + 2) ** 7 / 2
 }
 
 /**
@@ -76,7 +80,7 @@ function easeInOutQuint(t) {
  */
 export function sampleCameraPath(progress) {
   const p = THREE.MathUtils.clamp(progress, 0, 1)
-  const eased = easeInOutQuint(p)
+  const eased = easeCameraPath(p)
 
   return {
     position: positionCurve.getPoint(eased).toArray(),

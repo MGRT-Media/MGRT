@@ -287,6 +287,22 @@ export function createVolumetricLighting(params = lightingParams) {
     group.add(spotLight, spotTarget, keyLight, ambientLight, beam, floorPool, dust)
   }
 
+  /**
+   * Fades the beam and dust (not the floor pool, which is flat on the
+   * ground and never near the camera) toward fully transparent as the
+   * camera approaches the monitor. The beam is an open, double-sided,
+   * additive cone the camera's view direction passes close to during the
+   * approach — around scroll progress 0.30–0.42, well before the camera
+   * itself ever enters the geometry (the beam is truncated to stay above
+   * every camera height, see `beam.lengthFraction` above). Driven by a
+   * direct uniform/opacity mutation from `VolumetricLightingRig`'s
+   * `useFrame`, not React state, per technical-architecture.md §7.
+   */
+  function setApproachFade(fade) {
+    if (beam) beam.material.uniforms.uOpacity.value = params.beam.opacity * fade
+    if (dust) dust.material.opacity = params.dust.opacity * fade
+  }
+
   function update() {
     // Reserved for a future scroll-driven timeline. Nothing runs here —
     // this lighting system is fully static by design.
@@ -302,5 +318,5 @@ export function createVolumetricLighting(params = lightingParams) {
     group.clear()
   }
 
-  return { group, params, init, update, dispose }
+  return { group, params, init, update, dispose, setApproachFade }
 }

@@ -4,14 +4,16 @@ import { useFrame } from '@react-three/fiber'
 import { scrollProgress } from './ScrollTimelineProvider.jsx'
 import { sampleCameraPath } from './cameraPath.js'
 
-// Position and lookAt are damped at *different* rates — position tracks
-// the scroll target fairly responsively, while the lookAt target trails
-// slightly behind it. That asynchronous lag is what gives the camera a
-// sense of physical weight (a heavy dolly/gimbal rig whose framing settles
-// a beat after its position does) rather than reading as a rigid point
-// that snaps its facing to match its position instantly.
-const POSITION_DAMP_LAMBDA = 4.5
-const LOOKAT_DAMP_LAMBDA = 3
+// Position and lookAt are damped at the *same* rate. An earlier round used
+// a faster position lambda than lookAt for an asynchronous "weighty dolly"
+// lag, but that meant position could finish settling while lookAt was
+// still catching up — read as a rotational micro-snap right at the
+// monitor-locked endpoint, since both targets stop moving at the same
+// moment (progress reaches 1) but arrived at rest at different times.
+// Sharing one (lower, softer) lambda makes both converge in lockstep, and
+// the lower value itself gives a longer coast to rest.
+const POSITION_DAMP_LAMBDA = 3.5
+const LOOKAT_DAMP_LAMBDA = 3.5
 
 /**
  * Drives the camera from the scroll-derived target every frame, but never
