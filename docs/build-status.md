@@ -217,9 +217,10 @@ The repository must maintain a recoverable implementation history.
 **Current working branch:** `main`
 **Baseline commit (docs only, pre-implementation):** `960243b` — "Initial commit: governing documentation"
 **Approved Phase 1A checkpoint:** `8f6784d` — "Phase 1A: refine column geometry to classical cylindrical profile" (Phase 1A approved 2026-08-31 in chat, against this commit)
-**Current commit (Phase 1B, technically complete):** `c574d5e` — "Phase 1B: three-tier surface tonality and higher global exposure" (on top of `d36f88b`, `2da89c8`, and `9d7e5b2`, the prior Phase 1B commits)
+**Approved Phase 1B checkpoint:** `c574d5e` — "Phase 1B: three-tier surface tonality and higher global exposure" (Phase 1B approved 2026-08-31 in chat, against this commit)
+**Current commit (Phase 1C, technically complete):** `e566d3f` — "Phase 1C: scroll-driven camera timeline"
 
-The repository was initialized (`git init -b main`) with the five governing documents relocated into `docs/` as the first commit, giving a clean recovery point before any implementation began. Phase 1A (scaffold, environment shell, column refinement) was committed and approved on top of that baseline; Phase 1B (volumetric lighting) is committed on top of the approved Phase 1A checkpoint and is recoverable independently of it.
+The repository was initialized (`git init -b main`) with the five governing documents relocated into `docs/` as the first commit, giving a clean recovery point before any implementation began. Phase 1A (scaffold, environment shell, column refinement) and Phase 1B (volumetric lighting, three review passes) were each committed and approved in sequence; Phase 1C (scroll-driven camera) is committed on top of the approved Phase 1B checkpoint and is recoverable independently of it.
 
 ### Checkpoint rules
 
@@ -286,7 +287,7 @@ Each completed phase should receive a concise record.
 **Testing performed:** Production build, dev-server console check, visual verification at multiple scroll positions (0%, 50%, 100%), reversibility check (scroll to 100% then back to 0%, confirmed pixel-identical to the approved Phase 1B baseline), frame-timing measurement during continuous scroll (~60fps average, 0 frames over 33ms — see §9), grep-verified no `useState`/`setState` in the scroll/camera path, mobile-viewport resilience check, and a direct simulated-resize test confirming `--app-height` (and therefore canvas/spacer sizing) does not change when only `window.innerHeight` changes (mobile address-bar collapse/expand).
 **Known issues:** See §6 — bundle size grew further with GSAP (still low severity, deferred to Phase 5); no new issues introduced. One in-flight issue was caught and fixed during verification, not shipped: an earlier camera-path draft ended inside the Phase 1B dust/beam volume and produced visible clipping artifacts — the path was revised to stay outside that volume before this phase was marked complete.
 **Approved visual decisions:** None yet — pending human review of this phase.
-**Git checkpoint:** `main` branch; see §8 for the exact commit once recorded.
+**Git checkpoint:** `main` branch; commit `e566d3f`.
 **Next approved phase:** Pending human approval of Phase 1C before Phase 1D (Digital / Monitor Foundation) may begin.
 
 ---
