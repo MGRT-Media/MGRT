@@ -21,12 +21,12 @@ export const lightingParams = {
     bias: -0.0012,
   },
   ambient: {
-    color: '#9a9aa2',
-    intensity: 1.1,
+    color: '#a6a6b0',
+    intensity: 1.7,
   },
   fog: {
-    color: '#08080a',
-    density: 0.05,
+    color: '#242428',
+    density: 0.032,
   },
   volumetric: {
     color: '#fff1dc',
