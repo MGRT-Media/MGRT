@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { useMemo } from 'react'
+import VolumetricLightingRig from './lighting/VolumetricLightingRig.jsx'
 
 const HALL_WIDTH = 14
 const HALL_DEPTH = 32
@@ -47,46 +48,46 @@ function useColumnGeometry(height) {
 /**
  * Persistent architectural shell: floor, walls, structural columns.
  *
- * Materials and light levels here are a neutral "blockout" pass for
- * reviewing scale, composition, and spatial depth only — not the final
- * near-black tonal palette from creative-reference.md, and not the
- * Phase 1B lighting design (no directional light, shadows, or atmosphere
- * belong here). Tonal darkness is tuned once the real directional light
- * and exposure are introduced in Phase 1B.
+ * Geometry, proportions, and layout are the approved Phase 1A foundation
+ * and are unchanged here. The Phase 1A placeholder hemisphere/ambient
+ * "visibility aid" light has been replaced by the real Phase 1B lighting
+ * system (`VolumetricLightingRig`); material colors are otherwise
+ * untouched — the room reads darker now because it is genuinely lit by a
+ * single directional source instead of flat fill light, not because any
+ * surface color changed.
  */
 export default function Environment() {
   const columnGeometry = useColumnGeometry(HALL_HEIGHT)
 
   return (
     <group>
-      <hemisphereLight args={['#ffffff', '#3a3a3a', 1.6]} />
-      <ambientLight intensity={0.6} />
+      <VolumetricLightingRig />
 
       {/* Floor */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow={false}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <planeGeometry args={[HALL_WIDTH, HALL_DEPTH]} />
         <meshStandardMaterial color="#4a4a4a" roughness={0.9} metalness={0.05} />
       </mesh>
 
       {/* Back wall */}
-      <mesh position={[0, HALL_HEIGHT / 2, -HALL_DEPTH / 2]}>
+      <mesh position={[0, HALL_HEIGHT / 2, -HALL_DEPTH / 2]} receiveShadow>
         <planeGeometry args={[HALL_WIDTH, HALL_HEIGHT]} />
         <meshStandardMaterial color="#5c5c5c" roughness={0.95} metalness={0} />
       </mesh>
 
       {/* Side walls */}
-      <mesh position={[-HALL_WIDTH / 2, HALL_HEIGHT / 2, 0]} rotation={[0, Math.PI / 2, 0]}>
+      <mesh position={[-HALL_WIDTH / 2, HALL_HEIGHT / 2, 0]} rotation={[0, Math.PI / 2, 0]} receiveShadow>
         <planeGeometry args={[HALL_DEPTH, HALL_HEIGHT]} />
         <meshStandardMaterial color="#525252" roughness={0.95} metalness={0} />
       </mesh>
-      <mesh position={[HALL_WIDTH / 2, HALL_HEIGHT / 2, 0]} rotation={[0, -Math.PI / 2, 0]}>
+      <mesh position={[HALL_WIDTH / 2, HALL_HEIGHT / 2, 0]} rotation={[0, -Math.PI / 2, 0]} receiveShadow>
         <planeGeometry args={[HALL_DEPTH, HALL_HEIGHT]} />
         <meshStandardMaterial color="#525252" roughness={0.95} metalness={0} />
       </mesh>
 
       {/* Structural columns */}
       {columnPositions.map(([x, z], i) => (
-        <mesh key={i} position={[x, 0, z]} geometry={columnGeometry}>
+        <mesh key={i} position={[x, 0, z]} geometry={columnGeometry} castShadow receiveShadow>
           <meshStandardMaterial color="#6a6a6a" roughness={0.85} metalness={0.1} />
         </mesh>
       ))}

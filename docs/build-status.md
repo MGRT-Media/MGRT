@@ -40,15 +40,18 @@ For a new project, the Current Phase may be Phase 1A even when no phase has yet 
 
 **Project:** MGRT Media
 **Status:** In active development
-**Current Phase:** Phase 1A — Environment Shell
-**Phase Status:** Technically complete, pending human approval
-**Current Objective:** Establish the persistent Three.js physical environment before introducing cinematic lighting, atmosphere, camera choreography, or final portfolio content.
+**Current Phase:** Phase 1B — Atmosphere & Light
+**Phase Status:** In progress
+**Current Objective:** Introduce the primary cinematic volumetric light into the approved Phase 1A architectural shell.
 
 ### Current approval state
 
 ```text
 PHASE 1A — Environment Shell
-STATUS: TECHNICALLY COMPLETE
+STATUS: APPROVED (2026-08-31, human review)
+
+PHASE 1B — Atmosphere & Light
+STATUS: IN PROGRESS
 APPROVAL: NOT YET GRANTED
 ```
 
@@ -60,8 +63,8 @@ Claude must work only within the currently approved scope unless explicitly inst
 
 ```text
 PHASE 1
-├── 1A — Environment Shell              TECHNICALLY COMPLETE
-├── 1B — Atmosphere & Light             NOT STARTED
+├── 1A — Environment Shell              APPROVED
+├── 1B — Atmosphere & Light             IN PROGRESS
 ├── 1C — Camera & Scroll                NOT STARTED
 └── 1D — Digital / Monitor Foundation   NOT STARTED
 
@@ -102,47 +105,42 @@ Use the following status values consistently:
 
 ---
 
-## 4. Phase 1A — Environment Shell
+## 4. Phase 1B — Atmosphere & Light
 
-**Status:** TECHNICALLY COMPLETE
+**Status:** IN PROGRESS
 **Approval:** NOT YET GRANTED
 
 ### Objective
-Establish the persistent physical environment: Three.js scene, architectural shell, floor, walls, structural elements, basic spatial scale, initial camera position, scene composition, and persistent environment structure.
+Establish the opening visual language: primary directional/volumetric light, architectural shadows, initial atmospheric depth, dust within illuminated areas, opening darkness, and the light reveal, per `build-workflow.md` §8. The light must feel physically motivated.
 
 ### In scope
-Only the systems necessary to establish the physical environment and its spatial foundation.
+The primary cinematic light and its immediate physical effects on the approved Phase 1A shell: light source, visible volumetric shaft, light falloff/softness, floor/architecture interaction (shadows, light pool), and restrained dust within the illuminated volume.
 
 ### Out of scope
-Final portfolio content, campaign media, final Digital content, complex atmospheric effects, audio, advanced post-processing, complex cinematic transitions, final typography systems, secondary decorative objects, full camera choreography, and Film → Digital transition mechanics.
+Scroll-driven or time-based lighting changes (Phase 1C), camera choreography, Film/Digital/Campaign content, new architecture materials, post-processing, audio.
 
 ### Review criteria
-
-Before Phase 1A can be approved, verify: the physical environment feels intentional, architectural scale is credible, spatial depth is established, camera starting position is appropriate, composition provides sufficient negative space, the environment supports the intended cinematic experience, scene structure is suitable for later phases, and no unnecessary complexity has been introduced.
+Light direction, contrast, architectural readability, dust subtlety, volumetric quality, atmospheric depth, and overall cinematic tone (per `build-workflow.md` §8).
 
 ### Current implementation notes
 
-Project scaffolded from scratch (Vite + React + React Three Fiber + Drei; see `package.json`). Application structure follows `technical-architecture.md` §4's cinematic/explore separation — only the cinematic layer exists so far.
-
-- `src/experience/CinematicExperience.jsx` — mounts the persistent R3F `Canvas`, static camera (`position: [0, 1.6, 9]`, `fov: 45`), capped `dpr={[1,2]}`, no post-processing.
-- `src/experience/Environment.jsx` — the architectural shell: a floor (14×32), back wall, two side walls, and 8 structural columns (4 per side) establishing an enclosed hall with perspective depth. Columns use a single shared `LatheGeometry` (plinth → subtly tapered shaft → capital, 16 radial segments, no fluting or ornamentation) revolved from a restrained profile, rather than the original box placeholders — same positions, spacing, and overall height as before. A flat hemisphere + ambient light is used purely as a **visibility aid** for reviewing scale and composition — it is explicitly not the Phase 1B lighting design (no directional light, shadows, or atmosphere).
-- `src/hooks/useViewportHeight.js` — pins `--app-height` to `window.innerHeight` at mount, and only re-reads it when `window.innerWidth` changes (real resize/orientation change) rather than on every height fluctuation, so mobile Safari/Chrome address-bar collapse/expand during scroll won't trigger a canvas/camera resize. `global.css` uses `100dvh` with this cached value as a fallback, per `technical-architecture.md` §16.
-- No scroll system, camera choreography, portfolio content, audio, or post-processing has been added — out of scope for this phase.
-
-**Placeholder note:** material tones are a neutral mid-grey "blockout" palette (e.g. `#4a4a4a` floor, `#5c5c5c` back wall), not the near-black palette from `creative-reference.md` §5. This is intentional — legible scale/composition review now, with the final dark tonal values and physically-motivated light introduced in Phase 1B. This palette must not be treated as a final material decision.
+- `src/experience/lighting/volumetricLighting.js` — framework-agnostic controller (`createVolumetricLighting()`) exposing `init()` / `update(time)` / `dispose()` and an exported `lightingParams` data structure (color, intensity, position, target, angle, penumbra, decay, distance, ambient, volumetric, dust) for Phase 1C to bind to later. Builds: a `THREE.SpotLight` (the primary light, shadow-casting, warm ~`#fff1dc`, intensity 55, positioned high at `[3.4, 8, 2.2]` aimed at `[0.6, 0, -3.5]`, 0.32 rad angle, 0.65 penumbra), a single additive-blended `ShaderMaterial` cone (the visible volumetric shaft, soft length-wise fade, opacity 0.06, no post-processing/raymarching), a soft radial floor light-pool (analytic shader, no texture), a low desaturated-grey `AmbientLight` (`#9a9aa2`, intensity 0.85) so the architecture stays faintly legible outside the beam, and a small static `THREE.Points` dust field confined to the shaft volume (140 points, generated once, no per-frame motion).
+- `src/experience/lighting/VolumetricLightingRig.jsx` — thin R3F adapter: instantiates the controller once, calls `init()` on mount and `dispose()` on unmount, adds `controller.group` via `<primitive>`. Deliberately does **not** call `update(time)` from a `useFrame` loop — Phase 1B lighting is static by requirement, so no per-frame work happens yet; Phase 1C will wire `update(time)` to the shared timeline.
+- `src/experience/Environment.jsx` — removed the Phase 1A placeholder hemisphere/ambient "visibility aid" light (as already flagged as provisional in the Phase 1A record) and mounted `<VolumetricLightingRig />` instead. Added `receiveShadow`/`castShadow` flags to the floor, walls, and columns so the architecture participates in the new shadow-casting light. No geometry, position, proportion, or material color was changed.
+- `src/experience/CinematicExperience.jsx` — added the `shadows` prop to the R3F `Canvas` to enable the renderer's shadow map (required for the spotlight's shadow); no other Canvas/camera change.
 
 ### Known issues
 
 | Issue | Severity | Notes |
 |---|---|---|
-| Production bundle exceeds Vite's 500kB chunk-size warning (~960kB / ~265kB gzip) | Low | Expected at this stage (three.js baseline cost); no code-splitting attempted yet. Revisit under Phase 5 performance work, not before. |
-| `npm audit` reports a moderate `esbuild`/Vite dev-server advisory (GHSA-67mh-4wv8-2f99) | Low | Dev-server-only (local requests to the Vite dev server), does not affect production builds. A fix requires a breaking Vite major upgrade (v5 → v8) — deferred rather than forced in this phase. |
-| No ceiling geometry | None (by design) | Not required by `build-workflow.md` §7's Phase 1A scope; the open volume above reads as intentional negative space. Revisit only if a later phase's composition needs it. |
+| ACES Filmic tone mapping (the R3F/three.js default) crushes low-radiance ambient contributions to literal black (`0,0,0`) in 8-bit output | Low (resolved via tuning, documented for Phase 1C) | Discovered during tuning: a plausible-looking dark ambient color/intensity combination rendered the entire room pure black outside the beam, even though the light was genuinely present and correctly attached to the scene. Root-caused via isolated testing (bypassing the custom module with a plain declarative `<ambientLight>`) rather than guessing. Resolved by using a desaturated *light* grey ambient color (`#9a9aa2`) at a moderate intensity (0.85) rather than a near-black color at high intensity — same "dark room" result, but the underlying radiance stays above the tone-mapping's black-crush threshold. Relevant for Phase 1C/1B follow-on tuning: prefer lowering intensity over darkening color when trying to dim a light. |
+
+See also §6 for the two known issues carried over from Phase 1A (bundle size, dev-only esbuild advisory).
 
 ### Required next step
-Phase 1A is technically complete. Awaiting human visual review and explicit approval before Phase 1B begins.
+Phase 1B is implemented and awaiting human visual review and explicit approval before Phase 1C begins.
 
-Do not begin Phase 1B until Phase 1A is explicitly approved.
+Do not begin Phase 1C until Phase 1B is explicitly approved.
 
 ---
 
@@ -151,7 +149,14 @@ Do not begin Phase 1B until Phase 1A is explicitly approved.
 This section records visual decisions that have already received human approval and therefore should be treated as protected foundations.
 
 ### Approved
-*None yet.*
+
+**Phase 1A — Environment Shell (approved 2026-08-31):**
+- Room dimensions and architectural proportions (14×32 floor, 9 unit wall height).
+- Column geometry, proportions (plinth/tapered shaft/capital LatheGeometry profile), count (8, 4 per side), and spacing.
+- Static initial camera position `[0, 1.6, 9]`, `fov: 45`, and the resulting negative space / composition.
+- Overall room layout (floor, back wall, two side walls, no ceiling).
+
+These are now protected foundations. Phase 1B must not alter them; see §4 of `build-workflow.md`'s Phase 1B objective for what may change (lighting/atmosphere only).
 
 ### Protected decisions
 
@@ -224,13 +229,13 @@ Do not overwrite or discard an approved state without a recoverable Git history.
 
 ### Current phase testing
 
-**Phase:** 1A
-**Functional testing:** COMPLETE — `npm run build` succeeds (Vite production build, 56 modules, no errors); dev server starts cleanly with no console errors or warnings from the application (one unrelated Canvas2D debug-tooling warning from a manual pixel-readback check, not from the app itself).
-**Visual testing:** COMPLETE (via the in-app Chromium browser pane) — architectural hall, floor, back wall, side walls, and 8 columns render with credible perspective, spatial depth, and negative space above the hall; composition matches the review criteria in §4.
+**Phase:** 1B
+**Functional testing:** COMPLETE — `npm run build` succeeds (Vite production build, 58 modules, no errors); dev server starts cleanly with no console errors from the application.
+**Visual testing:** COMPLETE (via the in-app Chromium browser pane) — the volumetric shaft, floor light-pool, dust, and shadow-cast architecture render as intended; verified no z-fighting, banding, or flicker across repeated screenshots; verified shadow-casting mechanics work correctly (temporarily aimed the beam at a column to confirm a visible cast shadow, then reverted to the approved baseline aim).
 **Chrome testing:** COMPLETE — verified in the Chromium-based browser pane (desktop viewport).
-**Safari testing:** NOT YET COMPLETE — no macOS/iOS Safari available in this environment; must be tested before this phase can be considered fully verified per `build-workflow.md` §9's Safari requirement. Flagging as a gap rather than silently skipping.
-**Mobile testing:** PARTIAL — verified via emulated 375×812 mobile viewport: canvas resizes correctly, no context loss, no console errors, scene continues rendering (composition itself is the unmodified desktop framing — mobile-specific recomposition is explicitly Phase 1C/Phase 4 scope, not 1A). Real-device touch/scroll and address-bar show/hide behavior not testable in this environment.
-**120Hz testing:** NOT YET COMPLETE — no scroll or per-frame animation exists yet in Phase 1A (static camera only), so there is nothing frame-rate-dependent to test. Relevant starting in Phase 1C.
+**Safari testing:** NOT YET COMPLETE — no macOS/iOS Safari available in this environment; carried over from Phase 1A as an open gap, not silently skipped.
+**Mobile testing:** PARTIAL — verified via emulated 375×812 mobile viewport: canvas/lighting renders correctly, no console errors, no context loss. Real-device touch/scroll and address-bar show/hide behavior not testable in this environment.
+**120Hz testing:** NOT APPLICABLE YET — Phase 1B lighting is static (no per-frame work runs; `update(time)` is defined but never called), so there is nothing frame-rate-dependent to test. Relevant starting in Phase 1C.
 
 Testing status should be updated as the phase progresses.
 
@@ -253,8 +258,20 @@ Each completed phase should receive a concise record.
 **Testing performed:** Production build verification, dev-server console check, visual composition review (desktop), emulated mobile-viewport resize/resilience check. See §9 for full detail and gaps (Safari, real-device mobile, 120Hz not yet testable).
 **Known issues:** See §4 and §6 — bundle size and a dev-only `esbuild` advisory, both low severity and deferred to later phases.
 **Approved visual decisions:** None yet — pending human review of this phase.
-**Git checkpoint:** `main` branch; baseline docs commit `960243b`, Phase 1A commit `eea4e73`.
-**Next approved phase:** Pending human approval of Phase 1A before Phase 1B (Atmosphere & Light) may begin.
+**Git checkpoint:** `main` branch; baseline docs commit `960243b`, Phase 1A commit `eea4e73`, column refinement `8f6784d`.
+**Next approved phase:** Approved 2026-08-31 (human review in chat) — Phase 1B (Atmosphere & Light) began.
+
+### Phase 1B
+
+**Implementation:** Complete
+**Technical completion:** Complete (2026-08-31)
+**Human approval:** Pending
+**Major changes:** Added `src/experience/lighting/volumetricLighting.js` (framework-agnostic controller with `init()`/`update(time)`/`dispose()` and an exported `lightingParams` data structure) and `src/experience/lighting/VolumetricLightingRig.jsx` (R3F adapter); replaced the Phase 1A placeholder hemisphere/ambient light in `Environment.jsx` with the real system; added shadow flags to the architecture and enabled `shadows` on the Canvas.
+**Testing performed:** See §9. Production build, dev-server console check, visual verification, shadow-casting mechanics check, mobile-viewport resilience check.
+**Known issues:** See §4 and §6 — an ACES tone-mapping tuning gotcha (resolved, documented for future lighting tuning), plus the two carried-over Phase 1A issues (bundle size, dev-only esbuild advisory).
+**Approved visual decisions:** None yet — pending human review of this phase.
+**Git checkpoint:** `main` branch; see §8 for the exact commit once recorded.
+**Next approved phase:** Pending human approval of Phase 1B before Phase 1C (Camera & Scroll) may begin.
 
 ---
 
@@ -294,6 +311,18 @@ Record meaningful implementation changes rather than every minor code edit.
 - Replaced the placeholder box columns in `src/experience/Environment.jsx` with a single shared, restrained `LatheGeometry` profile (plinth, subtly tapered shaft, capital — no fluting or ornamentation), per human review feedback.
 - Column positions, spacing, count, and overall height are unchanged; this is a geometry-only refinement, not a composition change.
 - Verified: dev server renders with no console errors, production build succeeds.
+
+### 2026-08-31 (Phase 1B)
+
+**Phase 1A approved (human review in chat); Phase 1B — Atmosphere & Light implemented and technically complete.**
+
+- Recorded Phase 1A approval: room dimensions, architectural proportions, column geometry/spacing, static camera framing, and overall layout are now protected foundations (§5).
+- Implemented the primary volumetric lighting system: `src/experience/lighting/volumetricLighting.js` (a `THREE.SpotLight` primary light, an additive-blended shader cone for the visible shaft, an analytic floor light-pool, a low ambient fill, and a small static dust field — all built from an exported `lightingParams` data structure) and `src/experience/lighting/VolumetricLightingRig.jsx` (the R3F adapter).
+- Removed the Phase 1A placeholder hemisphere/ambient "visibility aid" light from `Environment.jsx`; added shadow flags to the floor, walls, and columns; enabled `shadows` on the Canvas. No Phase 1A geometry, proportions, or material colors were changed.
+- `update(time)` is defined on the controller but intentionally never called — Phase 1B lighting is static, and no per-frame work runs; Phase 1C will wire it to the shared timeline.
+- Debugged and resolved a tone-mapping tuning gotcha (a near-black ambient color was crushed to literal `0,0,0` by the default ACES Filmic curve regardless of intensity); root-caused via isolated testing rather than guesswork, documented in §6 for future lighting tuning.
+- Verified: production build succeeds, no console errors, no z-fighting/banding/flicker observed, shadow-casting mechanics confirmed working, mobile-viewport rendering resilient. Safari and real-device testing remain open gaps (carried over from Phase 1A).
+- Phase 1B is technically complete and awaiting human visual review and approval. Phase 1C has not been started.
 
 ---
 
