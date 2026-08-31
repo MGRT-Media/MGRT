@@ -207,7 +207,7 @@ The repository must maintain a recoverable implementation history.
 
 **Current working branch:** `main`
 **Baseline commit (docs only, pre-implementation):** `960243b` — "Initial commit: governing documentation"
-**Current commit (Phase 1A, technically complete):** *recorded at the time of this commit — see `git log` on `main`*
+**Current commit (Phase 1A, technically complete):** `eea4e73` — "Phase 1A: scaffold project and implement environment shell"
 **Current approved checkpoint:** *To be recorded once Phase 1A receives explicit human approval*
 
 The repository was initialized (`git init -b main`) with the five governing documents relocated into `docs/` as the first commit, giving a clean recovery point before any implementation began. The Phase 1A scaffold and environment shell were committed on top of that baseline.
@@ -253,7 +253,7 @@ Each completed phase should receive a concise record.
 **Testing performed:** Production build verification, dev-server console check, visual composition review (desktop), emulated mobile-viewport resize/resilience check. See §9 for full detail and gaps (Safari, real-device mobile, 120Hz not yet testable).
 **Known issues:** See §4 and §6 — bundle size and a dev-only `esbuild` advisory, both low severity and deferred to later phases.
 **Approved visual decisions:** None yet — pending human review of this phase.
-**Git checkpoint:** `main` branch; baseline docs commit `960243b`, Phase 1A commit recorded in §8.
+**Git checkpoint:** `main` branch; baseline docs commit `960243b`, Phase 1A commit `eea4e73`.
 **Next approved phase:** Pending human approval of Phase 1A before Phase 1B (Atmosphere & Light) may begin.
 
 ---
