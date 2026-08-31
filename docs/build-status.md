@@ -410,6 +410,37 @@ Visual review requested — please confirm the hard-stop/mechanical feeling is r
 
 ---
 
+## 4I. Fix — Motion Polish & Lighting Fix (Landing Ease & Monitor Transition Light Glitch)
+
+**Status:** TECHNICALLY COMPLETE
+**Approval:** NOT YET GRANTED
+
+Human report: the final deceleration into keyframes (especially the retro monitor screen lock) needed a softer, longer landing, and the light still flickered/shifted at the moment the camera locks onto the monitor face.
+
+### What changed — extra soft landing ease
+
+- **`cameraPath.js`** — the single global ease is now asymmetric: quintic (`16t⁵`) for the first half (unchanged acceleration out of rest), a softer septic (`1 − (−2t+2)⁷/2`) for the second half — a longer, gentler tail into the final monitor-locked shot than the previous symmetric quintic gave. Continuous in value at the t=0.5 midpoint.
+- **`ScrollCameraRig.jsx`** — position and lookAt damping now share one lambda (`3.5`, previously `4.5` for position / `3` for lookAt). The earlier asymmetric lambdas were a deliberate "weighty dolly" choice from the organic-camera-weight round, but they meant position could finish settling before lookAt caught up — since both targets stop moving at the same instant (progress reaches 1) but the two dampers converged at different rates, that gap read as a rotational micro-snap right at the monitor lock. Sharing one (lower, softer) lambda makes both settle in lockstep; the lower value also gives a longer coast to rest generally, per the request's "lower the position dampening lambda" item.
+- **`ScrollTimelineProvider.jsx`** — ScrollTrigger `scrub` raised `1 → 1.5`, per the request's explicit value.
+
+### What changed — monitor transition light glitch
+
+- **`volumetricLighting.js` / `VolumetricLightingRig.jsx`** — the beam and dust (not the floor pool, which is flat on the ground and never near the camera) now fade to fully transparent between scroll progress 0.30–0.42, well before the monitor lock at progress 1. Driven by a new `setApproachFade(fade)` controller method, called every frame from `VolumetricLightingRig`'s `useFrame` reading `scrollProgress.value` directly and mutating `beam.material.uniforms.uOpacity.value` / `dust.material.opacity` — a direct mutation, not React state, per technical-architecture.md §7. The beam is an open, double-sided, additive cone that the camera's view direction passes close to during the approach (though the camera itself, by the truncated geometry from the §4F/§4G rebuild, never enters it); removing it from view before that window removes any chance of a near-camera visual interaction with it, regardless of whether the underlying cause was ever confirmed.
+- The other two requested mechanisms were checked, not changed — both were already satisfied or not applicable:
+  - The screen mesh already has `castShadow={false}`/`receiveShadow={false}` (from §4C); `shadowSide` only affects objects that cast shadows, so setting it would be a no-op.
+  - "Shadow buffer re-calculating depth when the camera near plane matches the screen plane" isn't a real mechanism here — in Three.js the spotlight's shadow map is rendered from the light's own shadow camera (fixed `near: 1`, `far: params.spot.distance`), which is entirely independent of the main viewing camera's near plane. There's no code path connecting the two.
+
+### Verification
+- Static and temporal (60-frame) pixel sampling through the 0.30–0.42 fade window: perfectly stable, no oscillation — consistent with §4G's prior finding that this class of artifact isn't reproducible in this environment. This is hardening (fading the beam out of view during the approach), not a confirmed-reproduced fix.
+- Visual check: beam/dust visibly fading by progress 0.35, fully gone by 0.45, floor pool still reads as the light's landing point; final monitor-locked shot at progress 1 clean; full reversibility to the exact hero baseline at progress 0.
+- Frame-timing under a simulated wheel-gesture burst: ~16.6ms avg, 0 frames over 33ms.
+- `grep -rn "useState\|setState" src/` — no matches; production build succeeds (71 modules, no errors); mobile viewport renders with no console errors.
+
+### Required next step
+Visual review requested — please confirm the landing at the monitor now reads as a soft coast rather than a snap, and whether the light-glitch report is resolved (this environment could not reproduce it directly, so on-device confirmation is the strongest signal available).
+
+---
+
 ## 5. Approved Visual Decisions
 
 This section records visual decisions that have already received human approval and therefore should be treated as protected foundations.
@@ -499,6 +530,7 @@ The repository must maintain a recoverable implementation history.
 **Current commit (organic camera weight, technically complete):** `6925400` — "Motion: organic camera weight via easing, lag, and scroll tuning" (on top of `ae8ebdf`)
 **Current commit (retro monitor shadow/lighting investigation, technically complete):** `c46afd7` — "Investigate: retro monitor shadow/lighting report" (on top of `6925400`)
 **Current commit (choreography & scroll polish, technically complete):** `4c85661` — "Fix: replace piecewise keyframe easing with continuous spline camera path" (on top of `c46afd7`)
+**Current commit (motion polish & lighting fix, technically complete):** `0952617` — "Fix: softer landing ease and beam fade through monitor approach" (on top of `4c85661`)
 
 The repository was initialized (`git init -b main`) with the five governing documents relocated into `docs/` as the first commit, giving a clean recovery point before any implementation began. Phase 1A (scaffold, environment shell, column refinement), Phase 1B (volumetric lighting, three review passes), and Phase 1C (scroll-driven camera, motion-physics refinement) were each committed and approved in sequence; Phase 1D (monitor foundation) is committed on top of the approved Phase 1C checkpoint and is recoverable independently of it.
 
@@ -678,6 +710,18 @@ Each completed phase should receive a concise record.
 **Known issues:** None identified.
 **Approved visual decisions:** None yet.
 **Git checkpoint:** `main` branch; commit `4c85661`.
+**Next approved phase:** N/A — cross-cutting motion refinement, not a phase gate.
+
+### Motion polish & lighting fix (landing ease & monitor transition light glitch)
+
+**Implementation:** Complete
+**Technical completion:** Complete (2026-08-31)
+**Human approval:** Pending — visual review requested, see below
+**Major changes:** Asymmetric quintic-in/septic-out ease for a softer landing tail; unified position/lookAt damp lambda (3.5) so they settle in lockstep instead of position finishing before lookAt; `scrub` 1 → 1.5. Beam and dust now fade out via `useFrame` between scroll progress 0.30–0.42 to keep the additive cone mesh out of view during the monitor approach. See §4I.
+**Testing performed:** See §4I. Static and 60-frame temporal pixel sampling through the fade window, visual pass across the fade range and final lock, reversibility, frame-timing, grep for React state, production build, mobile re-check.
+**Known issues:** The reported light glitch could not be reproduced in this environment (consistent with §4G) — the beam/dust fade is hardening, not a confirmed fix; on-device confirmation requested.
+**Approved visual decisions:** None yet.
+**Git checkpoint:** `main` branch; commit `0952617`.
 **Next approved phase:** N/A — cross-cutting motion refinement, not a phase gate.
 
 ---
@@ -883,6 +927,17 @@ Record meaningful implementation changes rather than every minor code edit.
 - Replaced the piecewise keyframes with a single `THREE.CatmullRomCurve3` through the same waypoints, sampled with one global ease — only progress 0 and progress 1 actually decelerate to rest; interior waypoints are passed through at continuous velocity. Changed the lookAt path's first waypoint from `[0, 1.6, -50]` to `[0, 1.6, -10]` so it isn't a severe outlier that would distort the spline's shape near the start, while producing a visually equivalent look direction.
 - Retuned Lenis (`duration: 1.2`, `lerp: 0.11`, `syncTouchLerp: 0.11`) and ScrollTrigger `scrub` (`0.15 → 1`) per the request's explicit parameters.
 - Verified: spline endpoints exactly match the hero and monitor-aligned framing (no jump at either end); full-range visual pass (0/15/40/65/100%, reversibility) clean with no spline-overshoot artifacts; wheel-burst decay test shows smooth exponential settle (~1.1s, no oscillation); mid-glide scroll-jump test confirms the added `scrub: 1` lag is visibly smoothing motion, not a no-op; frame-timing unchanged (~16.6ms avg, 0 over 33ms); production build succeeds; no React state anywhere in `src/`; mobile renders the correct hero frame with no console errors.
+
+### 2026-08-31 (Motion polish & lighting fix — landing ease & monitor transition light glitch)
+
+**Softened the final landing at the monitor lock and added a scroll-driven fade for the volumetric beam through the monitor approach, to address a reported light flicker at the transition.**
+
+- `cameraPath.js`: single global ease made asymmetric — quintic-in (unchanged) for the first half, softer septic-out for the second half — a longer, gentler deceleration tail into the final monitor-locked shot.
+- `ScrollCameraRig.jsx`: position and lookAt damping unified to one lambda (`3.5`, down from the asymmetric `4.5`/`3` of the organic-camera-weight round) so both converge in lockstep, removing the rotational micro-snap that the earlier asymmetric lag could produce right at the endpoint where both targets stop moving simultaneously.
+- `ScrollTimelineProvider.jsx`: ScrollTrigger `scrub` raised `1 → 1.5`.
+- `volumetricLighting.js`/`VolumetricLightingRig.jsx`: added `setApproachFade(fade)`, called every frame from a new `useFrame` in the rig (direct mutation of `scrollProgress.value`-derived uniforms/opacity, no React state) that fades the beam and dust to fully transparent between scroll progress 0.30 and 0.42, keeping the additive beam cone out of the camera's view during the approach into the monitor.
+- Checked (not changed, already satisfied or not applicable): the screen mesh already has `castShadow={false}`; the spotlight's shadow map camera is independent of the main viewing camera's near plane in Three.js, so there's no "shadow buffer vs. camera near plane" interaction to fix.
+- Verified: static and 60-frame temporal pixel sampling through the 0.30–0.42 fade window shows no oscillation (consistent with §4G's prior finding that this artifact isn't reproducible here); beam/dust visibly fade by 0.35 and are fully gone by 0.45 while the floor pool still reads as the light's landing point; full reversibility; frame-timing unchanged (~16.6ms avg, 0 over 33ms); production build succeeds; no React state anywhere in `src/`; mobile renders cleanly.
 
 ---
 
