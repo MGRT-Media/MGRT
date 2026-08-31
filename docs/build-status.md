@@ -424,6 +424,7 @@ The repository must maintain a recoverable implementation history.
 **Current commit (camera/monitor transition light-pop fix, technically complete):** `38b568e` — "Fix: fade volumetric beam across camera-monitor transition" (on top of `c3c79f1`)
 **Current commit (Phase 1B lighting rebuild, technically complete):** `4adfb38` — "Phase 1B rebuild: clean lighting architecture" (on top of `38b568e`)
 **Current commit (retro/industrial monitor redesign, technically complete):** `ae8ebdf` — "Monitor: retro/industrial CRT-console redesign" (on top of `4adfb38`)
+**Current commit (organic camera weight, technically complete):** `6925400` — "Motion: organic camera weight via easing, lag, and scroll tuning" (on top of `ae8ebdf`)
 
 The repository was initialized (`git init -b main`) with the five governing documents relocated into `docs/` as the first commit, giving a clean recovery point before any implementation began. Phase 1A (scaffold, environment shell, column refinement), Phase 1B (volumetric lighting, three review passes), and Phase 1C (scroll-driven camera, motion-physics refinement) were each committed and approved in sequence; Phase 1D (monitor foundation) is committed on top of the approved Phase 1C checkpoint and is recoverable independently of it.
 
@@ -568,6 +569,18 @@ Each completed phase should receive a concise record.
 **Approved visual decisions:** None yet.
 **Git checkpoint:** `main` branch; commit `ae8ebdf`.
 **Next approved phase:** N/A — cross-cutting visual revision, not a phase gate.
+
+### Organic camera weight
+
+**Implementation:** Complete
+**Technical completion:** Complete (2026-08-31)
+**Human approval:** Pending
+**Major changes:** Quintic easing, a derived settle keyframe near the monitor-aligned shot, asynchronous position/lookAt damping (4.5 vs 3), and retuned Lenis inertia (duration 1.3s, lerp 0.085, matched touch/wheel decay). See §4F for full detail.
+**Testing performed:** See §4F. Glide-to-rest sampling, reversibility, frame-timing re-measurement, production build, mobile re-check, grep for React state.
+**Known issues:** None new.
+**Approved visual decisions:** None yet.
+**Git checkpoint:** `main` branch; commit `6925400`.
+**Next approved phase:** N/A — cross-cutting motion refinement, not a phase gate.
 
 ---
 
