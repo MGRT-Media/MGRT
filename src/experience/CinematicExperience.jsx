@@ -23,7 +23,7 @@ export default function CinematicExperience() {
       dpr={[1, 2]}
       gl={{ antialias: true }}
       camera={{
-        position: [-1.2, 1.6, 4.5],
+        position: [-1.0, 1.6, 8],
         fov: 45,
         // Lowered from 0.1: the entrance pillars now bring foreground
         // geometry closer to the camera than before, so a tighter near

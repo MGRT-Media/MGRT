@@ -31,14 +31,16 @@ const MONITOR_ALIGNED_LOOKAT = [
  * and in build-status.md §5, not a silent drift from the approved shot.
  *
  * START_POSITION sits between the two entrance pillars (`Environment.jsx`'s
- * `entrancePillarPositions`, `[∓2.2, 4]`), just slightly behind the left
- * one so it crops the left edge of the frame without blocking the
- * sightline to the monitor — tuned from an earlier position further left
- * ([-3.6, 1.6, 3.2]), which read as too far outside the pillars rather
- * than framed between them. The end position is still `MONITOR_ANCHOR`-
- * derived and unchanged, so the Phase 1D handshake stays intact.
+ * `entrancePillarPositions`, `[∓2.2, 4]`), pulled significantly further
+ * back along Z (deeper into "behind" the pillar threshold) than the two
+ * previous rounds' `[-1.2, 1.6, 4.5]` and `[-3.6, 1.6, 3.2]`, so both
+ * entrance pillars read as a clear architectural gateway flanking the
+ * frame and the half-moon arc is visible as a wide establishing view
+ * deep in the background, per explicit request. The end position is
+ * still `MONITOR_ANCHOR`-derived and unchanged, so the Phase 1D
+ * handshake stays intact.
  */
-const START_POSITION = new THREE.Vector3(-1.2, 1.6, 4.5)
+const START_POSITION = new THREE.Vector3(-1.0, 1.6, 8)
 const END_POSITION = new THREE.Vector3(...MONITOR_ALIGNED_POSITION)
 
 // Locked onto the monitor screen face for the entire scroll, per explicit
