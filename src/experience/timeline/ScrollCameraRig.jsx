@@ -28,7 +28,7 @@ export default function ScrollCameraRig() {
   // Seeded to the progress-0 keyframe so there's no startup glide-in from
   // an arbitrary default on mount — matches cameraPath.js's START_POSITION
   // and its now-constant lookAt exactly.
-  const dampedPosition = useRef(new THREE.Vector3(-3.6, 1.6, 3.2))
+  const dampedPosition = useRef(new THREE.Vector3(-1.2, 1.6, 4.5))
   const dampedLookAt = useRef(new THREE.Vector3(...sampleCameraPath(0).lookAt))
 
   useFrame(({ camera }, delta) => {

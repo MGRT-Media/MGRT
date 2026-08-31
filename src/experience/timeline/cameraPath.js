@@ -30,13 +30,15 @@ const MONITOR_ALIGNED_LOOKAT = [
  * frame), so it's implemented as a deliberate supersession, flagged here
  * and in build-status.md §5, not a silent drift from the approved shot.
  *
- * START_POSITION sits just left of and behind the left entrance pillar
- * (`Environment.jsx`'s `entrancePillarPositions`, `[-2.2, 4]`), framing
- * the room diagonally across toward the monitor from the very first
- * frame. The end position is still `MONITOR_ANCHOR`-derived and
- * unchanged, so the Phase 1D handshake stays intact.
+ * START_POSITION sits between the two entrance pillars (`Environment.jsx`'s
+ * `entrancePillarPositions`, `[∓2.2, 4]`), just slightly behind the left
+ * one so it crops the left edge of the frame without blocking the
+ * sightline to the monitor — tuned from an earlier position further left
+ * ([-3.6, 1.6, 3.2]), which read as too far outside the pillars rather
+ * than framed between them. The end position is still `MONITOR_ANCHOR`-
+ * derived and unchanged, so the Phase 1D handshake stays intact.
  */
-const START_POSITION = new THREE.Vector3(-3.6, 1.6, 3.2)
+const START_POSITION = new THREE.Vector3(-1.2, 1.6, 4.5)
 const END_POSITION = new THREE.Vector3(...MONITOR_ALIGNED_POSITION)
 
 // Locked onto the monitor screen face for the entire scroll, per explicit
