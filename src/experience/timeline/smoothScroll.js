@@ -23,11 +23,16 @@ function easeOutCubic(t) {
  */
 export function createSmoothScroll(onScroll) {
   const lenis = new Lenis({
-    duration: 1.1,
+    // Raised from 1.1s: a longer glide-to-rest window reads as more
+    // physical friction rather than a quick, mechanical settle.
+    duration: 1.3,
     easing: easeOutCubic,
-    lerp: 0.1,
+    lerp: 0.085,
     smoothWheel: true,
     syncTouch: true,
+    // Explicit (not just Lenis's default) so touch and wheel decay with
+    // the same physical weight rather than two independently-tuned feels.
+    syncTouchLerp: 0.085,
   })
 
   lenis.on('scroll', onScroll)

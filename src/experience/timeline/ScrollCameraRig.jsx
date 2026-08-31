@@ -4,10 +4,14 @@ import { useFrame } from '@react-three/fiber'
 import { scrollProgress } from './ScrollTimelineProvider.jsx'
 import { sampleCameraPath } from './cameraPath.js'
 
-// Damping half-life-ish factor for THREE.MathUtils.damp — higher is
-// snappier, lower is smoother. 4 gives a soft, physical follow without
-// feeling disconnected from the (already Lenis-smoothed) scroll input.
-const DAMP_LAMBDA = 4
+// Position and lookAt are damped at *different* rates — position tracks
+// the scroll target fairly responsively, while the lookAt target trails
+// slightly behind it. That asynchronous lag is what gives the camera a
+// sense of physical weight (a heavy dolly/gimbal rig whose framing settles
+// a beat after its position does) rather than reading as a rigid point
+// that snaps its facing to match its position instantly.
+const POSITION_DAMP_LAMBDA = 4.5
+const LOOKAT_DAMP_LAMBDA = 3
 
 /**
  * Drives the camera from the scroll-derived target every frame, but never
@@ -28,14 +32,14 @@ export default function ScrollCameraRig() {
     const { position: targetPosition, lookAt: targetLookAt } = sampleCameraPath(scrollProgress.value)
 
     const pos = dampedPosition.current
-    pos.x = THREE.MathUtils.damp(pos.x, targetPosition[0], DAMP_LAMBDA, delta)
-    pos.y = THREE.MathUtils.damp(pos.y, targetPosition[1], DAMP_LAMBDA, delta)
-    pos.z = THREE.MathUtils.damp(pos.z, targetPosition[2], DAMP_LAMBDA, delta)
+    pos.x = THREE.MathUtils.damp(pos.x, targetPosition[0], POSITION_DAMP_LAMBDA, delta)
+    pos.y = THREE.MathUtils.damp(pos.y, targetPosition[1], POSITION_DAMP_LAMBDA, delta)
+    pos.z = THREE.MathUtils.damp(pos.z, targetPosition[2], POSITION_DAMP_LAMBDA, delta)
 
     const look = dampedLookAt.current
-    look.x = THREE.MathUtils.damp(look.x, targetLookAt[0], DAMP_LAMBDA, delta)
-    look.y = THREE.MathUtils.damp(look.y, targetLookAt[1], DAMP_LAMBDA, delta)
-    look.z = THREE.MathUtils.damp(look.z, targetLookAt[2], DAMP_LAMBDA, delta)
+    look.x = THREE.MathUtils.damp(look.x, targetLookAt[0], LOOKAT_DAMP_LAMBDA, delta)
+    look.y = THREE.MathUtils.damp(look.y, targetLookAt[1], LOOKAT_DAMP_LAMBDA, delta)
+    look.z = THREE.MathUtils.damp(look.z, targetLookAt[2], LOOKAT_DAMP_LAMBDA, delta)
 
     camera.position.copy(pos)
     camera.lookAt(look)

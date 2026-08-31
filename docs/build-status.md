@@ -302,6 +302,42 @@ Awaiting human visual review of the retro/industrial monitor redesign.
 
 ---
 
+## 4F. Motion Physics — Organic Camera Weight
+
+**Status:** TECHNICALLY COMPLETE
+**Approval:** NOT YET GRANTED
+
+Human request: the camera scroll animation felt too mechanical/linear; refine the GSAP timeline and R3F motion physics for natural physical weight, acceleration, and cinematic ease.
+
+### What changed
+
+1. **GSAP/camera-path motion curves** (`src/experience/timeline/cameraPath.js`):
+   - Upgraded the per-segment ease from cubic to **quintic in/out** (`easeInOutQuint`) — a more pronounced "gentle accel out of rest, soft glide to a stop" than the previous curve, addressing "avoid flat linear movement."
+   - Added an explicit **settle keyframe** at `t: 0.92`, positioned 85% of the way from the `t: 0.75` approach shot to the final monitor-aligned shot (derived via `lerpVec3`, not hand-picked numbers — stays correct if either endpoint moves). This means the last 8% of scroll covers only the final 15% of the remaining distance: the camera visibly decelerates and settles into the monitor-aligned frame rather than sweeping in and stopping abruptly at progress 1.0 — directly addressing "extra timeline padding/holding ease around key framing moments."
+
+2. **Asynchronous position/lookAt damping** (`src/experience/timeline/ScrollCameraRig.jsx`):
+   - Split the single `DAMP_LAMBDA` into `POSITION_DAMP_LAMBDA = 4.5` and `LOOKAT_DAMP_LAMBDA = 3` — within the request's suggested ranges (4–5 and 2.5–3.5). Position tracks the scroll target more responsively; the lookAt target trails slightly behind. That asynchronous lag is what reads as physical weight — a heavy dolly/gimbal rig whose framing settles a beat after its position does — rather than a rigid point that snaps its facing instantly to match its position.
+
+3. **Inertial scroll tuning** (`src/experience/timeline/smoothScroll.js`):
+   - Lenis `duration` raised `1.1s → 1.3s` (within the requested 1.2–1.4s range) — a longer glide-to-rest window reads as more physical friction.
+   - `lerp` lowered `0.1 → 0.085` for a slightly smoother catch-up.
+   - Added explicit `syncTouchLerp: 0.085` (matching the wheel `lerp`) so touch and wheel decay with the *same* physical weight rather than two independently-tuned feels — addresses "touch trackpad scrolling and wheel events decay with natural physical friction."
+
+### State discipline
+Confirmed unchanged: `ScrollCameraRig.jsx` still mutates `camera.position`/`camera.lookAt` directly inside `useFrame` via `THREE.MathUtils.damp`, reading from the shared `scrollProgress` plain object. Grep-confirmed zero `useState`/`setState` anywhere in `src/`.
+
+### Verification
+- Dispatched a synthetic wheel event and sampled `scrollY` over ~2s: smooth decaying glide-to-rest curve, slightly longer settle time than the pre-tuning baseline (consistent with the raised Lenis duration), no oscillation.
+- Verified the final monitor-aligned shot (progress 100%) and full reversibility (100% → 0% reproduces the exact hero frame).
+- Frame-timing under a simulated scroll-gesture burst: 180 frames, ~16.6ms avg, 0 over 33ms — no regression from the added settle keyframe or damping split.
+- Production build succeeds (71 modules, no errors); grep-confirmed no React state anywhere in `src/`; mobile viewport renders cleanly, no console errors.
+- One HMR false alarm again during this pass (a stale `easeInOutCubic is not defined` error persisting across reloads after the function was renamed to `easeInOutQuint`) — traced to the browser tab's own stale error-overlay state via a fresh-tab test (the file itself was correct, grep-confirmed no remaining reference to the old name). Consistent with the same category of environment quirk logged in §4D; no code issue.
+
+### Required next step
+Awaiting human visual review — please confirm the camera now reads as having physical weight rather than mechanical/linear motion.
+
+---
+
 ## 5. Approved Visual Decisions
 
 This section records visual decisions that have already received human approval and therefore should be treated as protected foundations.
@@ -707,6 +743,16 @@ Record meaningful implementation changes rather than every minor code edit.
 - Added `RoundedBoxGeometry` from `three/examples/jsm/geometries/` — bundled with the already-installed `three` package, not a new dependency.
 - `MONITOR_ANCHOR.screenCenterHeight` is computed from the new console's actual stacked dimensions, not hand-picked; `cameraPath.js`'s monitor-aligned keyframe already derives from `MONITOR_ANCHOR` (established in Phase 1D) — confirmed visually that the camera automatically retargeted correctly to the new screen center with no changes to the camera timeline itself.
 - Verified: hero frame reads clearly retro/industrial, final aligned shot squarely framed with no manual retuning, approach segment clean with no clipping against the taller/deeper housing, full reversibility, no frame-timing regression despite added geometry, production build succeeds, no console errors, no React state anywhere in `src/`, mobile renders cleanly.
+
+### 2026-08-31 (Organic camera weight)
+
+**Refined GSAP timeline and R3F damping for physical camera weight, on human request.**
+
+- `cameraPath.js`: eased curve upgraded cubic → quintic in/out; added a derived "settle" keyframe at `t: 0.92` (85% of the way from the approach shot to the final monitor-aligned shot) so the last stretch of scroll is a deliberately small, decelerating movement rather than a sweep that stops abruptly at progress 1.0.
+- `ScrollCameraRig.jsx`: split the single damp lambda into `POSITION_DAMP_LAMBDA = 4.5` and `LOOKAT_DAMP_LAMBDA = 3` — the lookAt target now trails position slightly, giving an asynchronous rotational lag that reads as a heavy dolly rig rather than a rigid point.
+- `smoothScroll.js`: Lenis `duration` raised `1.1s → 1.3s`, `lerp` lowered `0.1 → 0.085`, explicit `syncTouchLerp: 0.085` added so touch and wheel share the same decay weight.
+- Verified: smooth glide-to-rest (slightly longer settle than before, consistent with the raised duration), full reversibility, no frame-timing regression (~16.6ms avg, 0 over 33ms), production build succeeds, no React state anywhere in `src/`, mobile renders cleanly.
+- Another stale-HMR false alarm during this pass (an `easeInOutCubic is not defined` error persisting across reloads after a rename) — traced to the tab's own error-overlay state via a fresh tab, not a real code issue; grep-confirmed the file had no remaining reference to the old name.
 
 ---
 
