@@ -52,6 +52,13 @@ export const lightingParams = {
     // Raised 2.3 -> 2.5 (+0.2, within the requested +0.15 to +0.25) so
     // the shadow-side stone surfaces don't drop toward pitch black.
     intensity: 2.5,
+    // The scroll-0 starting ambient during the dark-to-light reveal (see
+    // VolumetricLightingRig's ignition ramp) — near-total darkness with
+    // just enough tint to outline geometry edges, per explicit request.
+    // This is a real absolute AmbientLight intensity in this project's
+    // established scale (not a 0-1 normalized value), verified visually
+    // rather than assumed to read as "near darkness" at this magnitude.
+    darkIntensity: 0.03,
   },
   shadow: {
     mapSize: 2048,
@@ -351,12 +358,16 @@ function buildDust(params, origin, target) {
 }
 
 /**
- * Framework-agnostic controller for the room's lighting. Fully static:
- * `update()` is a no-op reserved for a future phase's scroll-driven
- * timeline, and nothing currently calls it — no scroll-coupling of any
- * kind lives in this module. The beam's geometry (not a runtime fade) is
- * what keeps the Phase 1C/1D camera transition free of a lighting pop;
- * see `beam.lengthFraction` above.
+ * Framework-agnostic controller for the room's lighting. Geometry (the
+ * beam's truncation) is still what keeps the camera from ever entering
+ * the beam volume, independent of intensity — see `beam.lengthFraction`
+ * above. Intensity itself IS scroll-coupled as of `setIgnition` below: a
+ * dramatic dark-to-light reveal, added per explicit request, superseding
+ * this module's earlier "fully static by design" posture from the §4D/§4G
+ * rebuild. That posture was this codebase's own implementation choice,
+ * not a protected/approved decision — the room's light *character* is
+ * what's protected (see build-status.md §5's Phase 1B entry), and this
+ * reveal doesn't change that character, only its timing.
  */
 export function createVolumetricLighting(params = lightingParams) {
   const group = new THREE.Group()
@@ -415,22 +426,35 @@ export function createVolumetricLighting(params = lightingParams) {
     dust = buildDust(params, origin, target)
 
     group.add(spotLight, spotTarget, keyLight, fillLight, ambientLight, beam, floorPool, dust)
+
+    // Start fully dark — the ignition ramp (below) takes over from the
+    // very first frame, but this avoids even a one-frame flash of full
+    // brightness before that first `useFrame` call lands.
+    setIgnition(0)
   }
 
   /**
-   * Fades the beam and dust (not the floor pool, which is flat on the
-   * ground and never near the camera) toward fully transparent as the
-   * camera approaches the monitor. The beam is an open, double-sided,
-   * additive cone the camera's view direction passes close to during the
-   * approach — around scroll progress 0.30–0.42, well before the camera
-   * itself ever enters the geometry (the beam is truncated to stay above
-   * every camera height, see `beam.lengthFraction` above). Driven by a
-   * direct uniform/opacity mutation from `VolumetricLightingRig`'s
-   * `useFrame`, not React state, per technical-architecture.md §7.
+   * Scroll-driven dark-to-light reveal: `factor` 0 = near-total darkness
+   * (only `ambient.darkIntensity`'s faint edge-outlining tint), 1 = the
+   * room's full established brightness. Scales every light's intensity
+   * and every volumetric element's opacity proportionally from their
+   * `lightingParams` values — not just the beam/dust (as an earlier,
+   * now-superseded approach-fade did), since a real "ignition" needs the
+   * spot, key, and fill lights themselves to visibly brighten too, not
+   * just the atmospheric extras. Driven by a direct property mutation
+   * from `VolumetricLightingRig`'s `useFrame`, not React state, per
+   * technical-architecture.md §7.
    */
-  function setApproachFade(fade) {
-    if (beam) beam.material.uniforms.uOpacity.value = params.beam.opacity * fade
-    if (dust) dust.material.uniforms.uOpacity.value = params.dust.opacity * fade
+  function setIgnition(factor) {
+    if (spotLight) spotLight.intensity = params.spot.intensity * factor
+    if (keyLight) keyLight.intensity = params.key.intensity * factor
+    if (fillLight) fillLight.intensity = params.fill.intensity * factor
+    if (ambientLight) {
+      ambientLight.intensity = THREE.MathUtils.lerp(params.ambient.darkIntensity, params.ambient.intensity, factor)
+    }
+    if (beam) beam.material.uniforms.uOpacity.value = params.beam.opacity * factor
+    if (dust) dust.material.uniforms.uOpacity.value = params.dust.opacity * factor
+    if (floorPool) floorPool.material.uniforms.uOpacity.value = params.floorPool.opacity * factor
   }
 
   /** Advances the dust field's GPU drift animation — see `buildDust`. */
@@ -439,8 +463,9 @@ export function createVolumetricLighting(params = lightingParams) {
   }
 
   function update() {
-    // Reserved for a future scroll-driven timeline. Nothing runs here —
-    // this lighting system is fully static by design.
+    // Still a no-op — scroll-coupling now happens through `setIgnition`
+    // and `setTime`, called directly from `VolumetricLightingRig`'s
+    // `useFrame`, not through this generic hook.
   }
 
   function dispose() {
@@ -453,5 +478,5 @@ export function createVolumetricLighting(params = lightingParams) {
     group.clear()
   }
 
-  return { group, params, init, update, dispose, setApproachFade, setTime }
+  return { group, params, init, update, dispose, setIgnition, setTime }
 }
