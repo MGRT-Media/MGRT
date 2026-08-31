@@ -839,6 +839,33 @@ Visual review requested — please confirm the deeper establishing shot reads co
 
 ---
 
+## 4X. Feature — Atmospheric Particle Density & Variance
+
+**Status:** TECHNICALLY COMPLETE
+**Approval:** NOT YET GRANTED
+
+Human request (labeled "Phase 1F Integration" — see note below): significantly increase dust density, add size variance (small/fast near the top of the shaft, large/heavy near the floor and pillars), give large particles slower wobble plus upward drift, and confirm proper additive blending.
+
+### Naming note
+
+The request labels this "Phase 1F." No such phase exists in `build-workflow.md`, which defines Phase 1A through 1D and then Phase 2 — there is no 1E or 1F anywhere in the governing documents. Treated as cross-cutting atmospheric polish continuing §4M/§4N (the existing GPU dust-drift and density-concentration work), not a new formal phase gate, and noted here rather than silently adopting an unestablished label into the project's phase record.
+
+### What changed
+
+- **`volumetricLighting.js`** — `dust.count` raised `230 → 550` (a significant increase, still concentrated near the breach by `topBias` rather than spread evenly). `dust.size` replaced with `sizeSmall`/`sizeLarge` bounds; `buildDust` now generates a per-point `aSize` attribute interpolated (with jitter, so the size split isn't a mechanically sharp line at a given height) from the same `t` parameter that already drives position along the beam axis — small near the top/breach, large near the floor and arc pillars, directly matching the request's "upper shaft: smaller... middle/bottom: larger" structure.
+- Added **`aWobble`** — a per-point multiplier on the existing sine/cosine drift amplitude/frequency: `>1` for small/high specks (reads as the request's "high-velocity"), `<1` for large/low ones (reads as "slower, heavier"). Added **`aDrift`** — a slow continuous upward drift, near `0` for small specks (unchanged fast wobble only) and larger for heavy ones. The continuous drift is bounded via `mod()` into a small cycling range rather than an unbounded climb — the one departure from the existing "bounded oscillation only" dust design (§4M), called out explicitly in the code so it doesn't get missed as an inconsistency later.
+- `transparent: true` / `depthWrite: false` / `blending: THREE.AdditiveBlending` were already all present on the dust material — checked by reading the file, no change needed for the "volumetric shading" request item.
+
+### Verification
+- Visual check across the full scroll range (0%, 100%) and reversibility to 0%: visibly denser field with clear size variance — larger motes near the monitor/floor, smaller ones in the upper shaft near the breach — no shader errors.
+- Frame-timing under a simulated wheel-gesture burst: ~16.6ms avg, 0 frames over 33ms — no measurable cost from 2.4× the particle count plus the added per-vertex attribute math.
+- `grep -rn "useState\|setState" src/` — no matches; production build succeeds (72 modules, no errors); mobile viewport renders cleanly with no console errors.
+
+### Required next step
+Visual review requested — please confirm the denser field and size/velocity variance read correctly, and that the "Phase 1F" labeling note above doesn't need reconciling with an actual phase-numbering intention on your end.
+
+---
+
 ## 5. Approved Visual Decisions
 
 This section records visual decisions that have already received human approval and therefore should be treated as protected foundations.
@@ -945,6 +972,7 @@ The repository must maintain a recoverable implementation history.
 **Current commit (straight-line camera path, left-pillar start, technically complete):** `b33334a` — "Feat: rewrite camera path as a single straight line, remove all roll" (on top of `3f4fcf9`)
 **Current commit (inter-pillar hero start correction, technically complete):** `155ac1a` — "Fix: reposition hero start to sit framed between the entrance pillars" (on top of `b33334a`)
 **Current commit (deep gateway establishing shot, technically complete):** `1ec920a` — "Fix: pull hero start much further back for a wide gateway establishing shot" (on top of `155ac1a`)
+**Current commit (particle density & variance, technically complete):** `09e587f` — "Feat: denser dust field with per-particle size and velocity variance" (on top of `1ec920a`)
 
 The repository was initialized (`git init -b main`) with the five governing documents relocated into `docs/` as the first commit, giving a clean recovery point before any implementation began. Phase 1A (scaffold, environment shell, column refinement), Phase 1B (volumetric lighting, three review passes), and Phase 1C (scroll-driven camera, motion-physics refinement) were each committed and approved in sequence; Phase 1D (monitor foundation) is committed on top of the approved Phase 1C checkpoint and is recoverable independently of it.
 
@@ -1305,6 +1333,18 @@ Each completed phase should receive a concise record.
 **Approved visual decisions:** Superseded, pending re-review — see the further-updated Phase 1A entry in §5.
 **Git checkpoint:** `main` branch; commit `1ec920a`.
 **Next approved phase:** N/A — cross-cutting motion refinement, not a phase gate. Phase 2 remains on hold.
+
+### Atmospheric particle density & variance
+
+**Implementation:** Complete
+**Technical completion:** Complete (2026-08-31)
+**Human approval:** Pending — visual review requested, see below
+**Major changes:** Raised dust count 230 → 550; added per-point size, wobble-amplitude, and continuous-upward-drift attributes keyed off the existing beam-axis `t` parameter — small/fast near the top of the shaft, large/slow/drifting near the floor and pillars. See §4X. Human labeled this "Phase 1F" — no such phase exists in `build-workflow.md`; treated as cross-cutting atmospheric polish, noted rather than silently adopted.
+**Testing performed:** See §4X. Full scroll range (0/100%) and reversibility, frame-timing with 2.4× the particle count, grep for React state, production build, mobile re-check.
+**Known issues:** None identified.
+**Approved visual decisions:** None yet.
+**Git checkpoint:** `main` branch; commit `09e587f`.
+**Next approved phase:** N/A — cross-cutting atmospheric polish, not a phase gate. Phase 2 remains on hold.
 
 ---
 
@@ -1667,6 +1707,15 @@ Record meaningful implementation changes rather than every minor code edit.
 - Seed refs in `ScrollCameraRig.jsx` and the initial camera position in `CinematicExperience.jsx` updated to match.
 - Verified: at progress 0%, both entrance pillars now flank the frame as a clear architectural gateway, with the arc pillars, monitor, and beam all visible deep in the background — matches the request directly. Full scroll range (0/100%) and reversibility clean; frame-timing unchanged (~16.6ms avg, 0 over 33ms); production build succeeds; no React state anywhere in `src/`; mobile renders cleanly.
 - Updated §5's Phase 1A entry to record the further-corrected position value.
+
+### 2026-08-31 (Atmospheric particle density & variance)
+
+**Significantly denser dust field with per-particle size/velocity variance — small, fast specks near the breach, large, slow, drifting ones near the floor and pillars. Request was labeled "Phase 1F," which doesn't exist in build-workflow.md; noted rather than silently adopted.**
+
+- `volumetricLighting.js`: `dust.count` raised `230 → 550`. `dust.size` replaced with `sizeSmall`/`sizeLarge`; `buildDust` now generates per-point `aSize`, `aWobble` (drift amplitude/frequency multiplier — `>1` for small/high specks, `<1` for large/low ones), and `aDrift` (continuous upward drift, ~0 for small specks, larger for heavy ones) attributes, all keyed off the same `t` parameter already driving position along the beam axis, with jitter so the size/speed split isn't a mechanically sharp line at a given height.
+- The continuous upward drift is bounded via `mod()` into a small cycling range rather than an unbounded climb — the one departure from the existing "bounded oscillation only" dust design (§4M) — called out explicitly in the code.
+- `transparent`/`depthWrite`/`AdditiveBlending` were already all correct on the dust material — checked, not changed.
+- Verified: full scroll range (0/100%) and reversibility clean, visibly denser field with clear size variance (larger motes near the monitor/floor, smaller near the breach), no shader errors, frame-timing unchanged (~16.6ms avg, 0 over 33ms) despite 2.4× the particle count, production build succeeds, no React state anywhere in `src/`, mobile renders cleanly.
 
 ---
 
