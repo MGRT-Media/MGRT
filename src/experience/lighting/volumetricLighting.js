@@ -88,11 +88,15 @@ export const lightingParams = {
   },
   dust: {
     color: '#fff6e8',
-    // Raised from 170 — the extra points are concentrated near the beam
-    // origin by `topBias` below, not spread evenly, so this reads as
-    // "more dust near the light" rather than a generally denser field.
-    count: 230,
-    size: 0.035,
+    // Raised again from 230 (was 170 before that) — a significant density
+    // increase per explicit request, still concentrated near the beam
+    // origin by `topBias` below rather than spread evenly.
+    count: 550,
+    // Size now varies per point (see buildDust's aSize attribute) between
+    // these two bounds instead of one fixed value: small/tight near the
+    // top of the shaft, large/heavy near the floor and pillars.
+    sizeSmall: 0.022,
+    sizeLarge: 0.075,
     opacity: 0.4,
     // Exponent applied to the uniform random sample that picks each
     // point's position along the beam axis (0 = light source/top, 1 =
@@ -227,9 +231,17 @@ function buildFloorPool(params, origin, target) {
  * `Math.random() ** topBias` skews a uniform sample toward 0 for any
  * exponent > 1, so most points cluster near the top while a sparse tail
  * still drifts all the way down to the floor target.
+ *
+ * Size and motion both key off that same `t` (0 = top/breach, 1 = floor):
+ * small, fast-wobbling specks near the top; larger, heavier ones with a
+ * slower wobble plus a slow *continuous* upward drift near the bottom,
+ * where the arc pillars and floor are. The continuous drift is the one
+ * departure from the "bounded oscillation only" design above — it's kept
+ * bounded too, via `mod()` cycling it within a small fixed range, so nothing
+ * ever needs unbounded position wrapping (see the vertex shader).
  */
 function buildDust(params, origin, target) {
-  const { count, size, color, opacity, topBias } = params.dust
+  const { count, color, opacity, topBias, sizeSmall, sizeLarge } = params.dust
   const fullLength = target.clone().sub(origin).length()
   const axis = target.clone().sub(origin).normalize()
   const { u, v } = buildRadialBasis(axis)
@@ -240,6 +252,14 @@ function buildDust(params, origin, target) {
   // (which would read as the whole field pulsing rather than individual
   // specks drifting independently).
   const phases = new Float32Array(count)
+  const sizes = new Float32Array(count)
+  // Wobble amplitude/frequency multiplier: >1 for small/high specks (the
+  // request's "high-velocity"), <1 for large/low ones ("slower, heavier").
+  const wobbles = new Float32Array(count)
+  // Continuous upward drift speed — near 0 for small/high specks (they
+  // stay in their fast bounded wobble instead), larger for heavy ones.
+  const drifts = new Float32Array(count)
+
   for (let i = 0; i < count; i += 1) {
     const t = Math.random() ** topBias
     const center = origin.clone().lerp(target, t)
@@ -257,11 +277,22 @@ function buildDust(params, origin, target) {
     positions[i * 3 + 1] = point.y
     positions[i * 3 + 2] = point.z
     phases[i] = Math.random() * Math.PI * 2
+
+    // Jittered so the size/speed split isn't a mechanically sharp line at
+    // a given height — some overlap between "small fast" and "large slow"
+    // reads as more organic.
+    const sizeT = THREE.MathUtils.clamp(t + (Math.random() - 0.5) * 0.25, 0, 1)
+    sizes[i] = THREE.MathUtils.lerp(sizeSmall, sizeLarge, sizeT)
+    wobbles[i] = THREE.MathUtils.lerp(1.4, 0.4, sizeT)
+    drifts[i] = THREE.MathUtils.lerp(0, 0.05, sizeT)
   }
 
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
   geometry.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1))
+  geometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1))
+  geometry.setAttribute('aWobble', new THREE.BufferAttribute(wobbles, 1))
+  geometry.setAttribute('aDrift', new THREE.BufferAttribute(drifts, 1))
 
   const material = new THREE.ShaderMaterial({
     transparent: true,
@@ -271,27 +302,36 @@ function buildDust(params, origin, target) {
       uTime: { value: 0 },
       uColor: { value: new THREE.Color(color) },
       uOpacity: { value: opacity },
-      uSize: { value: size },
     },
     vertexShader: /* glsl */ `
       uniform float uTime;
-      uniform float uSize;
       attribute float aPhase;
+      attribute float aSize;
+      attribute float aWobble;
+      attribute float aDrift;
       void main() {
         // Cinematic air-current drift — slow, small-amplitude, and
         // self-bounded (a sine/cosine wobble around the base position,
-        // never a cumulative drift), so points stay put on screen and
-        // simply breathe in place rather than traveling anywhere.
+        // scaled per-point by aWobble: >1 for small high specks reads as
+        // "high-velocity," <1 for large low ones reads as "heavier").
         vec3 pos = position;
-        pos.x += sin(uTime * 0.3 + position.y + aPhase) * 0.05;
-        pos.y += cos(uTime * 0.2 + position.x + aPhase) * 0.03;
-        pos.z += sin(uTime * 0.25 + position.z + aPhase) * 0.04;
+        pos.x += sin(uTime * 0.3 + position.y + aPhase) * 0.05 * aWobble;
+        pos.y += cos(uTime * 0.2 + position.x + aPhase) * 0.03 * aWobble;
+        pos.z += sin(uTime * 0.25 + position.z + aPhase) * 0.04 * aWobble;
+
+        // Slow continuous upward drift for heavier particles only
+        // (aDrift ≈ 0 for small ones) — bounded via mod() into a small
+        // cycling range rather than an unbounded climb, so it never needs
+        // separate position-wrapping logic.
+        float driftRange = 0.6;
+        float cyclic = mod(uTime * aDrift + aPhase * driftRange, driftRange) - driftRange * 0.5;
+        pos.y += cyclic;
 
         vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
         gl_Position = projectionMatrix * mvPosition;
         // Perspective size attenuation, matching THREE.PointsMaterial's
         // own approach (size shrinks with distance from camera).
-        gl_PointSize = uSize * (400.0 / -mvPosition.z);
+        gl_PointSize = aSize * (400.0 / -mvPosition.z);
       }
     `,
     fragmentShader: /* glsl */ `
