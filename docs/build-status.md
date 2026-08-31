@@ -681,6 +681,33 @@ Visual review specifically needed for the breach shape (this environment's tooli
 
 ---
 
+## 4R. Fix — Camera Smoothness & Volumetric Light Beam Fix
+
+**Status:** TECHNICALLY COMPLETE
+**Approval:** NOT YET GRANTED
+
+Human request: simplify the camera trajectory to 2–3 stages max with smoother easing, and keep the volumetric beam visible/stable through the entire scroll instead of fading near the monitor.
+
+### What changed — camera trajectory
+
+- **`cameraPath.js`** — reduced from 5 to 3 waypoints (both position and lookAt), removing the two interior points most likely to read as erratic lookAt direction changes. Reads as two clear stages, matching the request: **Phase A** — hero → a wide framed view past the pillar arc; **Phase B** — that view → squarely aligned with the monitor. Start (hero) and end (monitor-aligned) waypoints are unchanged — both load-bearing (Phase 1A's approved hero framing, the Phase 1D monitor handshake).
+- **Deliberately did not switch to `power1.inOut`/symmetric bezier easing**, despite the request naming it: that shape has zero velocity at `t=0`, which is exactly the dead-zone bug diagnosed and fixed two rounds ago (§4K/§4L, "camera doesn't respond to first scroll"). Kept the linear-start/Hermite-landing ease from §4L and addressed the smoothness goal through the waypoint reduction instead. Flagged in-code and here rather than silently deviating from what was literally asked.
+
+### What changed — volumetric beam
+
+- **`VolumetricLightingRig.jsx`** — disabled the approach-fade dip added in §4I and softened in §4J (`FADE_FLOOR` raised `0.3 → 1`, a no-op), so the beam now stays visible and stable through the entire scroll trajectory, per the request. That dip existed to guard against a reported monitor-transition light glitch — but that glitch was never actually reproduced in this environment despite dedicated testing (§4H's temporal pixel-sampling investigation). Disabling it trades a hedge against an unconfirmed issue for the requested constant presence. The mechanism itself is left in place (not deleted) in case a real transition artifact does turn up on real hardware later.
+- **`depthWrite: false`, `side: THREE.DoubleSide`, `blending: THREE.AdditiveBlending`** — checked, not changed: all three were already present on the beam material from the original §4D/§4G rebuild. Confirmed by reading the file rather than assumed.
+
+### Verification
+- Visual check across the full scroll range (0%, 35%, 100%) and reversibility to 0%: beam stays bright through the previously-dipped 0.30–0.42 window, camera trajectory reads as one continuous two-stage glide, no jitter or clipping, exact hero-baseline match on scroll-back.
+- Frame-timing under a simulated wheel-gesture burst: ~16.6ms avg, 0 frames over 33ms.
+- `grep -rn "useState\|setState" src/` — no matches; production build succeeds (72 modules, no errors); mobile viewport renders cleanly with no console errors.
+
+### Required next step
+Visual review requested — please confirm the two-stage trajectory reads as smooth/intentional rather than erratic, and that the beam's constant presence (no more dimming near the monitor) looks right rather than overly bright/distracting at the final shot.
+
+---
+
 ## 5. Approved Visual Decisions
 
 This section records visual decisions that have already received human approval and therefore should be treated as protected foundations.
@@ -781,6 +808,7 @@ The repository must maintain a recoverable implementation history.
 **Current commit (windows & transition key light, technically complete):** `92c8e83` — "Feat: add clerestory windows and reposition key light to stream through them" (on top of `413727e`)
 **Current commit (pillar arc, stone walls, single window, technically complete):** `d315d96` — "Feat: half-moon pillar arc, procedural old-stone walls, single window" (on top of `92c8e83`)
 **Current commit (broken-stone breach & wall readability, technically complete):** `015c39d` — "Feat: organic broken-stone breach and wall material readability fix" (on top of `d315d96`)
+**Current commit (camera smoothness & beam stability, technically complete):** `d1941a5` — "Fix: simplify camera path to 2 stages, disable beam approach-fade dip" (on top of `015c39d`)
 
 The repository was initialized (`git init -b main`) with the five governing documents relocated into `docs/` as the first commit, giving a clean recovery point before any implementation began. Phase 1A (scaffold, environment shell, column refinement), Phase 1B (volumetric lighting, three review passes), and Phase 1C (scroll-driven camera, motion-physics refinement) were each committed and approved in sequence; Phase 1D (monitor foundation) is committed on top of the approved Phase 1C checkpoint and is recoverable independently of it.
 
@@ -1069,6 +1097,18 @@ Each completed phase should receive a concise record.
 **Approved visual decisions:** Superseded, pending re-review — see the further-updated Phase 1A/1B entries in §5.
 **Git checkpoint:** `main` branch; commit `015c39d`.
 **Next approved phase:** N/A — cross-cutting architectural/lighting revision, not a phase gate. Phase 2 remains on hold.
+
+### Camera smoothness & volumetric light beam fix
+
+**Implementation:** Complete
+**Technical completion:** Complete (2026-08-31)
+**Human approval:** Pending — visual review requested, see below
+**Major changes:** Reduced the camera path from 5 to 3 waypoints (two clear stages: entrance-past-the-arc, then sweep into the monitor); kept the §4L linear-start/Hermite-landing ease rather than switching to the requested `power1.inOut` (which would reintroduce the §4K/§4L dead-zone bug) and addressed smoothness via the waypoint reduction instead. Disabled the beam's approach-fade dip (§4I/§4J) so it stays visible through the whole scroll. See §4R.
+**Testing performed:** See §4R. Full scroll range (0/35/100%) and reversibility, frame-timing, grep for React state, production build, mobile re-check.
+**Known issues:** None identified.
+**Approved visual decisions:** None yet.
+**Git checkpoint:** `main` branch; commit `d1941a5`.
+**Next approved phase:** N/A — cross-cutting motion/lighting refinement, not a phase gate. Phase 2 remains on hold.
 
 ---
 
@@ -1370,6 +1410,16 @@ Record meaningful implementation changes rather than every minor code edit.
 - Verified: full scroll range (0/40/100%) and reversibility clean, stone block/mortar pattern clearly visible on desktop and mobile, no render/shader errors, frame-timing unchanged (~16.6ms avg, 0 over 33ms) despite 5× the procedural texture generation (one-time mount cost), production build succeeds, no React state anywhere in `src/`.
 - Honestly flagged, not silently claimed: couldn't independently confirm the exact fractured silhouette — the camera path never frames the right wall directly, and three different canvas-readback approaches (`gl.readPixels`, `drawImage`-to-2D-canvas, an injected magnified-crop overlay) were all unreliable for this WebGL context, consistent with earlier limitations this session (§4H, §4M).
 - Further updated §5's Phase 1A/1B entries to record the breach and fill-light/ambient changes as superseded, pending re-review.
+
+### 2026-08-31 (Camera smoothness & volumetric light beam fix)
+
+**Simplified the camera path to two clear stages and disabled the beam's approach-fade dip so it stays visible through the whole scroll, flagging one place where the literal request would have reintroduced an already-fixed bug.**
+
+- `cameraPath.js`: reduced from 5 to 3 waypoints (position and lookAt both), removing the two interior points most likely to read as erratic lookAt direction changes. Reads as two stages: Phase A (hero → wide view past the pillar arc), Phase B (that view → squarely aligned with the monitor). Start/end waypoints unchanged (Phase 1A hero framing, Phase 1D monitor handshake).
+- Deliberately did not adopt the requested `power1.inOut`/symmetric bezier easing — that shape has zero velocity at `t=0`, exactly the "camera doesn't respond to first scroll" dead-zone diagnosed and fixed in §4K/§4L. Kept the linear-start/Hermite-landing ease and addressed the smoothness goal via the waypoint reduction instead; flagged in-code and here rather than silently deviating.
+- `VolumetricLightingRig.jsx`: disabled the approach-fade dip from §4I/§4J (`FADE_FLOOR` `0.3 → 1`) so the beam stays visible and stable through the entire scroll, per the request. That dip guarded against a monitor-transition light glitch that was never actually reproduced in this environment (§4H's dedicated investigation) — disabling it trades a hedge against an unconfirmed issue for the requested constant presence.
+- `depthWrite: false`/`side: THREE.DoubleSide`/`blending: THREE.AdditiveBlending` were already all present on the beam material from the original §4D/§4G rebuild — checked by reading the file, no change needed.
+- Verified: full scroll range (0/35/100%) and reversibility clean, beam stays bright through the previously-dipped 0.30–0.42 window, no console errors, frame-timing unchanged (~16.6ms avg, 0 over 33ms), production build succeeds, no React state anywhere in `src/`, mobile renders cleanly.
 
 ---
 
