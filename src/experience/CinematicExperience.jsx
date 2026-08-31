@@ -1,5 +1,6 @@
 import { Canvas } from '@react-three/fiber'
 import Environment from './Environment.jsx'
+import { lightingParams } from './lighting/volumetricLighting.js'
 
 /**
  * Persistent Three.js scene and the architectural shell (Phase 1A,
@@ -22,6 +23,7 @@ export default function CinematicExperience() {
       }}
     >
       <color attach="background" args={['#0d0d0d']} />
+      <fogExp2 attach="fog" args={[lightingParams.fog.color, lightingParams.fog.density]} />
       <Environment />
     </Canvas>
   )

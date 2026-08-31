@@ -15,5 +15,8 @@ export default function VolumetricLightingRig() {
     return () => controller.dispose()
   }, [controller])
 
-  return <primitive object={controller.group} />
+  // dispose={null}: disposal is handled by controller.dispose() above; R3F's
+  // own auto-dispose traversal doesn't expect imperatively-nested lights and
+  // groups and errors on unmount without this.
+  return <primitive object={controller.group} dispose={null} />
 }

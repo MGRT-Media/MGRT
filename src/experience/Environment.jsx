@@ -65,7 +65,7 @@ export default function Environment() {
 
       {/* Floor */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-        <planeGeometry args={[HALL_WIDTH, HALL_DEPTH]} />
+        <planeGeometry args={[HALL_WIDTH, HALL_DEPTH, 32, 64]} />
         <meshStandardMaterial color="#4a4a4a" roughness={0.9} metalness={0.05} />
       </mesh>
 
