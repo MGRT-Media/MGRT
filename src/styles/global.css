@@ -13,6 +13,8 @@ body {
   padding: 0;
   background: var(--color-void);
   overscroll-behavior: none;
+  overflow-x: hidden;
+  height: auto;
 }
 
 #root {
@@ -27,12 +29,17 @@ body {
  */
 .app-shell {
   position: fixed;
-  inset: 0;
-  width: 100%;
+  top: 0;
+  left: 0;
+  width: 100vw;
   height: 100dvh;
   height: var(--app-height);
   overflow: hidden;
   background: var(--color-void);
+  /* The scrollable page lives entirely in .scroll-spacer, underneath this
+     fixed layer — wheel/touch input must reach it (and Lenis's window
+     listeners) rather than being captured by the canvas on top. */
+  pointer-events: none;
 }
 
 .experience-canvas {

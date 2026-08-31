@@ -37,11 +37,14 @@ export function ScrollSpacer() {
   const spacerRef = useRef(null)
 
   useEffect(() => {
+    // Lenis first, then the GSAP master timeline that reads its scroll —
+    // the timeline's ScrollTrigger must exist before anything can drive it.
     const smoothScroll = createSmoothScroll(ScrollTrigger.update)
 
     const timeline = gsap.timeline({
       scrollTrigger: {
         trigger: spacerRef.current,
+        scroller: window,
         start: 'top top',
         end: 'bottom bottom',
         scrub: 1.5,
@@ -51,7 +54,21 @@ export function ScrollSpacer() {
       },
     })
 
+    // Wakes GSAP's internal progress cache immediately rather than waiting
+    // for the first real scroll tick to populate it.
+    timeline.progress(0.0001)
+    timeline.progress(0)
+
+    // The Canvas (mounted alongside this component) can still be settling
+    // its own layout/DPR sizing in the same tick ScrollTrigger measures
+    // `spacerRef`'s height — a stale measurement here is what leaves
+    // scroll input and camera progress out of sync from the very first
+    // scroll. Refreshing once after mount, on the next frame, re-measures
+    // against final layout without waiting for a resize event to do it.
+    const raf = requestAnimationFrame(() => ScrollTrigger.refresh())
+
     return () => {
+      cancelAnimationFrame(raf)
       timeline.scrollTrigger?.kill()
       timeline.kill()
       smoothScroll.dispose()
