@@ -238,6 +238,39 @@ Awaiting human visual review — please confirm the jolt is resolved when scrubb
 
 ---
 
+## 4D. Phase 1B Rebuild — Clean Lighting Architecture
+
+**Status:** TECHNICALLY COMPLETE
+**Approval:** NOT YET GRANTED
+
+Human request: clear out the accumulated Phase 1B lighting/volumetric setup (built up across three tuning passes plus two reactive fixes) and rebuild from scratch with clean, production-stable R3F practices — replacing runtime patches with a genuinely simpler, more robust architecture. Phase 1A architecture (including the entrance pillars) and the Phase 1D monitor were retained unchanged; only `src/experience/lighting/` was rebuilt.
+
+### What was removed
+- The scroll-coupled beam-opacity fade from §4C (`BEAM_FADE_START`/`BEAM_FADE_END`, `VolumetricLightingRig`'s `useFrame` call into `controller.update(scrollProgress.value)`) — this was the most recent "hack": a runtime patch tied to specific camera-path progress values, fragile to future path changes.
+- The two-mesh "core + halo" nested-cone shaft with a fresnel view-angle shading term — extra shader complexity that wasn't load-bearing for the room's overall readability.
+- `mesh.userData.baseOpacity` bookkeeping that only existed to support the runtime fade above.
+
+### What replaced it
+- **Single-mesh beam, geometrically truncated instead of runtime-faded.** The camera/monitor transition pop (§4C) is now prevented by construction: the beam mesh's local Y only extends to `beam.lengthFraction × fullLength` from the light source — chosen (0.75) so the mesh's lowest point sits at world Y ≈ 2.0, a margin above every camera height in `cameraPath.js` (max ~1.7). The camera can never be inside this geometry, for any progress value, without needing to know or track scroll position at all. This is a stronger guarantee than the fade was: it holds even if `cameraPath.js` changes later, whereas the fade's `BEAM_FADE_START/END` were hand-tuned to the *current* path's specific numbers.
+  - **Tuning note:** the first truncation attempt (`lengthFraction: 0.6`) was too conservative — it pushed the entire beam mesh above the hero shot's visible frustum, making it invisible from the opening view. Caught via screenshot comparison against the pre-rebuild reference, not assumed correct from the math alone; recalculated to 0.75, which keeps the beam dramatically visible while still clearing every camera height with margin.
+  - **Opacity retuning:** collapsing two overlapping shells (core+halo, whose additive opacities effectively stacked) into one mesh meant the old per-shell opacity values (0.075/0.16) read as barely visible alone. Retuned empirically: `beam.opacity: 0.11`, `floorPool.opacity: 0.22` (up from the old floor pool's `0.075 × 1.4 ≈ 0.105`) — verified against screenshots at each step, including one intentionally-oversaturated test pass (`opacity: 0.5`) specifically to confirm the mesh/geometry itself was correct before retuning down, isolating a visibility bug from a geometry bug.
+- **Added a stable directional key light** (`THREE.DirectionalLight`, non-shadow-casting, low intensity) as explicit general-room fill, per the request's "stable cinematic lighting" requirement — supplements the existing tuned ambient light rather than replacing it. `castShadow: false` deliberately, so it can't introduce a second shadow map or a second source of acne — the spot remains the sole shadow caster, preserving the already-tuned shadow direction/character.
+- **`lightingParams` restructured** into `spot` / `key` / `ambient` / `shadow` / `fog` / `beam` / `floorPool` / `dust` — each light/effect's parameters grouped under its own name instead of a flat mixed namespace. Required updating the one external reference to the old flat shape: `Monitor.jsx`'s `MONITOR_ANCHOR.position` now reads `lightingParams.spot.target` instead of `lightingParams.target`.
+- **Shadow config kept, not re-litigated:** `mapSize: 2048`, `bias: -0.0012`, `normalBias: 0.02` (the curved-geometry acne fix from §4B) are unchanged — these were already standard, reasonable values, not "hacks" in the sense the request meant; only `radius` (the PCF soft-shadow blur radius) was reduced `6 → 4`, a minor stability-leaning adjustment with the same standard API, not a new mechanism.
+- **Three-tier surface hierarchy: verified unchanged and already correct.** `Environment.jsx`'s `SURFACE_TONE` (columns/pillars `#8c8c8c` lightest, walls `#5e5e5e`/`#565656` mid, floor `#484848` darkest) already matched the requested Tier 1/2/3 spec exactly from earlier work — confirmed by reading the file rather than assumed, no changes made.
+
+### Verification
+- Scrolled through progress 0%, 33% (pillar pass-through), 75% (close approach), and 100% (monitor-aligned) — beam visible and atmospheric in the opening view, no artifacts during the pass-through, clean truncated-geometry non-event at the transition (nothing to pop, by construction), squarely framed final shot.
+- Verified full reversibility: 100% → 0% reproduces the same hero frame.
+- Frame-timing under a simulated scroll-gesture burst: 180 frames, ~16.6ms avg, 18.70ms max, 0 over 33ms — no regression.
+- Production build succeeds (70 modules, no errors); grep-confirmed no `useState`/`setState` anywhere in `src/`; mobile viewport renders cleanly with no console errors.
+- One HMR false alarm during this pass: after the rewrite, the dev tab reported a stale `cameraPath.js` error that persisted across page reloads with an unchanged timestamp — traced to the browser tab's own HMR/error-overlay state, not the actual code (confirmed by opening a fresh tab, which showed zero errors against the same running dev server). No code change resulted from it.
+
+### Required next step
+Awaiting human visual review of the rebuilt lighting — please confirm the room, beam, and camera/monitor transition read as intended.
+
+---
+
 ## 5. Approved Visual Decisions
 
 This section records visual decisions that have already received human approval and therefore should be treated as protected foundations.
@@ -594,6 +627,20 @@ Record meaningful implementation changes rather than every minor code edit.
 - Checked the other two requested items and found both already correct, so left them unchanged: camera position and lookAt already share the identical damp lambda and per-frame delta (genuinely synchronized), and the final camera position/lookAt already differ by a pure `(0,0,2.1)` offset — exactly perpendicular to the screen plane, confirmed by direct vector math.
 - `Monitor.jsx` — made the screen/glass meshes' shadow exclusion explicit (`castShadow={false} receiveShadow={false}`, previously relying on the default) and documented that the screen's unlit `ShaderMaterial` has no PBR roughness/metalness to tune in the first place.
 - Verified: fade is smooth across 60%/70%/82%/100% scroll positions with no visible pop, full reversibility, no frame-timing regression, no console errors, mobile renders cleanly, production build succeeds.
+
+### 2026-08-31 (Phase 1B rebuild — clean lighting architecture)
+
+**Rebuilt `src/experience/lighting/` from scratch on human request, replacing accumulated runtime patches with a simpler, more robust architecture. Phase 1A (including entrance pillars) and Phase 1D monitor geometry untouched.**
+
+- Removed the scroll-coupled beam-fade from the previous fix (§4C) — a runtime patch tied to specific camera-path progress values.
+- Removed the two-mesh core+halo fresnel-shaded shaft; replaced with a single mesh.
+- Replaced runtime fading with **geometric truncation**: the beam mesh now only extends 75% of the way from the light source toward the floor target, keeping its lowest point (world Y ≈ 2.0) permanently above every camera height in `cameraPath.js` (max ~1.7) — the camera cannot end up inside this geometry for any progress value, by construction, with no dependency on the current camera path's specific numbers. Caught and corrected an over-conservative first attempt (`lengthFraction: 0.6`) that pushed the whole beam out of the hero shot's frustum, invisible — found via screenshot comparison, not assumed from the math.
+- Retuned opacity after collapsing two overlapping shells into one (`beam.opacity: 0.11`, `floorPool.opacity: 0.22`) — isolated a visibility-tuning issue from a possible geometry bug by briefly testing at an intentionally oversaturated `opacity: 0.5` first.
+- Added a stable, non-shadow-casting `DirectionalLight` as general room fill, supplementing the existing tuned ambient light. Spot remains the sole shadow caster.
+- Restructured `lightingParams` into named groups (`spot`/`key`/`ambient`/`shadow`/`fog`/`beam`/`floorPool`/`dust`); updated the one external reference (`Monitor.jsx`'s `MONITOR_ANCHOR.position`, now `lightingParams.spot.target`).
+- Verified the three-tier surface hierarchy (`Environment.jsx`'s `SURFACE_TONE`) already matched the request exactly — confirmed by reading the file, not changed.
+- Verified: full scroll range (0/33/75/100%) clean with no artifacts, full reversibility, no frame-timing regression (~16.6ms avg, 0 over 33ms), production build succeeds, no console errors, no React state anywhere in `src/` (grep-verified), mobile renders cleanly.
+- One false alarm during this pass: a stale HMR error in the dev tab (persisted across reloads) was traced to the tab's own error-overlay state via a fresh-tab test, not a real code issue.
 
 ---
 

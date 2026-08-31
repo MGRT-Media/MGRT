@@ -12,7 +12,7 @@ import { createScreenTestPatternMaterial } from './screenTestPatternMaterial.js'
  * monitor stands within the volumetric beam's path rather than beside it.
  */
 export const MONITOR_ANCHOR = {
-  position: lightingParams.target,
+  position: lightingParams.spot.target,
   screenWidth: 1.5,
   screenHeight: 0.88,
   screenCenterHeight: 1.2,

@@ -1,16 +1,12 @@
 import { useEffect, useMemo } from 'react'
-import { useFrame } from '@react-three/fiber'
 import { createVolumetricLighting } from './volumetricLighting.js'
-import { scrollProgress } from '../timeline/ScrollTimelineProvider.jsx'
 
 /**
- * Thin R3F adapter around the framework-agnostic volumetric lighting
- * controller. Calls `controller.update(scrollProgress.value)` every frame
- * — a narrowly-scoped exception to "lighting is static," used only to fade
- * the beam across the Phase 1D camera→monitor crossing (see
- * `volumetricLighting.js`'s `BEAM_FADE_START`/`BEAM_FADE_END`). Reads the
- * same plain mutable `scrollProgress` object `ScrollCameraRig` uses — not
- * React state, per technical-architecture.md §7.
+ * Thin R3F adapter around the framework-agnostic lighting controller.
+ * Mounts once, disposes on unmount. The lighting is fully static — no
+ * `useFrame`, no scroll-coupling — the beam's own truncated geometry
+ * (see `volumetricLighting.js`) is what keeps the camera transition free
+ * of a pop, not a runtime fade.
  */
 export default function VolumetricLightingRig() {
   const controller = useMemo(() => createVolumetricLighting(), [])
@@ -19,10 +15,6 @@ export default function VolumetricLightingRig() {
     controller.init()
     return () => controller.dispose()
   }, [controller])
-
-  useFrame(() => {
-    controller.update(scrollProgress.value)
-  })
 
   // dispose={null}: disposal is handled by controller.dispose() above; R3F's
   // own auto-dispose traversal doesn't expect imperatively-nested lights and
