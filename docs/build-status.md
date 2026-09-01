@@ -381,7 +381,27 @@ Reported directly by the human after testing §4AM's fix.
 Full round trip tested: forward through the lens (locked → held → released) to the Monitor, then backward through the lens (locked again → held → released) back to the opening, then forward a third time (locked again) — confirming re-triggering works repeatedly, not just twice. No console errors at any point. 16.62ms avg frame time, 0 frames >33ms. Mobile viewport clean. Production build succeeds.
 
 ### Required next step
-Open to visual-review adjustment. No further mechanism work required unless requested.
+*Superseded — see §4AO.* Open to visual-review adjustment.
+
+---
+
+## 4AO. Feature — Intro Scroll-Velocity Dampening (Entrance → Approach)
+
+**Status:** IN PROGRESS (mechanism verified working; open to further visual-review adjustment)
+
+### What changed
+Per explicit request: even before Snap 2's hard lock engages, a hard flick could blow through the Entrance/Establish/Approach beats too quickly to register them.
+
+- `filmActBeats.js` — added `INTRO_DAMPEN_END_T` (`= FILM_FOCUS_T`), `INTRO_WHEEL_MULTIPLIER`, `INTRO_TOUCH_MULTIPLIER` (0.35).
+- `ScrollTimelineProvider.jsx` — `onUpdate` now live-mutates `smoothScroll.lenis.options.wheelMultiplier`/`touchMultiplier` between the intro values and `1` depending on which side of `FILM_FOCUS_T` the current progress is on. Confirmed against the installed Lenis package source that these two options are read fresh from `this.options` on every wheel/touch event rather than cached at construction, so live-mutating them is safe and takes effect immediately.
+- Deliberately an input-level fix, not a value-decoupling one: real scroll position and `scrollProgress.value` stay exactly 1:1 throughout, preserving `experience-design.md`'s "Scroll controls time" / no-auto-scroll rule — the visual never keeps advancing after the visitor's hand leaves the wheel, it just requires more physical scrolling to cover the same ground inside the zone. Skipped entirely under `prefers-reduced-motion`.
+- The request's point 2 (minimum duration before Snap 2 unpins) was already satisfied by the existing `SCROLL_LOCK_HOLD_MS` hard lock (§4AM/§4AN) — not duplicated here.
+
+### Verification
+A fixed-size wheel burst covers ~124px/event in the undampened zone vs. ~43.5px/event inside the intro zone — a measured ratio of ~0.35, matching `INTRO_WHEEL_MULTIPLIER` exactly. Full reversibility, no console errors, 16.57ms avg frame time, 0 frames >33ms. Mobile viewport clean. Production build succeeds.
+
+### Required next step
+Open to visual-review adjustment (multiplier strength, zone boundary). No further mechanism work required unless requested.
 
 ---
 
