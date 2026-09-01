@@ -460,7 +460,26 @@ Per explicit request: the position path moved in straight lines with sharp direc
 Every keyframe (Entrance, Establish, Approach, Lens Snap, Monitor) still lands in exactly the same framing as before — confirmed via screenshot at each, including the tight lens-lock and edge-to-edge monitor shots, which depend on exact position/lookAt precision (both still land correctly, confirming the curve passes exactly through the intended waypoints). Intermediate frames (mid-approach, mid-pull-back) show smooth curved transitions with no clipping or overshoot artifacts. Full reversibility (bidirectional lens re-lock still correctly re-triggers mid-test). No console errors. 16.55ms avg frame time, 0 frames >33ms. Mobile viewport clean. Production build succeeds.
 
 ### Required next step
-Real-device touch verification still recommended (carried over from §4AP). Otherwise open to visual-review adjustment. No further mechanism work required unless requested.
+*Superseded — see §4AS.* Real-device touch verification still recommended (carried over from §4AP).
+
+---
+
+## 4AS. Refinement — Quaternion-Slerp Camera Rotation, Weighted Damping, Earlier Light
+
+**Status:** IN PROGRESS (mechanism verified working; open to further visual-review adjustment)
+
+### What changed
+Per explicit follow-up: hard stops felt rigid/mechanical, lens entry felt "robotically hinged... like a sharp pivot on a rigid axis," and room lighting arrived too late in the sequence.
+
+- `ScrollCameraRig.jsx` — rotation is no longer a damped lookAt *point* fed through `camera.lookAt()` every frame. Damping a 3D point and re-deriving a lookAt matrix from it each frame doesn't interpolate *rotation* at a constant rate — for a large turn (dolly-in while swinging from the establish framing to the lens), apparent angular speed can vary in a way that reads as hinged rather than swept. Now derives a target orientation (look-at matrix → quaternion) and `Quaternion.slerp`s the camera's actual orientation toward it every frame — genuine constant-angular-velocity rotation, independent of lookAt-point distance. Also lowered `POSITION_DAMP_LAMBDA` (3.5 → 2.6) and set `ROTATION_DAMP_LAMBDA` (3.5 → 3.0) so position is deliberately the heavier/slower of the two — the camera keeps gliding to rest for a beat after it's already finished turning, rather than both stopping on the same frame. This reverses part of §4AF's deliberate choice to keep position/lookAt in lockstep (that round found decoupling caused a "rotational micro-snap" at the monitor lock) — flagged rather than silently redone: the earlier snap was most likely an artifact of interpolating lookAt as a raw point rather than true rotation, which this round's switch to quaternion slerp is a more principled fix for regardless.
+- `filmActBeats.js` — `LOCK_CATCH_DURATION_SECONDS` (0.6 → 0.75) and `LOCK_CATCH_EASE` (`power3.out` → `power4.out`, per explicit suggestion) — heavier deceleration into both hard locks.
+- `VolumetricLightingRig.jsx` — `IGNITE_END` lowered 0.4 → 0.25. 0.4 in progress-space was already an early fraction of the 0-1 timeline, but the Intro's own hard rate cap (§4AP) means progress now advances much more slowly in wall-clock time through the early scroll than it used to, so a ramp completing at progress 0.4 was taking noticeably longer in real seconds than it looks like on paper.
+
+### Verification
+Every keyframe (Entrance, Establish, Approach, Lens Snap, Monitor) still lands in exactly the same framing — confirmed via screenshot, including the tight lens-lock and edge-to-edge monitor shots (both depend on exact position/orientation precision). Room visibly well-lit by ~22% progress (previously would still have been mostly dark at that point given the slower intro pacing). Full reversibility, no console errors, 16.68ms avg frame time, 0 frames >33ms. Mobile viewport clean. Production build succeeds.
+
+### Required next step
+Real-device touch verification still recommended (carried over from §4AP). Watch specifically for any recurrence of the "rotational micro-snap" §4AF found with decoupled lambdas — theorized here to have been a point-interpolation artifact rather than a lambda-decoupling one, but not exhaustively re-tested against that specific historical repro. Otherwise open to visual-review adjustment.
 
 ---
 
