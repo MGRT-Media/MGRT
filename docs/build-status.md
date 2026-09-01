@@ -205,7 +205,30 @@ Scrolled to 100% (video plays, screen ignites) and back to 0% (video pauses/rese
 Screenshot at scroll 0% — reads as a recognizable tripod-camera silhouette in the opening reveal, per §7's discovery beat. Full scroll to 100% and back to 0% reproduces exactly (monitor/digital video behavior unaffected). No console errors. Production build succeeds (74 modules). `grep` for `useState`/`setState` — clean. The object isn't yet seen up close during scroll, since `cameraPath.js` is still a single straight line to the monitor with no Film approach segment — expected, addressed by the required next step below.
 
 ### Required next step
-Extend `cameraPath.js` with Film discovery/approach/lens-alignment keyframes derived from `CAMERA_ANCHOR`, converting `LOOK_AT` from a fixed constant to a progress-interpolated value, and wire an `onCameraLock`-style event for the lens screen's ignite trigger.
+*Superseded — see §4AF.* Extend `cameraPath.js` with Film discovery/approach/lens-alignment keyframes.
+
+---
+
+## 4AF. Feature — Shared Digital Plinth + Act 1→Act 2 Camera Flight
+
+**Status:** IN PROGRESS (core mechanism working; pacing/framing open to further tuning)
+
+### What changed
+- New `src/experience/digital/plinthAnchor.js` — single source of truth for the shared plinth's size (widened to 1.9 × 0.85, from Phase 1D's single-object 1.0 × 0.75), position (still exactly `lightingParams.spot.target`, unchanged), yaw, and the ±0.5 local-X offset separating the two objects.
+- New `src/experience/digital/DigitalPlinth.jsx` — the stone plinth mesh, extracted out of `Monitor.jsx` (which owned it alone in Phase 1D) now that it's shared.
+- `Monitor.jsx` — no longer builds its own plinth; console geometry offset `+OBJECT_OFFSET_X` on the shared plinth. `MONITOR_ANCHOR` now exports an exact `screenWorldPosition`/`screenForward` (accounting for the offset + yaw) instead of the Phase 1D approximation that assumed the screen sat at the plinth's bare center.
+- `CinemaCamera.jsx` — the Phase 2 kickoff's full-height floor tripod (§4AE) removed and replaced with a compact plinth-top mount (base + riser), since a floor tripod made no sense standing on a shared plinth. Positioned at `-OBJECT_OFFSET_X`, tilted an additional 32° toward the Monitor ("tilted slightly toward the Monitor," per explicit request). Lens screen's ignite is now a smooth scroll-progress "hill" centered on a new `FILM_FOCUS_T` (0.45, `filmActBeats.js`) rather than an end-of-scroll lock event.
+- `cameraPath.js` — rewritten from Phase 2's single straight opening→monitor line to a 3-keyframe piecewise path: opening wide shot → tight Cinema Camera hero shot (Act 1, at `FILM_FOCUS_T`) → pan/track across the plinth into the Monitor-centered shot (Act 2, at `t=1`). Flagged as a deliberate supersession of the prior "no waypoints" simplification (`cameraPath.js`'s own comments), not a silent drift back to it — still deterministic, reversible, no roll.
+
+### Bugs found and fixed during visual QA
+- The Act 1 hero-shot camera position formula had a sign error placing the visitor's camera *behind* the lens (inside/behind the object) instead of in front of it looking back — caused a giant black near-clip sphere filling the frame. Fixed by flipping the offset direction.
+- The lens barrel used `THREE.CylinderGeometry`'s default closed end-caps, so the barrel's own opaque front face was hiding the film-media screen mesh sitting just behind it — screen stayed black even though the video was confirmed playing (`readyState: 4`, `uIgnite ≈ 1`) via direct instrumentation. Fixed by setting the barrel geometry `openEnded: true` (a real hollow tube, not a solid capped cylinder).
+
+### Verification
+Screenshots at scroll 0% (both objects silhouetted together on the shared plinth), ~45% (tight Cinema Camera hero shot, lens showing `film-01-hero.mp4` clearly), and 100% (Monitor-centered, `digital-01-website.mp4` playing) — all read correctly. Full scroll to 100% and back to 0% reproduces the opening frame exactly. No console errors at any point. Frame timing: 16.53ms avg, 0 frames >33ms during a scroll burst. Mobile viewport (375×812) clean. Production build succeeds. `grep` for `useState`/`setState` — clean.
+
+### Required next step
+Pacing/framing (hero-shot distance and angle, pan timing, tilt angle) is a first pass — open to visual-review adjustment. No further mechanism work required unless requested.
 
 ---
 
