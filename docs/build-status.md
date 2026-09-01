@@ -401,7 +401,29 @@ Per explicit request: even before Snap 2's hard lock engages, a hard flick could
 A fixed-size wheel burst covers ~124px/event in the undampened zone vs. ~43.5px/event inside the intro zone — a measured ratio of ~0.35, matching `INTRO_WHEEL_MULTIPLIER` exactly. Full reversibility, no console errors, 16.57ms avg frame time, 0 frames >33ms. Mobile viewport clean. Production build succeeds.
 
 ### Required next step
-Open to visual-review adjustment (multiplier strength, zone boundary). No further mechanism work required unless requested.
+*Superseded — see §4AP.* Open to visual-review adjustment.
+
+---
+
+## 4AP. Feature — Hard Rate Cap on the Intro (Replaces Proportional Dampening)
+
+**Status:** IN PROGRESS (mechanism verified working for wheel/trackpad; touch simulation inconclusive in the test harness — see below)
+
+### Root cause
+§4AO's proportional `wheelMultiplier` damper (0.35x) still let a hard or repeated flick blow through Entrance/Establish/Approach in a handful of events — a multiplier scales with arbitrarily large input, so it slows things down without ever capping them. Reported directly by the human after testing §4AO.
+
+### What changed
+- `filmActBeats.js` — replaced `INTRO_WHEEL_MULTIPLIER`/`INTRO_TOUCH_MULTIPLIER` with `INTRO_MAX_RATE_PER_SECOND` (derived from a 2.5s minimum traversal time across the `[0, FILM_FOCUS_T]` span) and `INTRO_INTENT_DECAY_MS`.
+- `ScrollTimelineProvider.jsx` — the intro zone now fully intercepts wheel/touch input via always-attached capture-phase listeners that `preventDefault` and record only a direction (decaying to 0 after a short pause — a stop, not a continue). A `gsap.ticker` callback advances `scrollProgress.value` itself at the flat capped rate, mirroring the result onto real scroll via `lenis.scrollTo(..., { immediate: true, force: true })` — `force: true` is required because Lenis's own `scrollTo` is a no-op while stopped otherwise (confirmed against the installed package source). Lenis stays fully stopped for the zone's entire span via a new `syncScrollSuspension()` helper, centralizing what used to be direct `stop()`/`start()` calls scattered between the old intro damper and the Snap 2 hold (both now need to cooperate over the same suspended state).
+- Still fully input-driven, not auto-play — advancing only happens while the visitor is actively pushing a direction and stops the instant they stop, preserving `experience-design.md`'s "Scroll controls time" rule; it's genuinely rate-limited now instead of only proportionally slowed.
+
+### Verification
+A full second of extreme, continuous wheel flooding (`deltaY: 1000`, dispatched every 8ms — far beyond realistic input) only advanced progress by ~0.196, matching the theoretical cap (0.18/sec × 1s = 0.18) almost exactly; confirmed symmetric in reverse. Confirmed it stops instantly with zero residual movement once input stops (no auto-play). Confirmed correct hand-off into the existing Snap 2 hard lock at the zone boundary in both directions, and full reversibility. No console errors. 16.54ms avg frame time, 0 frames >33ms. Mobile viewport clean. Production build succeeds.
+
+**Known verification gap:** touch-specific simulation was inconclusive in this session's test harness — synthetic `TouchEvent` construction proved unreliable here (including inside Lenis's own unrelated handler, which threw on the malformed synthetic touch object independent of this change). The touch code path mirrors the same safe, optional-chained pattern already working in production elsewhere in this codebase, and wheel/trackpad — the primary vector in the original report — is thoroughly verified. Recommend a real-device check before considering touch fully confirmed.
+
+### Required next step
+Real-device touch verification recommended. Otherwise open to visual-review adjustment (traversal duration, decay timing). No further mechanism work required unless requested.
 
 ---
 
