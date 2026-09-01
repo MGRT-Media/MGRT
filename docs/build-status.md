@@ -40,9 +40,9 @@ For a new project, the Current Phase may be Phase 1A even when no phase has yet 
 
 **Project:** MGRT Media
 **Status:** In active development
-**Current Phase:** Phase 1D — Digital / Monitor Foundation
-**Phase Status:** Technically complete, pending human approval
-**Current Objective:** Establish the physical monitor anchor, provisional screen surface, and the Phase 1C→1D scroll handshake that aligns the camera with the screen face.
+**Current Phase:** Phase 2 — Film, Digital & Campaigns
+**Phase Status:** Starting — Cinema Camera Mesh Integration and Portfolio Media & Screen Content in progress
+**Current Objective:** Build the final Film and Digital acts on the proven Phase 1 foundation: integrate the cinema-camera object (deferred from Phase 1D) and replace the provisional screen content with curated Portfolio Media and Screen Content treatment.
 
 ### Current approval state
 
@@ -57,8 +57,13 @@ PHASE 1C — Camera & Scroll
 STATUS: APPROVED (2026-08-31, human review)
 
 PHASE 1D — Digital / Monitor Foundation
-STATUS: TECHNICALLY COMPLETE
-APPROVAL: NOT YET GRANTED
+STATUS: APPROVED (2026-09-01, human review)
+
+PHASE 1E — Billboard Reveal Foundation
+STATUS: NOT STARTED (scoped, not yet begun)
+
+PHASE 2 — Film, Digital & Campaigns
+STATUS: IN PROGRESS
 ```
 
 Claude must work only within the currently approved scope unless explicitly instructed otherwise.
@@ -72,12 +77,12 @@ PHASE 1
 ├── 1A — Environment Shell              APPROVED
 ├── 1B — Atmosphere & Light             APPROVED
 ├── 1C — Camera & Scroll                APPROVED
-├── 1D — Digital / Monitor Foundation   TECHNICALLY COMPLETE
-└── 1E — Billboard Reveal Foundation    NOT STARTED
+├── 1D — Digital / Monitor Foundation   APPROVED
+└── 1E — Billboard Reveal Foundation    NOT STARTED (deferred — see note below)
 
 PHASE 2
-├── Film                                NOT STARTED
-├── Digital                             NOT STARTED
+├── Film                                IN PROGRESS (Cinema Camera Mesh Integration)
+├── Digital                             IN PROGRESS (Portfolio Media & Screen Content)
 └── Campaigns                           NOT STARTED
 
 PHASE 3
@@ -114,8 +119,8 @@ Use the following status values consistently:
 
 ## 4. Phase 1D — Digital / Monitor Foundation
 
-**Status:** TECHNICALLY COMPLETE
-**Approval:** NOT YET GRANTED
+**Status:** APPROVED
+**Approval:** GRANTED (2026-09-01, human review)
 
 ### Scope note — cinema-camera object deferred to Phase 2
 
@@ -145,9 +150,25 @@ No brightness/exposure/fog/volumetric snap, no camera jump, no monitor pop-in, n
 *None new.* See §6 for the carried-over Phase 1A/1B/1C issues (bundle size, dev-only esbuild advisory — bundle size effectively unchanged this phase, no new dependency added).
 
 ### Required next step
-Phase 1D is technically complete and awaiting human visual review and explicit approval before Phase 2 begins.
+*Superseded — see §4AC.* Phase 1D is approved; Phase 2 has begun.
 
-Do not begin Phase 2 until Phase 1D is explicitly approved.
+---
+
+## 4AC. Phase 1D Approval & Phase 2 Kickoff
+
+**Status:** APPROVED → Phase 2 IN PROGRESS
+
+### What changed
+Phase 1D (Digital / Monitor Foundation) was reviewed and explicitly approved by the human (2026-09-01). Per the human's direct instruction, Phase 2 begins now, opening with two workstreams:
+
+1. **Cinema Camera Mesh Integration** (Phase 2 / Film) — the cinema-camera object explicitly deferred from Phase 1D (§4's scope note) is now in scope.
+2. **Portfolio Media & Screen Content** (Phase 2 / Digital) — replacing Phase 1D's provisional test-pattern screen shader with curated Digital work per `experience-design.md` §8 and `technical-architecture.md` §11.
+
+### Scope flag — Phase 1E ordering
+`build-workflow.md` §6 recommends proving Phase 1E (Billboard Reveal Foundation) before building final Phase 2 content, since the billboard reveal is called out as "the single highest-risk mechanism in the project" and building final Campaigns content depends on it. The human's instruction explicitly directs proceeding straight to Phase 2 (Film + Digital) instead. Flagging this once per project convention: Film and Digital work below does not depend on the billboard mechanism, so this ordering is low-risk for those two acts specifically — the risk the doc calls out is specific to Campaigns/billboard content, which remains untouched. Phase 1E remains NOT STARTED and should still be completed before final Campaigns content is attempted.
+
+### Required next step
+Proceed with Cinema Camera Mesh Integration and Portfolio Media & Screen Content implementation (Phase 2 / Film & Digital).
 
 ---
 
@@ -1943,6 +1964,14 @@ Record meaningful implementation changes rather than every minor code edit.
 - Added **Phase 1E — Billboard Reveal Foundation** to `build-workflow.md` and this document's Phase Progress tracker, to prove the render-to-texture and boundary-crossing mechanism before final Campaigns content is built in Phase 2.
 - No effect on Phase 1A–1D scope or on any approved work.
 - This entry was originally committed alongside an accidental reset of this document's own progress-tracking sections (§2–§11 collapsed back to their blank starting template) — restored from the prior commit and merged with this narrative update rather than left in place, since the reset didn't reflect the actual implementation state.
+
+### 2026-09-01 (Phase 1D approval, Phase 2 kickoff)
+
+**Phase 1D officially approved by human review. Phase 2 begins: Cinema Camera Mesh Integration and Portfolio Media & Screen Content.**
+
+- Phase 1D (Digital / Monitor Foundation) approval granted — updated §2, §3, §4, and added §4AC.
+- Phase 2 opened per explicit human instruction, ahead of Phase 1E — flagged in §4AC per project convention since the ordering note in `build-workflow.md` §6 concerns billboard/Campaigns risk specifically, not Film or Digital.
+- Current Objective (§2) updated to reflect Phase 2 scope: cinema-camera mesh integration and replacement of provisional screen content with curated Digital work.
 
 ---
 
