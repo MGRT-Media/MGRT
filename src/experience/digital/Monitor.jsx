@@ -96,7 +96,21 @@ export default function Monitor() {
     return el
   }, [])
   const videoTexture = useMemo(() => new THREE.VideoTexture(video), [video])
-  const screenMaterial = useMemo(() => createScreenVideoMaterial(videoTexture), [videoTexture])
+  const screenMaterial = useMemo(
+    () => createScreenVideoMaterial(videoTexture, screenWidth / screenHeight),
+    [videoTexture],
+  )
+
+  // The material starts with a reasonable 16:9 default (screenVideoMaterial.js)
+  // since the video's real dimensions aren't known synchronously; update
+  // once they are so the cover-fit crop is exact rather than approximate.
+  useEffect(() => {
+    const onLoadedMetadata = () => {
+      screenMaterial.uniforms.uVideoAspect.value = video.videoWidth / video.videoHeight
+    }
+    video.addEventListener('loadedmetadata', onLoadedMetadata)
+    return () => video.removeEventListener('loadedmetadata', onLoadedMetadata)
+  }, [video, screenMaterial])
 
   // Target for the screen's ignite state — a plain ref (not React state),
   // flipped by the onCameraLock/onCameraUnlock event mechanism below and

@@ -4,11 +4,11 @@ import { lightingParams } from '../lighting/volumetricLighting.js'
  * Shared spatial anchor for the Phase 2 Digital composition — the single
  * source of truth for where the Cinema Camera's and Monitor's SEPARATE
  * stands sit relative to each other and to the light beam. Each object
- * now owns its own dedicated plinth (`Monitor.jsx`, `CinemaCamera.jsx`)
- * rather than sharing one — this module only holds what still needs to
- * stay in sync between them: the common beam center/yaw both stands are
- * built around, and each stand's own footprint + local-X offset from
- * that center.
+ * owns its own dedicated stand (Monitor: a stone plinth; Cinema Camera:
+ * a quadrupod, per explicit request — see `CinemaCamera.jsx`) rather than
+ * sharing one — this module only holds what still needs to stay in sync
+ * between them: the common beam center/yaw both stands are built around,
+ * and each stand's own local-X offset from that center.
  *
  * `BEAM_CENTER` stays exactly `lightingParams.spot.target` — the light's
  * own floor target, unchanged since Phase 1D — so both stands remain
@@ -29,9 +29,13 @@ export const MONITOR_PLINTH = {
   offsetX: 0.55,
 }
 
-export const CAMERA_PLINTH = {
-  width: 0.7,
-  depth: 0.6,
-  height: 0.72,
+// The Cinema Camera no longer stands on a stone plinth — per explicit
+// request it now sits on its own sleek 4-legged stand (quadrupod),
+// defined in `CinemaCamera.jsx`. `standHeight` is the height of that
+// stand's top platform (where the camera body sits), kept close to
+// `MONITOR_PLINTH.height` so the two objects read at a comparable scale
+// beside each other despite their very different support structures.
+export const CAMERA_STAND = {
   offsetX: -0.55,
+  standHeight: 0.7,
 }

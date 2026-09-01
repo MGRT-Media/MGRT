@@ -1,33 +1,68 @@
-import { useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import { createScreenVideoMaterial } from '../digital/screenVideoMaterial.js'
-import { createStoneWallMaterial } from '../materials/stoneWallMaterial.js'
-import { buildRockGeometry } from '../digital/buildRockGeometry.js'
 import { scrollProgress } from '../timeline/ScrollTimelineProvider.jsx'
 import { FILM_FOCUS_T, FILM_IGNITE_RISE } from '../timeline/filmActBeats.js'
-import { BEAM_CENTER, YAW_DEGREES, CAMERA_PLINTH } from '../digital/plinthAnchor.js'
+import { BEAM_CENTER, YAW_DEGREES, CAMERA_STAND } from '../digital/plinthAnchor.js'
 
 // Phase 2: the cinema-camera object explicitly deferred from Phase 1D
-// (build-status.md §4's scope note). Back to its own dedicated stone
-// plinth (per explicit request for separate stands), positioned beside
-// the Monitor's own plinth (`Monitor.jsx`) — both built around the same
-// beam center/yaw (`plinthAnchor.js`). Tilted an additional
-// `TILT_TOWARD_MONITOR_DEGREES` on top of that shared yaw so the lens
-// turns toward the Monitor rather than staying parallel to it.
+// (build-status.md §4's scope note). Stands on its own sleek 4-legged
+// stand (quadrupod, below) rather than a stone plinth, per explicit
+// request, positioned beside the Monitor's own plinth (`Monitor.jsx`) —
+// both built around the same beam center/yaw (`plinthAnchor.js`). Tilted
+// an additional `TILT_TOWARD_MONITOR_DEGREES` on top of that shared yaw
+// so the lens turns toward the Monitor rather than staying parallel to it.
 const TILT_TOWARD_MONITOR_DEGREES = 32
 
 const BODY = { width: 0.42, height: 0.28, depth: 0.5, cornerRadius: 0.035 }
 const LENS = { frontRadius: 0.07, rearRadius: 0.09, length: 0.26 }
 const VIEWFINDER = { width: 0.1, height: 0.08, depth: 0.12 }
-// A compact plinth-top mount, not a full-height floor tripod — this
-// object stands on its own plinth, not the floor directly.
-const STAND = { baseRadius: 0.13, baseHeight: 0.03, riserRadius: 0.05, riserHeight: 0.12 }
 
-const bodyCenterHeight = CAMERA_PLINTH.height + STAND.baseHeight + STAND.riserHeight + BODY.height / 2
+// A sleek 4-legged pod, not a stone plinth — legs run straight from the
+// floor to a small top hub, splayed outward at `spreadRadius`. All four
+// legs are geometrically identical by symmetry (same length, same angle
+// from vertical), so a single shared geometry is reused across all four
+// mesh instances below, just at different positions/rotations.
+const QUADPOD = {
+  hubRadius: 0.1,
+  hubHeight: 0.03,
+  legRadius: 0.016,
+  legFootRadius: 0.026,
+  spreadRadius: 0.24,
+}
+
+const bodyCenterHeight = CAMERA_STAND.standHeight + BODY.height / 2
 const lensCenterZ = BODY.depth / 2 + LENS.length / 2
 const lensFrontZ = BODY.depth / 2 + LENS.length
+
+/**
+ * One leg's position (its midpoint) and rotation (aligning the default
+ * Y-axis cylinder with the actual foot->hub direction), computed once via
+ * a quaternion rather than the small hand-tuned lean angles used in this
+ * object's very first tripod draft — exact regardless of how
+ * `spreadRadius`/`standHeight` are tuned later.
+ */
+function computeLegTransform(footX, footZ, hubTopY) {
+  const foot = new THREE.Vector3(footX, 0, footZ)
+  const hubEdge = new THREE.Vector3(0, hubTopY, 0)
+  const direction = new THREE.Vector3().subVectors(hubEdge, foot)
+  const length = direction.length()
+  const midpoint = new THREE.Vector3().addVectors(foot, hubEdge).multiplyScalar(0.5)
+  const quaternion = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize())
+  const euler = new THREE.Euler().setFromQuaternion(quaternion)
+  return { position: midpoint.toArray(), rotation: [euler.x, euler.y, euler.z] }
+}
+
+const QUADPOD_HUB_TOP_Y = CAMERA_STAND.standHeight - QUADPOD.hubHeight / 2
+const QUADPOD_LEG_LENGTH = Math.hypot(QUADPOD.spreadRadius, QUADPOD_HUB_TOP_Y)
+const QUADPOD_LEGS = [45, 135, 225, 315].map((deg) => {
+  const rad = THREE.MathUtils.degToRad(deg)
+  const footX = Math.sin(rad) * QUADPOD.spreadRadius
+  const footZ = Math.cos(rad) * QUADPOD.spreadRadius
+  return computeLegTransform(footX, footZ, QUADPOD_HUB_TOP_Y)
+})
 
 // The glass element's convex bulge, and the exact radius of a sphere that
 // would produce it (sagitta formula: R = (bulge² + radius²) / (2*bulge)),
@@ -71,7 +106,7 @@ const yawRadians = THREE.MathUtils.degToRad(YAW_DEGREES)
 const tiltRadians = THREE.MathUtils.degToRad(TILT_TOWARD_MONITOR_DEGREES)
 const totalYawRadians = yawRadians + tiltRadians
 
-const localOffset = new THREE.Vector3(CAMERA_PLINTH.offsetX, 0, 0).applyAxisAngle(Y_AXIS, yawRadians)
+const localOffset = new THREE.Vector3(CAMERA_STAND.offsetX, 0, 0).applyAxisAngle(Y_AXIS, yawRadians)
 const worldOrigin = localOffset.add(new THREE.Vector3(BEAM_CENTER[0], 0, BEAM_CENTER[2]))
 const lensForward = new THREE.Vector3(0, 0, 1).applyAxisAngle(Y_AXIS, totalYawRadians)
 const bodyWorldOrigin = worldOrigin.clone().setY(bodyCenterHeight)
@@ -85,11 +120,14 @@ export const CAMERA_ANCHOR = {
 }
 
 export default function CinemaCamera() {
-  const plinthGeometry = useMemo(
-    () => buildRockGeometry(CAMERA_PLINTH.width, CAMERA_PLINTH.height, CAMERA_PLINTH.depth),
+  const hubGeometry = useMemo(
+    () => new THREE.CylinderGeometry(QUADPOD.hubRadius, QUADPOD.hubRadius, QUADPOD.hubHeight, 20),
     [],
   )
-  const plinthMaterial = useMemo(() => createStoneWallMaterial('#6e685e', [1, 1]), [])
+  const legGeometry = useMemo(
+    () => new THREE.CylinderGeometry(QUADPOD.legRadius, QUADPOD.legFootRadius, QUADPOD_LEG_LENGTH, 10),
+    [],
+  )
   const bodyGeometry = useMemo(
     () => new RoundedBoxGeometry(BODY.width, BODY.height, BODY.depth, 3, BODY.cornerRadius),
     [],
@@ -113,15 +151,6 @@ export default function CinemaCamera() {
     () => new THREE.TorusGeometry(LENS.frontRadius, LENS.frontRadius * 0.09, 12, 32),
     [],
   )
-  const standBaseGeometry = useMemo(
-    () => new THREE.CylinderGeometry(STAND.baseRadius, STAND.baseRadius * 1.1, STAND.baseHeight, 16),
-    [],
-  )
-  const standRiserGeometry = useMemo(
-    () => new THREE.CylinderGeometry(STAND.riserRadius, STAND.riserRadius * 1.3, STAND.riserHeight, 12),
-    [],
-  )
-
   // Lens screen — Act 1's Film media (film-01-hero.mp4), sharing the same
   // dormant/ignite unlit material as the monitor screen. Ignition here is
   // NOT the onCameraLock binary event `Monitor.jsx` uses (that fires once
@@ -139,8 +168,20 @@ export default function CinemaCamera() {
     return el
   }, [])
   const videoTexture = useMemo(() => new THREE.VideoTexture(video), [video])
-  const lensScreenMaterial = useMemo(() => createScreenVideoMaterial(videoTexture), [videoTexture])
+  // targetAspect: 1 — the lens aperture reads as roughly circular/square,
+  // unlike the video's native ~16:9. The material's cover-fit UV remap
+  // (screenVideoMaterial.js) crops instead of stretching, eliminating the
+  // dead space/letterboxing a plain 0-1 UV mapping left inside the lens.
+  const lensScreenMaterial = useMemo(() => createScreenVideoMaterial(videoTexture, 1), [videoTexture])
   const wasPlaying = useRef(false)
+
+  useEffect(() => {
+    const onLoadedMetadata = () => {
+      lensScreenMaterial.uniforms.uVideoAspect.value = video.videoWidth / video.videoHeight
+    }
+    video.addEventListener('loadedmetadata', onLoadedMetadata)
+    return () => video.removeEventListener('loadedmetadata', onLoadedMetadata)
+  }, [video, lensScreenMaterial])
 
   useFrame(() => {
     const p = scrollProgress.value
@@ -168,31 +209,21 @@ export default function CinemaCamera() {
 
   return (
     <group position={BEAM_CENTER} rotation={[0, yawRadians, 0]}>
-      <group position={[CAMERA_PLINTH.offsetX, 0, 0]} rotation={[0, tiltRadians, 0]}>
-        {/* Own dedicated stone plinth — beside, not shared with, the Monitor's */}
-        <mesh
-          position={[0, CAMERA_PLINTH.height / 2, 0]}
-          geometry={plinthGeometry}
-          material={plinthMaterial}
-          castShadow
-          receiveShadow
-        />
-
-        {/* Compact plinth-top mount */}
-        <mesh
-          position={[0, CAMERA_PLINTH.height + STAND.baseHeight / 2, 0]}
-          geometry={standBaseGeometry}
-          castShadow
-          receiveShadow
-        >
-          <meshStandardMaterial {...standProps} />
-        </mesh>
-        <mesh
-          position={[0, CAMERA_PLINTH.height + STAND.baseHeight + STAND.riserHeight / 2, 0]}
-          geometry={standRiserGeometry}
-          castShadow
-          receiveShadow
-        >
+      <group position={[CAMERA_STAND.offsetX, 0, 0]} rotation={[0, tiltRadians, 0]}>
+        {/* Sleek 4-legged quadrupod — replaces the stone plinth, per explicit request */}
+        {QUADPOD_LEGS.map((leg, i) => (
+          <mesh
+            key={i}
+            position={leg.position}
+            rotation={leg.rotation}
+            geometry={legGeometry}
+            castShadow
+            receiveShadow
+          >
+            <meshStandardMaterial {...standProps} />
+          </mesh>
+        ))}
+        <mesh position={[0, QUADPOD_HUB_TOP_Y, 0]} geometry={hubGeometry} castShadow receiveShadow>
           <meshStandardMaterial {...standProps} />
         </mesh>
 
@@ -268,9 +299,15 @@ export default function CinemaCamera() {
           <meshStandardMaterial color="#0a0a0b" roughness={0.35} metalness={0.7} />
         </mesh>
 
-        {/* Film-media screen, just behind the glass — ignites around the Act 1 lens-dive beat */}
+        {/*
+          Film-media screen, just behind the glass — ignites around the Act 1
+          lens-dive beat. Radius widened from an earlier 0.85x to 0.94x the
+          barrel's own opening radius (nearly the lip's inner edge) so no
+          dark gap of barrel material shows between the video and the lip,
+          per explicit request to eliminate dead space inside the aperture.
+        */}
         <mesh position={[0, bodyCenterHeight, lensFrontZ - 0.02]} castShadow={false} receiveShadow={false}>
-          <circleGeometry args={[LENS.frontRadius * 0.85, 24]} />
+          <circleGeometry args={[LENS.frontRadius * 0.94, 32]} />
           <primitive object={lensScreenMaterial} attach="material" />
         </mesh>
       </group>
