@@ -263,7 +263,26 @@ Screenshots at scroll 0% (both stands visible, separated, both still within the 
 Scrolled to two different raw stop points on either side of `FILM_FOCUS_T` (within the capture radius) — both settled to pixel-identical framing, confirming the snap engaged correctly. Scrolling decisively further released cleanly into the existing Act 2 pull-back/pan, unaffected. Full scroll to 100% and back to 0% still reproduces the opening frame exactly. No console errors. Frame timing: 16.50ms avg, 0 frames >33ms. Mobile viewport (375×812) clean. Production build succeeds. `grep` for `useState`/`setState` — clean.
 
 ### Required next step
-Open to visual-review adjustment (dome bulge amount, lip thickness, snap capture radius, fill fraction). No further mechanism work required unless requested.
+*Superseded — see §4AI.* Open to visual-review adjustment.
+
+---
+
+## 4AI. Refinement — Quadrupod Stand, 3-Stage Flight, Deeper Zoom + Cover-Fit Video
+
+**Status:** IN PROGRESS (core mechanism working; open to further visual-review adjustment)
+
+### What changed
+- `CinemaCamera.jsx` — stone plinth (§4AG) replaced with a sleek 4-legged quadrupod, per explicit request. Leg position/rotation is computed once via `THREE.Quaternion.setFromUnitVectors` (exact alignment to each foot→hub direction) rather than the hand-tuned lean-angle approximation this object's very first tripod draft used.
+- `cameraPath.js` — Act 1 is now explicitly three stages, per explicit request: **Entrance** (`t: 0`, the existing wide establishing shot), **Approach** (new keyframe at `t: FILM_FOCUS_T * 0.5`, a medium shot moving toward the Cinema Camera, looking at the same lens-front point Stage 3 locks onto so the whole flight reads as one continuous approach), **Lens Snap** (`t: FILM_FOCUS_T`, zoomed in further than §4AH — fill fraction 0.82 → 0.95, "almost the entire screen" per explicit request, still with a >2.5x near-plane safety margin).
+- `sampleCameraPath` now applies a `smoothstep` ease to each segment's own local progress before interpolating, per explicit request for smooth bezier easing — a deliberate, flagged supersession of the file's prior "no eased curve" note. Every keyframe boundary now meets at zero velocity, eliminating the abrupt speed changes a purely linear per-segment scheme could produce at transitions; `ScrollCameraRig.jsx`'s separate damp layer is unchanged and still handles turning discrete scroll input into continuous motion — the two are solving different problems, not duplicating each other.
+- `screenVideoMaterial.js` — added a standard "cover" UV remap (crop, never stretch), driven by new `uVideoAspect`/`uTargetAspect` uniforms, replacing the plain 0-1 UV mapping that let the lens barrel's dark material show through as visible dead space around the video circle (the video's native ~16:9 versus the lens's roughly circular/square aperture). `CinemaCamera.jsx` also widened its screen mesh radius (0.85x → 0.94x the lens opening radius) and passes `targetAspect: 1`; `Monitor.jsx` passes its own screen's real width/height ratio. Both update `uVideoAspect` once each video element's real dimensions are known (`loadedmetadata`).
+- Autoplay-on-snap (already satisfied by §4AF's ignite-band mechanism) and release-on-scroll-past (already satisfied by §4AH's localized snap function) both required no new code this round — confirmed still correct against the new keyframe/zoom values rather than reimplemented.
+
+### Verification
+Screenshots at the opening (quadrupod visible, no stone plinth), the new Approach stage (medium shot, quadrupod legs clearly readable), and Lens Snap (video filling ~95% of frame, lip framing the border, no visible gap between video and lip — cover-fit UV confirmed working). Snap re-verified at the new zoom level: two different raw scroll-stop points converged to pixel-identical framing. Act 2 arrival and full scroll reversibility unaffected. No console errors. Frame timing: 16.57ms avg, 0 frames >33ms. Mobile viewport (375×812) clean. Production build succeeds. `grep` for `useState`/`setState` — clean.
+
+### Required next step
+Open to visual-review adjustment (quadrupod leg spread/angle, approach distance/timing, zoom tightness). No further mechanism work required unless requested.
 
 ---
 
