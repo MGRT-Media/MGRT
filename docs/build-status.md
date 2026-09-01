@@ -300,7 +300,25 @@ Screenshots at the opening (quadrupod visible, no stone plinth), the new Approac
 Two different raw scroll-stop points near `t: 1` converge to pixel-identical Monitor framing (web interface filling edge-to-edge, thin bezel border, no cropping). Snap #1 (Cinema Lens) re-confirmed still correct and unaffected. Full scroll to 100% and back to 0% reproduces the opening frame exactly. No console errors. Frame timing: 16.61ms avg, 0 frames >33ms. Mobile viewport (375×812) clean. Production build succeeds. `grep` for `useState`/`setState` — clean.
 
 ### Required next step
-Open to visual-review adjustment (snap capture radii, monitor fill fraction/bezel margin). No further mechanism work required unless requested.
+*Superseded — see §4AK.* Open to visual-review adjustment.
+
+---
+
+## 4AK. Feature — Snap 1 (Studio Scene Establish), Locking the 3-Stage Choreography
+
+**Status:** IN PROGRESS (all three snap positions working; open to further visual-review adjustment)
+
+### What changed
+- `filmActBeats.js` — added `ESTABLISH_T` (0.15) and its capture radius; renamed the module's constants to match the explicitly requested numbering: **Snap 1 — Studio Scene** (`ESTABLISH_T`), **Snap 2 — Cinema Lens** (`FILM_FOCUS_T`, unchanged from §4AH/§4AI), **Snap 3 — Digital Monitor** (`MONITOR_SNAP_T`, unchanged from §4AJ).
+- `cameraPath.js` — new `ESTABLISH_POSITION` keyframe at `ESTABLISH_T`: positioned directly in front of the shared beam center (`BEAM_CENTER`, `plinthAnchor.js`) at a distance wide enough to hold both the Cinema Camera and Monitor stands in frame together, per explicit request ("snaps to an initial establish view framing both... side-by-side"). The entrance segment (`t: 0 → ESTABLISH_T`) keeps the same look-at throughout (`ESTABLISH_LOOKAT`) — a pure dolly-in, no reframe — so it reads as "the camera glides into the room" rather than a cut. `APPROACH_T` re-centered to the midpoint between `ESTABLISH_T` and `FILM_FOCUS_T`.
+- `ScrollTimelineProvider.jsx` — the scroll-snap function now checks all three capture radii (previously two).
+- Snap 2 (Cinema Lens: deep zoom, edge-to-edge video, lip framing, autoplay) and Snap 3 (Digital Monitor: edge-to-edge framing, autoplay) are unchanged from §4AI/§4AJ — re-verified correct with the new spacing, not reimplemented.
+
+### Verification
+Two different raw scroll-stop points near `ESTABLISH_T` converge to pixel-identical framing — both stands clearly visible side by side, exactly matching the requested establish shot. Snap 2 and Snap 3 re-confirmed still correct and unaffected by the new keyframe spacing. Full scroll to 100% and back to 0% reproduces the opening frame exactly. No console errors. Frame timing: 16.57ms avg, 0 frames >33ms. Mobile viewport (375×812) clean. Production build succeeds. `grep` for `useState`/`setState` — clean.
+
+### Required next step
+Open to visual-review adjustment (establish distance/framing, capture radii, stage timing). No further mechanism work required unless requested.
 
 ---
 
