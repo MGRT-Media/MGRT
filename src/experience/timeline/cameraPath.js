@@ -1,24 +1,26 @@
 import * as THREE from 'three'
 import { MONITOR_ANCHOR } from '../digital/Monitor.jsx'
 import { CAMERA_ANCHOR } from '../film/CinemaCamera.jsx'
-import { FILM_FOCUS_T } from './filmActBeats.js'
+import { BEAM_CENTER } from '../digital/plinthAnchor.js'
+import { ESTABLISH_T, FILM_FOCUS_T } from './filmActBeats.js'
 
 /**
  * Multi-keyframe path, replacing the single straight opening→monitor line
  * from Phase 1D/2's earlier round. That simplification assumed one single
  * destination (the monitor); it no longer holds now that the scroll needs
- * to visit both the Cinema Camera and Monitor in turn, and Act 1 itself
- * is now explicitly three stages, per explicit request: Entrance (fly
- * into the room), Approach (move toward the Cinema Camera), Camera Snap
- * #1 — Cinema Lens (dive into the lens until the film media fills the
- * frame). Scrolling past that snap pulls back and sweeps across into
- * Camera Snap #2 — Digital Monitor, framed close enough that the web
- * interface fills the frame edge-to-edge. Both snap points are backed by
- * `ScrollTimelineProvider.jsx`'s scroll-snap (`filmActBeats.js`'s
- * `FILM_FOCUS_T`/`MONITOR_SNAP_T`), so the keyframes here define WHERE
- * the camera locks; the snap defines WHEN scroll position clicks onto
- * them. Flagged here as a deliberate supersession of the prior "no
- * waypoints" simplification, not a silent drift back to it.
+ * to visit all three locked positions in turn, per explicit request for
+ * "3 distinct, locked snap/pause positions": **Snap 1 — Studio Scene**
+ * (the entrance glide settles on an establish shot framing the Cinema
+ * Camera and Monitor stands side by side), **Snap 2 — Cinema Lens**
+ * (the camera moves in and dives into the lens until the film media
+ * fills the frame), **Snap 3 — Digital Monitor** (pulls back out of the
+ * lens, sweeps across, and locks onto the Monitor screen edge-to-edge).
+ * All three snap points are backed by `ScrollTimelineProvider.jsx`'s
+ * scroll-snap (`filmActBeats.js`'s `ESTABLISH_T`/`FILM_FOCUS_T`/
+ * `MONITOR_SNAP_T`), so the keyframes here define WHERE the camera locks;
+ * the snap defines WHEN scroll position clicks onto them. Flagged here as
+ * a deliberate supersession of the prior "no waypoints" simplification,
+ * not a silent drift back to it.
  *
  * Still a pure function of `progress` (deterministic, reversible) and
  * still no roll/banking. Each segment now applies a `smoothstep` ease to
@@ -36,20 +38,30 @@ import { FILM_FOCUS_T } from './filmActBeats.js'
  */
 const START_POSITION = new THREE.Vector3(-1.0, 1.6, 8)
 
-// Opening wide shot looks toward the shared plinth ensemble generally
-// (not yet singling out either object) — a reasonable establishing
-// look-at height between the two objects' own centers.
-const OPENING_LOOKAT = new THREE.Vector3(MONITOR_ANCHOR.position[0], 1.3, MONITOR_ANCHOR.position[2])
+// Establish look-at: the shared plinth ensemble's center, at a height
+// between the two stands' own centers — used by both the entrance start
+// and the Snap 1 establish point below, so that whole opening segment is
+// a pure dolly-in (position changes, look direction doesn't) rather than
+// a reframe, reading as a clean glide into the room.
+const ESTABLISH_LOOKAT = new THREE.Vector3(MONITOR_ANCHOR.position[0], 1.3, MONITOR_ANCHOR.position[2])
+
+// Snap 1 — Studio Scene (Establish): where the entrance glide settles,
+// framing the Cinema Camera and Monitor stands side by side. Positioned
+// directly in front of the shared beam center (BEAM_CENTER, the same
+// point both stands are offset from — `plinthAnchor.js`) at a distance
+// wide enough to comfortably fit both stands in frame together.
+const ESTABLISH_DISTANCE = 3.0
+const ESTABLISH_POSITION = new THREE.Vector3(BEAM_CENTER[0], 1.6, BEAM_CENTER[2] + ESTABLISH_DISTANCE)
 
 const [lensX, lensY, lensZ] = CAMERA_ANCHOR.lensFrontFieldPosition
 const [fwdX, , fwdZ] = CAMERA_ANCHOR.lensForward
 const LENS_LOOKAT = new THREE.Vector3(lensX, lensY, lensZ)
 
-// Stage 2 — Approach: a medium-distance shot moving toward the Cinema
-// Camera, looking at the same lens-front point Stage 3 will lock onto —
-// so the whole Act 1 flight reads as one continuous approach toward a
-// single focal point rather than a jump between two different targets.
-const APPROACH_T = FILM_FOCUS_T * 0.5
+// Approach: a medium-distance shot moving toward the Cinema Camera,
+// looking at the same lens-front point Snap 2 will lock onto — so the
+// flight from the establish shot onward reads as one continuous approach
+// toward a single focal point rather than a jump between two targets.
+const APPROACH_T = (ESTABLISH_T + FILM_FOCUS_T) / 2
 const APPROACH_DISTANCE = 1.0
 const APPROACH_POSITION = new THREE.Vector3(
   lensX + fwdX * APPROACH_DISTANCE,
@@ -57,7 +69,7 @@ const APPROACH_POSITION = new THREE.Vector3(
   lensZ + fwdZ * APPROACH_DISTANCE,
 )
 
-// Stage 3 — Lens Snap: the scroll sequence dives into the Cinema
+// Snap 2 — Cinema Lens (Focus): the scroll sequence dives into the Cinema
 // Camera's optical glass, per explicit request — close enough that the
 // film media dominates the frame, with only a subtle border of the
 // barrel/lip (CinemaCamera.jsx's lensLipGeometry) around the viewport's
@@ -78,7 +90,7 @@ const LENS_DIVE_POSITION = new THREE.Vector3(
   lensZ + fwdZ * LENS_DIVE_DISTANCE,
 )
 
-// Camera Snap #2 — Digital Monitor: framed close enough that the web
+// Snap 3 — Digital Monitor (Interface): framed close enough that the web
 // interface fills most of the frame edge-to-edge, per explicit request —
 // the same fill-fraction approach as the lens-dive keyframe above, just
 // applied to the screen's own height instead of the lens radius. 0.92
@@ -98,10 +110,11 @@ const MONITOR_ALIGNED_POSITION = new THREE.Vector3(
 const MONITOR_ALIGNED_LOOKAT = new THREE.Vector3(screenX, screenY, screenZ)
 
 const KEYFRAMES = [
-  { t: 0, position: START_POSITION, lookAt: OPENING_LOOKAT }, // Stage 1 — Entrance
-  { t: APPROACH_T, position: APPROACH_POSITION, lookAt: LENS_LOOKAT }, // Stage 2 — Approach
-  { t: FILM_FOCUS_T, position: LENS_DIVE_POSITION, lookAt: LENS_LOOKAT }, // Stage 3 — Lens Snap
-  { t: 1, position: MONITOR_ALIGNED_POSITION, lookAt: MONITOR_ALIGNED_LOOKAT }, // Act 2 arrival
+  { t: 0, position: START_POSITION, lookAt: ESTABLISH_LOOKAT }, // Entrance start
+  { t: ESTABLISH_T, position: ESTABLISH_POSITION, lookAt: ESTABLISH_LOOKAT }, // Snap 1 — Studio Scene
+  { t: APPROACH_T, position: APPROACH_POSITION, lookAt: LENS_LOOKAT }, // Approach
+  { t: FILM_FOCUS_T, position: LENS_DIVE_POSITION, lookAt: LENS_LOOKAT }, // Snap 2 — Cinema Lens
+  { t: 1, position: MONITOR_ALIGNED_POSITION, lookAt: MONITOR_ALIGNED_LOOKAT }, // Snap 3 — Digital Monitor
 ]
 
 /**

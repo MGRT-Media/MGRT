@@ -3,6 +3,8 @@ import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { createSmoothScroll } from './smoothScroll.js'
 import {
+  ESTABLISH_T,
+  ESTABLISH_SNAP_CAPTURE_RADIUS,
   FILM_FOCUS_T,
   FILM_SNAP_CAPTURE_RADIUS,
   MONITOR_SNAP_T,
@@ -42,17 +44,18 @@ const SCROLL_LENGTH_MULTIPLIER = 3
  *
  * `scrollTrigger.snap` (below) is a deliberate, localized supersession of
  * this file's prior "no section-snapping" note, per explicit request for
- * two scroll-snap "click" points: Snap #1 (Cinema Lens, `FILM_FOCUS_T`)
- * and Snap #2 (Digital Monitor, `MONITOR_SNAP_T`, the end of the
- * timeline). It is NOT full-timeline sectioning — the snap function only
- * pulls the resting scroll position onto one of those two points when the
- * user stops scrolling within its own small capture radius; everywhere
- * else (the opening, the approach into and pull-back out of the lens, the
- * pan into Act 2) remains freely continuous. Still fully reversible: both
- * capture radii are symmetric, so approaching from either scroll
- * direction settles at the same point, and scrolling decisively past one
- * continues normally with no fight — satisfying "release on scroll past
- * this snap point" for free.
+ * "3 distinct, locked snap/pause positions": Snap 1 (Studio Scene
+ * establish, `ESTABLISH_T`), Snap 2 (Cinema Lens, `FILM_FOCUS_T`), and
+ * Snap 3 (Digital Monitor, `MONITOR_SNAP_T`, the end of the timeline). It
+ * is NOT full-timeline sectioning — the snap function only pulls the
+ * resting scroll position onto one of those three points when the user
+ * stops scrolling within its own small capture radius; everywhere else
+ * (the entrance glide, the approach into and pull-back out of the lens,
+ * the sweep into the Monitor) remains freely continuous. Still fully
+ * reversible: all three capture radii are symmetric, so approaching from
+ * either scroll direction settles at the same point, and scrolling
+ * decisively past one continues normally with no fight — satisfying
+ * "release on scroll past this snap point" for free.
  */
 export function ScrollSpacer() {
   const spacerRef = useRef(null)
@@ -64,10 +67,11 @@ export function ScrollSpacer() {
 
     // Pulls the resting scroll position onto whichever snap point (if
     // any) the user stopped within its own capture radius of. Outside
-    // both radii the raw stopped position is returned unchanged — no
-    // snap, free scroll — so this only affects the two "click" beats,
-    // not the rest of the timeline.
+    // all three radii the raw stopped position is returned unchanged —
+    // no snap, free scroll — so this only affects the three "click"
+    // beats, not the rest of the timeline.
     const snapTo = (value) => {
+      if (Math.abs(value - ESTABLISH_T) < ESTABLISH_SNAP_CAPTURE_RADIUS) return ESTABLISH_T
       if (Math.abs(value - FILM_FOCUS_T) < FILM_SNAP_CAPTURE_RADIUS) return FILM_FOCUS_T
       if (Math.abs(value - MONITOR_SNAP_T) < MONITOR_SNAP_CAPTURE_RADIUS) return MONITOR_SNAP_T
       return value
