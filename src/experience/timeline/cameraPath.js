@@ -9,10 +9,15 @@ import { FILM_FOCUS_T } from './filmActBeats.js'
  * destination (the monitor); it no longer holds now that the scroll needs
  * to visit both the Cinema Camera and Monitor in turn, and Act 1 itself
  * is now explicitly three stages, per explicit request: Entrance (fly
- * into the room), Approach (move toward the Cinema Camera), Lens Snap
- * (dive into the lens until the film media fills the frame). Act 2 then
- * pulls back out of the lens and pans across to the Monitor-centered
- * shot. Flagged here as a deliberate supersession of the prior "no
+ * into the room), Approach (move toward the Cinema Camera), Camera Snap
+ * #1 — Cinema Lens (dive into the lens until the film media fills the
+ * frame). Scrolling past that snap pulls back and sweeps across into
+ * Camera Snap #2 — Digital Monitor, framed close enough that the web
+ * interface fills the frame edge-to-edge. Both snap points are backed by
+ * `ScrollTimelineProvider.jsx`'s scroll-snap (`filmActBeats.js`'s
+ * `FILM_FOCUS_T`/`MONITOR_SNAP_T`), so the keyframes here define WHERE
+ * the camera locks; the snap defines WHEN scroll position clicks onto
+ * them. Flagged here as a deliberate supersession of the prior "no
  * waypoints" simplification, not a silent drift back to it.
  *
  * Still a pure function of `progress` (deterministic, reversible) and
@@ -73,11 +78,16 @@ const LENS_DIVE_POSITION = new THREE.Vector3(
   lensZ + fwdZ * LENS_DIVE_DISTANCE,
 )
 
-// Act 2 arrival: the existing "squarely aligned with the screen" shot,
-// now derived from the Monitor's real world screen position/forward
-// (accounts for its offset onto the shared plinth) rather than the bare
-// plinth-center approximation used before that offset existed.
-const MONITOR_VIEW_DISTANCE = 2.1
+// Camera Snap #2 — Digital Monitor: framed close enough that the web
+// interface fills most of the frame edge-to-edge, per explicit request —
+// the same fill-fraction approach as the lens-dive keyframe above, just
+// applied to the screen's own height instead of the lens radius. 0.92
+// (vs. the lens's 0.95) leaves a touch more margin since the monitor's
+// physical bezel — a real, deliberately visible object, unlike the lens's
+// thin lip — needs to still read as a frame, not be cropped away.
+const MONITOR_SNAP_FILL_FRACTION = 0.92
+const MONITOR_SNAP_HALF_FOV_RADIANS = THREE.MathUtils.degToRad(45 / 2) * MONITOR_SNAP_FILL_FRACTION
+const MONITOR_VIEW_DISTANCE = MONITOR_ANCHOR.screenHeight / 2 / Math.tan(MONITOR_SNAP_HALF_FOV_RADIANS)
 const [screenX, screenY, screenZ] = MONITOR_ANCHOR.screenWorldPosition
 const [screenFwdX, , screenFwdZ] = MONITOR_ANCHOR.screenForward
 const MONITOR_ALIGNED_POSITION = new THREE.Vector3(

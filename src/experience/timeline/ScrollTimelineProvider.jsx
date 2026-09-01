@@ -2,7 +2,12 @@ import { useEffect, useRef } from 'react'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { createSmoothScroll } from './smoothScroll.js'
-import { FILM_FOCUS_T } from './filmActBeats.js'
+import {
+  FILM_FOCUS_T,
+  FILM_SNAP_CAPTURE_RADIUS,
+  MONITOR_SNAP_T,
+  MONITOR_SNAP_CAPTURE_RADIUS,
+} from './filmActBeats.js'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -37,15 +42,17 @@ const SCROLL_LENGTH_MULTIPLIER = 3
  *
  * `scrollTrigger.snap` (below) is a deliberate, localized supersession of
  * this file's prior "no section-snapping" note, per explicit request for
- * the Act 1 lens-dive shot to "click" into place. It is NOT full-timeline
- * sectioning — the snap function only pulls the resting scroll position
- * to `FILM_FOCUS_T` when the user stops scrolling within a small capture
- * radius of it; everywhere else (the opening, the whole approach into
- * and pull-back out of the lens, the pan into Act 2) remains freely
- * continuous. Still fully reversible: the capture radius is symmetric,
- * so approaching from either scroll direction settles at the same point,
- * and scrolling decisively past it continues normally with no fight —
- * satisfying "release on scroll past this snap point" for free.
+ * two scroll-snap "click" points: Snap #1 (Cinema Lens, `FILM_FOCUS_T`)
+ * and Snap #2 (Digital Monitor, `MONITOR_SNAP_T`, the end of the
+ * timeline). It is NOT full-timeline sectioning — the snap function only
+ * pulls the resting scroll position onto one of those two points when the
+ * user stops scrolling within its own small capture radius; everywhere
+ * else (the opening, the approach into and pull-back out of the lens, the
+ * pan into Act 2) remains freely continuous. Still fully reversible: both
+ * capture radii are symmetric, so approaching from either scroll
+ * direction settles at the same point, and scrolling decisively past one
+ * continues normally with no fight — satisfying "release on scroll past
+ * this snap point" for free.
  */
 export function ScrollSpacer() {
   const spacerRef = useRef(null)
@@ -55,12 +62,16 @@ export function ScrollSpacer() {
     // the timeline's ScrollTrigger must exist before anything can drive it.
     const smoothScroll = createSmoothScroll(ScrollTrigger.update)
 
-    // How close (in normalized 0-1 progress) the user must stop scrolling
-    // to FILM_FOCUS_T for it to "click" into that exact resting point.
-    // Outside this radius the raw stopped position is returned unchanged
-    // — no snap, free scroll — so this only affects the Act 1 lens-dive
-    // beat, not the rest of the timeline.
-    const LENS_SNAP_CAPTURE_RADIUS = 0.06
+    // Pulls the resting scroll position onto whichever snap point (if
+    // any) the user stopped within its own capture radius of. Outside
+    // both radii the raw stopped position is returned unchanged — no
+    // snap, free scroll — so this only affects the two "click" beats,
+    // not the rest of the timeline.
+    const snapTo = (value) => {
+      if (Math.abs(value - FILM_FOCUS_T) < FILM_SNAP_CAPTURE_RADIUS) return FILM_FOCUS_T
+      if (Math.abs(value - MONITOR_SNAP_T) < MONITOR_SNAP_CAPTURE_RADIUS) return MONITOR_SNAP_T
+      return value
+    }
 
     const timeline = gsap.timeline({
       scrollTrigger: {
@@ -70,7 +81,7 @@ export function ScrollSpacer() {
         end: 'bottom bottom',
         scrub: 1,
         snap: {
-          snapTo: (value) => (Math.abs(value - FILM_FOCUS_T) < LENS_SNAP_CAPTURE_RADIUS ? FILM_FOCUS_T : value),
+          snapTo,
           duration: { min: 0.2, max: 0.5 },
           ease: 'power2.out',
           delay: 0.05,
