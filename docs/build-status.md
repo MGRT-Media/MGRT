@@ -228,7 +228,24 @@ Screenshot at scroll 0% — reads as a recognizable tripod-camera silhouette in 
 Screenshots at scroll 0% (both objects silhouetted together on the shared plinth), ~45% (tight Cinema Camera hero shot, lens showing `film-01-hero.mp4` clearly), and 100% (Monitor-centered, `digital-01-website.mp4` playing) — all read correctly. Full scroll to 100% and back to 0% reproduces the opening frame exactly. No console errors at any point. Frame timing: 16.53ms avg, 0 frames >33ms during a scroll burst. Mobile viewport (375×812) clean. Production build succeeds. `grep` for `useState`/`setState` — clean.
 
 ### Required next step
-Pacing/framing (hero-shot distance and angle, pan timing, tilt angle) is a first pass — open to visual-review adjustment. No further mechanism work required unless requested.
+*Superseded — see §4AG.* Pacing/framing is a first pass — open to visual-review adjustment.
+
+---
+
+## 4AG. Refinement — Separate Stands + Lens-Dive Act 1 Flight
+
+**Status:** IN PROGRESS (core mechanism working; pacing/framing open to further tuning)
+
+### What changed
+- Reverted §4AF's shared single plinth back to two dedicated stone plinths — the Cinema Camera and Monitor each own their own stand again, per explicit request. `plinthAnchor.js` now holds only what still needs to stay in sync: the common beam center/yaw both stands are built around (`BEAM_CENTER`, still exactly `lightingParams.spot.target`), plus each stand's own footprint and local-X offset (`MONITOR_PLINTH`, `CAMERA_PLINTH`) so they sit beside each other with a real, visible gap rather than centered on top of one another.
+- `buildRockGeometry` extracted into its own module (`digital/buildRockGeometry.js`) so both `Monitor.jsx` and `CinemaCamera.jsx` can build their own plinth mesh without duplicating the function. `DigitalPlinth.jsx` (§4AF) removed — no longer needed now that neither object shares a plinth mesh.
+- `cameraPath.js`'s Act 1 keyframe reworked from a respectful "hero shot" distance into a genuine lens dive, per explicit request: "the scroll sequence begins by flying straight into the Cinema Camera's optical glass... until the video... fills the full frame." The camera now approaches to within roughly 3x the near-clip distance of the lens's front glass — close enough that the lens disc fills ~90% of the vertical frame, matching `creative-reference.md` §6's own "the lens becomes a dark circular visual field" language (chosen over a literal 100% edge-to-edge fill, which would leave far less clipping margin for no real narrative gain). Act 2 still pulls back out of the lens and pans across to the Monitor-aligned shot, now unchanged from §4AF's derivation.
+
+### Verification
+Screenshots at scroll 0% (both stands visible, separated, both still within the beam), ~45% (the lens-dive frame — `film-01-hero.mp4` filling nearly the entire viewport, exactly the "dark circular field" target), and 100% (Monitor-centered, Cinema Camera's own plinth now visibly separate in the foreground). Full scroll to 100% and back to 0% reproduces the opening frame exactly. No console errors. Frame timing: 16.67ms avg, 0 frames >33ms. Mobile viewport (375×812) clean. Production build succeeds. `grep` for `useState`/`setState` — clean.
+
+### Required next step
+Pacing/framing (dive-in distance/fill fraction, tilt angle, gap size between the two plinths) is a first pass — open to visual-review adjustment. No further mechanism work required unless requested.
 
 ---
 
