@@ -359,7 +359,29 @@ Camera genuinely frozen through the hold (identical framing at two points during
 An 80-event fast wheel burst (enough cumulative `deltaY` to blow through the entire timeline several times over) landed exactly at the lens instead of skipping past it — the core bug, confirmed fixed. Hold/release lifecycle intact (still frozen with no further input, resumes normally once scrolled again after release). Scrolling back through `FILM_FOCUS_T` after completion doesn't re-trigger the hard lock (first-pass only, by design). Resistance wobble confirmed via screenshot: a strong wheel push during the hold produces a small visible framing shift with scroll progress still not advancing. Full reversibility, no console errors, 16.60ms avg frame time / 0 frames >33ms, mobile viewport clean (including a fast mobile wheel burst), production build succeeds.
 
 ### Required next step
-Open to visual-review adjustment (hold duration, wobble intensity, override drift threshold, indicator style). No further mechanism work required unless requested.
+*Superseded — see §4AN.* Open to visual-review adjustment.
+
+---
+
+## 4AN. Fix — Bidirectional Hard Lock on Snap 2 (Backscroll No Longer Skips It)
+
+**Status:** IN PROGRESS (bug confirmed fixed; open to further visual-review adjustment)
+
+### Root cause
+§4AM's fix worked forward but not backward, for two compounding reasons:
+1. It was gated behind `hasCompletedLensHold`, a flag that stayed `true` forever after the first hold — any later visit, in either direction, skipped the lock entirely.
+2. Its own trigger condition (`self.progress >= FILM_FOCUS_T`) is a "which side am I on" check, not a crossing check — simply removing the flag would have made it fire too early on the reverse direction, since scrolling up from the Monitor starts at `progress: 1`, already satisfying `>= FILM_FOCUS_T` long before the visitor is anywhere near the lens.
+
+Reported directly by the human after testing §4AM's fix.
+
+### What changed
+- `ScrollTimelineProvider.jsx` — replaced the flag-and-inequality approach with genuine bidirectional crossing detection: `lastRawProgress` tracks the previous tick's real scroll progress, and the lock now engages only when `FILM_FOCUS_T` falls strictly between that and the current tick's progress, checked in both directions (`crossedForward`/`crossedBackward`). This re-engages on every pass through the lens — forward or backward — rather than once per session. On release, `lastRawProgress` resets to exactly `FILM_FOCUS_T` so the immediate next tick can't spuriously re-trigger its own release (a real risk otherwise, since the crossing check runs every tick).
+
+### Verification
+Full round trip tested: forward through the lens (locked → held → released) to the Monitor, then backward through the lens (locked again → held → released) back to the opening, then forward a third time (locked again) — confirming re-triggering works repeatedly, not just twice. No console errors at any point. 16.62ms avg frame time, 0 frames >33ms. Mobile viewport clean. Production build succeeds.
+
+### Required next step
+Open to visual-review adjustment. No further mechanism work required unless requested.
 
 ---
 
