@@ -3,9 +3,14 @@ import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import { lightingParams } from '../lighting/volumetricLighting.js'
-import { createScreenTestPatternMaterial } from './screenTestPatternMaterial.js'
+import { createScreenVideoMaterial } from './screenVideoMaterial.js'
 import { createStoneWallMaterial } from '../materials/stoneWallMaterial.js'
 import { onCameraLock, onCameraUnlock } from '../timeline/cameraLockEvent.js'
+
+// Phase 2: curated Digital work, per experience-design.md §8 ("approximately
+// 2-4 selected Digital projects"). One clip for now — extending to a
+// scroll-mapped sequence of several is future work, not part of this swap.
+const DIGITAL_MEDIA_SRC = '/media/digital/digital-01-website.mp4'
 
 // How quickly the screen's uIgnite uniform eases toward its 0/1 target
 // once the camera locks/unlocks — a brief, tasteful fade for the raw
@@ -149,7 +154,23 @@ const screenFrontZ = HOUSING.frontDepth / 2 + 0.002
 const glassFrontZ = screenFrontZ + 0.004
 
 export default function Monitor() {
-  const screenMaterial = useMemo(() => createScreenTestPatternMaterial(), [])
+  // A plain <video> element (not React state) driving a THREE.VideoTexture
+  // — muted/playsInline/loop so autoplay is permitted and the clip repeats
+  // for as long as the camera stays locked on the monitor. THREE calls
+  // texture.update() on VideoTexture instances automatically every render,
+  // so no manual per-frame refresh is needed here.
+  const video = useMemo(() => {
+    const el = document.createElement('video')
+    el.src = DIGITAL_MEDIA_SRC
+    el.loop = true
+    el.muted = true
+    el.playsInline = true
+    el.preload = 'auto'
+    return el
+  }, [])
+  const videoTexture = useMemo(() => new THREE.VideoTexture(video), [video])
+  const screenMaterial = useMemo(() => createScreenVideoMaterial(videoTexture), [videoTexture])
+
   // Target for the screen's ignite state — a plain ref (not React state),
   // flipped by the onCameraLock/onCameraUnlock event mechanism below and
   // read every frame to damp the material's actual uIgnite uniform toward
@@ -159,18 +180,29 @@ export default function Monitor() {
   // being fully reversible everywhere else.
   const igniteTarget = useRef(0)
 
+  // Media playback follows technical-architecture.md §11: prepared/played
+  // only once the camera actually reaches the monitor, paused and reset
+  // once it leaves — not tied to raw DOM visibility, and not left playing
+  // for the whole experience. `.play()` is wrapped since it returns a
+  // promise that can reject (e.g. a not-yet-ready decode); a failed
+  // playback attempt must not break the cinematic timeline (§11 "Media
+  // fallback").
   useEffect(() => {
     const offLock = onCameraLock(() => {
       igniteTarget.current = 1
+      video.currentTime = 0
+      video.play().catch(() => {})
     })
     const offUnlock = onCameraUnlock(() => {
       igniteTarget.current = 0
+      video.pause()
     })
     return () => {
       offLock()
       offUnlock()
+      video.pause()
     }
-  }, [])
+  }, [video])
 
   useFrame((_, delta) => {
     const uniform = screenMaterial.uniforms.uIgnite
@@ -246,10 +278,10 @@ export default function Monitor() {
       ))}
 
       {/*
-        Screen surface — unlit procedural test pattern, provisional, now
+        Screen surface — live video texture (Phase 2 Digital media), still
         gated behind `uIgnite` (see the material module and the
         onCameraLock wiring above): dark/dormant until the camera reaches
-        the monitor lock. `screenTestPatternMaterial` is a raw unlit
+        the monitor lock. `screenVideoMaterial` is a raw unlit
         ShaderMaterial (no PBR lighting model), so roughness/metalness
         don't apply to it — its "emission" is just its fragment-shader
         output read directly, `toneMapped: false`. Explicitly excluded
