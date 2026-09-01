@@ -13,6 +13,9 @@ import {
   MONITOR_SNAP_CAPTURE_RADIUS,
   SCROLL_LOCK_HOLD_MS,
   SCROLL_LOCK_OVERRIDE_DRIFT,
+  INTRO_DAMPEN_END_T,
+  INTRO_WHEEL_MULTIPLIER,
+  INTRO_TOUCH_MULTIPLIER,
 } from './filmActBeats.js'
 
 gsap.registerPlugin(ScrollTrigger)
@@ -114,6 +117,25 @@ const SCROLL_LENGTH_MULTIPLIER = 3
  * fighting this fix is trying to eliminate. Stopping Lenis achieves the
  * same "physical scrolling does not move the camera forward" result with
  * far less risk, given this project's existing architecture.
+ *
+ * Intro entry-speed dampening (`t: 0` through `INTRO_DAMPEN_END_T`, i.e.
+ * `FILM_FOCUS_T`) — per explicit request that a hard flick shouldn't be
+ * able to blow through the Entrance/Establish/Approach beats before the
+ * Snap 2 pin even engages. `onUpdate` (below) live-mutates
+ * `smoothScroll.lenis.options.wheelMultiplier`/`touchMultiplier` between
+ * `INTRO_WHEEL_MULTIPLIER`/`INTRO_TOUCH_MULTIPLIER` (inside the zone) and
+ * `1` (outside it) every tick. This works only because Lenis reads those
+ * two options fresh from `this.options` on every wheel/touch event rather
+ * than caching them at construction (confirmed against the installed
+ * package) — a deliberately input-level fix (less effective scroll
+ * distance per physical input), not a value-decoupling one: real scroll
+ * position and `scrollProgress.value` stay exactly 1:1 the whole time, in
+ * keeping with experience-design.md §3's "Scroll controls time" /
+ * "no auto-scroll" rule. An alternative that let the visual keep
+ * advancing after the visitor's hand left the wheel was deliberately
+ * rejected for that reason. Skipped entirely under
+ * `prefers-reduced-motion`, since added scroll friction is the opposite
+ * of what that setting requests.
  */
 export function ScrollSpacer() {
   const spacerRef = useRef(null)
@@ -122,6 +144,18 @@ export function ScrollSpacer() {
     // Lenis first, then the GSAP master timeline that reads its scroll —
     // the timeline's ScrollTrigger must exist before anything can drive it.
     const smoothScroll = createSmoothScroll(ScrollTrigger.update)
+
+    // Read once per mount, not per tick — prefers-reduced-motion doesn't
+    // change while the page is open.
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    let introDampenActive = false
+
+    const setIntroDampening = (active) => {
+      if (active === introDampenActive || prefersReducedMotion) return
+      introDampenActive = active
+      smoothScroll.lenis.options.wheelMultiplier = active ? INTRO_WHEEL_MULTIPLIER : 1
+      smoothScroll.lenis.options.touchMultiplier = active ? INTRO_TOUCH_MULTIPLIER : 1
+    }
 
     // Pulls the resting scroll position onto whichever snap point (if
     // any) the user stopped within its own capture radius of. Outside
@@ -234,6 +268,8 @@ export function ScrollSpacer() {
           },
         },
         onUpdate: (self) => {
+          setIntroDampening(self.progress < INTRO_DAMPEN_END_T)
+
           // Snap 2: checked every tick (not just on scroll-stop) so a
           // fast, continuous scroll still gets caught exactly at
           // FILM_FOCUS_T instead of sailing through it — and checked as

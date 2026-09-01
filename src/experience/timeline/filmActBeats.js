@@ -53,3 +53,20 @@ export const SCROLL_LOCK_HOLD_MS = 1750
 // so a determined scroll accumulates this drift and releases early,
 // while idle or gentle scrolling holds for the full duration.
 export const SCROLL_LOCK_OVERRIDE_DRIFT = 0.05
+
+/**
+ * Entry-speed dampening for the intro (Entrance -> Establish -> Approach,
+ * `t: 0` through `FILM_FOCUS_T`) — per explicit request that a hard flick
+ * shouldn't be able to blow through those beats before the Snap 2 pin
+ * even engages. Read by `ScrollTimelineProvider.jsx`, which multiplies
+ * Lenis's own `wheelMultiplier`/`touchMultiplier` by these values while
+ * scroll progress is inside the zone (both live-read per event by Lenis,
+ * not cached at construction — confirmed against the installed version,
+ * so mutating them at runtime is safe) and restores them to `1` outside
+ * it, so the rest of the site's scroll feel is untouched. Skipped
+ * entirely under `prefers-reduced-motion` — added friction is the
+ * opposite of what that setting asks for.
+ */
+export const INTRO_DAMPEN_END_T = FILM_FOCUS_T
+export const INTRO_WHEEL_MULTIPLIER = 0.35
+export const INTRO_TOUCH_MULTIPLIER = 0.35
