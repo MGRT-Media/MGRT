@@ -29,15 +29,18 @@ const OPENING_LOOKAT = new THREE.Vector3(MONITOR_ANCHOR.position[0], 1.3, MONITO
 
 // Act 1 lens-dive beat: the scroll sequence flies straight into the
 // Cinema Camera's optical glass, per explicit request — not a respectful
-// "hero shot" distance but close enough that the lens becomes a dark
-// circular field dominated by the film media playing inside it
+// "hero shot" distance but close enough that the film media dominates
+// the frame, with the barrel's curved lip (CinemaCamera.jsx's
+// lensLipGeometry) reading as a tight frame around the viewport's border
+// rather than the video running edge-to-edge with no visible lens at all
 // (creative-reference.md §6's "Lens transition... approach the lens
 // closely enough that it becomes a dark circular visual field").
 // Distance is derived from the lens's own radius and this camera's fov
-// (45°) so the lens disc subtends ~90% of the vertical half-frame at
-// this keyframe — close/immersive without crossing into near-plane
-// clipping territory (near: 0.05, so this keeps a >3x safety margin).
-const LENS_DIVE_FILL_FRACTION = 0.9
+// (45°) so the lens disc subtends ~82% of the vertical half-frame at
+// this keyframe, leaving the outer ~18% for the lip/barrel to frame it —
+// close/immersive without crossing into near-plane clipping territory
+// (near: 0.05, so this keeps a >3x safety margin).
+const LENS_DIVE_FILL_FRACTION = 0.82
 const LENS_DIVE_HALF_FOV_RADIANS = THREE.MathUtils.degToRad(45 / 2) * LENS_DIVE_FILL_FRACTION
 const LENS_DIVE_DISTANCE = CAMERA_ANCHOR.lensRadius / Math.tan(LENS_DIVE_HALF_FOV_RADIANS)
 const [lensX, lensY, lensZ] = CAMERA_ANCHOR.lensFrontFieldPosition

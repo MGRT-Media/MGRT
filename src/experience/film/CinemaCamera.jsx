@@ -29,6 +29,37 @@ const bodyCenterHeight = CAMERA_PLINTH.height + STAND.baseHeight + STAND.riserHe
 const lensCenterZ = BODY.depth / 2 + LENS.length / 2
 const lensFrontZ = BODY.depth / 2 + LENS.length
 
+// The glass element's convex bulge, and the exact radius of a sphere that
+// would produce it (sagitta formula: R = (bulge² + radius²) / (2*bulge)),
+// used below both to build the dome profile and to size the barrel lip.
+const GLASS_RADIUS = LENS.frontRadius * 0.92
+const GLASS_BULGE = GLASS_RADIUS * 0.32
+const GLASS_SPHERE_RADIUS = (GLASS_BULGE ** 2 + GLASS_RADIUS ** 2) / (2 * GLASS_BULGE)
+
+/**
+ * A smooth, convex optical lens element — a genuine spherical-cap dome,
+ * not a flat disc — built as a `LatheGeometry` profile (matching this
+ * codebase's existing convention for revolved forms, e.g. `Environment.jsx`
+ * `useColumnGeometry`). `LatheGeometry` revolves around its local Y axis
+ * by default; rather than bake a rotation into the geometry itself, the
+ * mesh gets the same `rotation={[Math.PI / 2, 0, 0]}` already used on the
+ * lens barrel cylinder below, so the profile's height parameter (0 at the
+ * rim, `GLASS_BULGE` at the tip) becomes the final Z depth directly.
+ */
+function buildLensGlassGeometry() {
+  const segments = 12
+  const points = []
+  for (let i = 0; i <= segments; i += 1) {
+    const h = (i / segments) * GLASS_BULGE
+    const distFromCenter = h + (GLASS_SPHERE_RADIUS - GLASS_BULGE)
+    const radius = Math.sqrt(Math.max(GLASS_SPHERE_RADIUS ** 2 - distFromCenter ** 2, 0))
+    points.push(new THREE.Vector2(radius, h))
+  }
+  const geometry = new THREE.LatheGeometry(points, 32)
+  geometry.computeVertexNormals()
+  return geometry
+}
+
 // World-space anchor, combining the shared beam yaw with this object's
 // own plinth offset AND its extra tilt — all pure Y-axis rotations, so
 // they compose by simple addition. Exported for `cameraPath.js`'s Act 1
@@ -72,6 +103,14 @@ export default function CinemaCamera() {
     // (the default) would give the barrel its own opaque front face,
     // hiding the film-media screen mesh sitting just behind it.
     () => new THREE.CylinderGeometry(LENS.frontRadius, LENS.rearRadius, LENS.length, 20, 1, true),
+    [],
+  )
+  const lensGlassGeometry = useMemo(() => buildLensGlassGeometry(), [])
+  // A slim torus at the barrel's front opening — the "curved lip" that
+  // frames the glass/video, per explicit request. An open-ended cylinder
+  // alone has no edge thickness of its own to read as a lip.
+  const lensLipGeometry = useMemo(
+    () => new THREE.TorusGeometry(LENS.frontRadius, LENS.frontRadius * 0.09, 12, 32),
     [],
   )
   const standBaseGeometry = useMemo(
@@ -187,18 +226,46 @@ export default function CinemaCamera() {
           <meshStandardMaterial color="#0e0e0f" roughness={0.45} metalness={0.6} />
         </mesh>
 
-        {/* Front glass element — same reflective-glass language as Monitor.jsx */}
-        <mesh position={[0, bodyCenterHeight, lensFrontZ + 0.002]} castShadow={false} receiveShadow={false}>
-          <circleGeometry args={[LENS.frontRadius * 0.92, 24]} />
+        {/*
+          Front glass element — a genuine convex dome (buildLensGlassGeometry),
+          not a flat pane, for a real optical-lens read. `clearcoat` adds a
+          second, sharper specular layer on top of the base reflection —
+          the "anti-reflective coating" look real lens elements have — and
+          low roughness + the dome's curvature together give the rim its
+          own brightening at grazing angles (a "subtle rim highlight")
+          without needing a dedicated fresnel shader. `transmission` still
+          lets the video screen behind it read through with a soft depth,
+          per explicit request for "subtle refractions."
+        */}
+        <mesh
+          position={[0, bodyCenterHeight, lensFrontZ + 0.002]}
+          geometry={lensGlassGeometry}
+          rotation={[Math.PI / 2, 0, 0]}
+          castShadow={false}
+          receiveShadow={false}
+        >
           <meshPhysicalMaterial
             color="#050506"
-            roughness={0.05}
+            roughness={0.04}
             metalness={0}
             transmission={0.85}
             thickness={0.02}
+            ior={1.5}
+            clearcoat={1}
+            clearcoatRoughness={0.05}
             transparent
             opacity={0.22}
           />
+        </mesh>
+
+        {/* Barrel lip — the curved rim framing the glass, per explicit request */}
+        <mesh
+          position={[0, bodyCenterHeight, lensFrontZ]}
+          geometry={lensLipGeometry}
+          castShadow
+          receiveShadow
+        >
+          <meshStandardMaterial color="#0a0a0b" roughness={0.35} metalness={0.7} />
         </mesh>
 
         {/* Film-media screen, just behind the glass — ignites around the Act 1 lens-dive beat */}
