@@ -423,7 +423,25 @@ A full second of extreme, continuous wheel flooding (`deltaY: 1000`, dispatched 
 **Known verification gap:** touch-specific simulation was inconclusive in this session's test harness — synthetic `TouchEvent` construction proved unreliable here (including inside Lenis's own unrelated handler, which threw on the malformed synthetic touch object independent of this change). The touch code path mirrors the same safe, optional-chained pattern already working in production elsewhere in this codebase, and wheel/trackpad — the primary vector in the original report — is thoroughly verified. Recommend a real-device check before considering touch fully confirmed.
 
 ### Required next step
-Real-device touch verification recommended. Otherwise open to visual-review adjustment (traversal duration, decay timing). No further mechanism work required unless requested.
+*Superseded — see §4AQ.* Real-device touch verification still recommended.
+
+---
+
+## 4AQ. Refinement — Eased Lock-Entry Catch + Deeper Intro Slowdown
+
+**Status:** IN PROGRESS (mechanism verified working; open to further visual-review adjustment)
+
+### What changed
+Per explicit follow-up: the lock engagement felt mechanical/jerky, and scroll speed through the sequence was still too fast.
+
+- **Smooth entry** — `engageLensHold`/`engageMonitorLock` no longer instantly set `scrollProgress.value` in one frame. Both now tween into the pinned value via `gsap.to` over `LOCK_CATCH_DURATION_SECONDS` (0.6s, `LOCK_CATCH_EASE`: `power3.out`), and the hold timer only starts once that catch tween completes — "arrive, then hold" reads as one continuous deceleration rather than snap-then-pause. For the Lens hold, the tween's `onUpdate` mirrors each intermediate value onto the real scroll position (same `lenis.scrollTo(..., { immediate: true, force: true })` pattern as the intro driver), so the scrollbar eases in step with the camera. A literal `ScrollTrigger.anticipatePin` was considered and doesn't apply — that option only affects GSAP's `pin: true` mechanic, which this codebase deliberately doesn't use (§4AM/§4AN); the tween-based catch achieves the same qualitative goal within the project's actual architecture.
+- **Deeper slowdown** — `INTRO_MIN_TRAVERSAL_SECONDS` raised from 2.5 to 4.5 (still a hard ceiling per §4AP, just slower). Global `ScrollTrigger` `scrub` raised from 1 to 1.5, meaningfully affecting only the free-scroll segment between the Lens and Monitor (the intro zone bypasses scrub via its own driver).
+
+### Verification
+A full second of extreme wheel flooding now advances progress by ~0.119 (vs. §4AP's ~0.196), matching the new ~0.10/sec cap. Lens and Monitor catch-tweens confirmed arriving and holding correctly, no console errors. Full reversibility (including a bidirectional lens re-lock along the way). 16.67ms avg frame time, 0 frames >33ms. Mobile viewport clean. Production build succeeds.
+
+### Required next step
+Real-device touch verification still recommended (carried over from §4AP). Otherwise open to visual-review adjustment (catch duration/ease, traversal duration). No further mechanism work required unless requested.
 
 ---
 
