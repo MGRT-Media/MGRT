@@ -339,7 +339,27 @@ This round introduces the codebase's first `useState` usage (`ScrollLockIndicato
 Camera genuinely frozen through the hold (identical framing at two points during the pin). Hold duration measured directly via `performance.now()` timestamps: 1751ms between engage and release, matching the 1750ms constant within timer jitter. Indicator verified via computed-style inspection (opacity ramping 0 → ~0.86, correct `stroke-dashoffset` animation) — its intentional subtlety made it hard to catch mid-fade in a single screenshot, so DOM-level inspection was used as the authoritative check instead. Aggressive scroll during the hold breaks the lock early and the camera continues normally toward the next snap (confirmed via screenshot). Snap 1 confirmed NOT to force-stop — scrolling through it and immediately onward reaches Snap 2 on schedule with no stall. Full scroll to 100% and back to 0% reproduces the opening frame exactly. No console errors. Frame timing: 16.65ms avg, 0 frames >33ms. Mobile viewport (375×812) clean. Production build succeeds.
 
 ### Required next step
-Open to visual-review adjustment (hold duration, override drift threshold, indicator size/position/style). No further mechanism work required unless requested.
+*Superseded — see §4AM.* Open to visual-review adjustment.
+
+---
+
+## 4AM. Fix — Strict Hard Lock on Snap 2 (Fast Scroll No Longer Skips the Video)
+
+**Status:** IN PROGRESS (bug confirmed fixed; open to further visual-review adjustment)
+
+### Root cause
+§4AL's lock only engaged via the snap tween's `onComplete` — which fires on scroll deceleration/stop only. A continuous fast scroll on the visitor's first pass could sail straight through `FILM_FOCUS_T` without the tween ever settling there, so the hero video never triggered and the user landed at the Monitor having skipped Snap 2 entirely. Reported directly by the human as "letting the user scroll right past the first video on their initial scroll through."
+
+### What changed
+- `ScrollTimelineProvider.jsx` — `onUpdate` now checks the threshold every tick (`self.progress >= FILM_FOCUS_T`), independent of scroll speed or whether scrolling has stopped. The first time this fires per session (`hasCompletedLensHold`, a plain closure flag — not React state, not part of the reversible camera-path state), it hard-clamps `scrollProgress.value` AND the real scroll position to `FILM_FOCUS_T`'s exact pixel (`lenis.scrollTo(..., { immediate: true })`), then calls `lenis.stop()` outright so no further wheel/touch input can move the page during the hold — backed up by a capture-phase `wheel`/`touchmove` listener with `preventDefault`. A literal second `ScrollTrigger.create({ pin: true })` was considered and rejected — this page has one continuous scrub timeline over a single spacer, and layering GSAP's DOM-pinning mechanic on an already-scrubbing trigger sharing the same scroller risked the same scroll-position fighting this fix eliminates; stopping Lenis achieves the same physical result with far less architectural risk.
+- Snap 3 (Digital Monitor) keeps its existing softer lock unchanged — `t: 1` is also the page's native scroll floor, so nothing can physically scroll past it regardless of speed; the vulnerability was specific to Snap 2, a mid-timeline point.
+- Added the "Subtle Resistance Fallback": new `scrollLockWobble` (a plain mutable export, not React state), nudged by wheel/touchmove `deltaY` while the Snap 2 hold is active and decayed back to 0 every frame in `ScrollCameraRig.jsx`'s `useFrame`, applied as a tiny pull along the camera's own view axis — fully decoupled from the lock/camera-path state, purely cosmetic feedback.
+
+### Verification
+An 80-event fast wheel burst (enough cumulative `deltaY` to blow through the entire timeline several times over) landed exactly at the lens instead of skipping past it — the core bug, confirmed fixed. Hold/release lifecycle intact (still frozen with no further input, resumes normally once scrolled again after release). Scrolling back through `FILM_FOCUS_T` after completion doesn't re-trigger the hard lock (first-pass only, by design). Resistance wobble confirmed via screenshot: a strong wheel push during the hold produces a small visible framing shift with scroll progress still not advancing. Full reversibility, no console errors, 16.60ms avg frame time / 0 frames >33ms, mobile viewport clean (including a fast mobile wheel burst), production build succeeds.
+
+### Required next step
+Open to visual-review adjustment (hold duration, wobble intensity, override drift threshold, indicator style). No further mechanism work required unless requested.
 
 ---
 
