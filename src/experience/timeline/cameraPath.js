@@ -118,13 +118,51 @@ const KEYFRAMES = [
 ]
 
 /**
+ * The camera's spatial trajectory as one continuous spline threading
+ * through every keyframe position, replacing per-segment straight-line
+ * `lerpVectors` — per explicit request that the path "moves straight...
+ * then takes a hard angle" and should instead read as "a smooth, rounded,
+ * sweeping curve... continuous curvature." Straight segments joined at
+ * keyframes were only C0-continuous in position: `smoothstep`-easing each
+ * segment's local progress (still applied below) already made *speed*
+ * C1-continuous at every keyframe (zero velocity at each boundary), but
+ * did nothing for the *shape* of the path itself — the direction of
+ * travel could still change abruptly at a keyframe, which is exactly the
+ * "hard angle" being reported. `curveType: 'centripetal'` (Three.js's own
+ * default, specified explicitly here) is deliberately used over the
+ * uniform `'catmullrom'` type: with unevenly spaced control points like
+ * these (the Approach and Lens Snap keyframes sit close together in
+ * space; Establish and Monitor sit much farther out), a uniform
+ * parameterization is prone to overshoot/looping between close points,
+ * while centripetal stays well-behaved.
+ *
+ * `lookAt` is deliberately NOT put through the same curve treatment: only
+ * three distinct look targets exist across five keyframes (several
+ * segments intentionally share one, e.g. the whole entrance glide keeps
+ * looking at `ESTABLISH_LOOKAT` — a pure dolly, no reframe), so there's
+ * no meaningfully "kinked" rotation path to smooth the shape of the way
+ * there is for position — segment-wise eased lerp between look targets
+ * already reads as a smooth reframe, not a corner.
+ */
+const POSITION_CURVE = new THREE.CatmullRomCurve3(
+  KEYFRAMES.map((k) => k.position),
+  false,
+  'centripetal',
+)
+const POSITION_SEGMENT_COUNT = KEYFRAMES.length - 1
+
+/**
  * Pure function of `progress` only (no history/state) — deterministic and
  * therefore trivially reversible. Finds the two keyframes progress falls
- * between and linearly interpolates position/lookAt independently within
- * that segment only, after applying `smoothstep` to the segment's own
- * local progress — bezier-smooth ease-in/ease-out per segment, so every
- * keyframe boundary meets at zero velocity rather than an abrupt speed
- * change (see the module-level note above).
+ * between, applies `smoothstep` to that segment's own local progress —
+ * bezier-smooth ease-in/ease-out per segment, so every keyframe boundary
+ * meets at zero velocity rather than an abrupt speed change — and maps
+ * the eased local value onto that same segment's span of the position
+ * spline's own parameterization (each of `POSITION_SEGMENT_COUNT`
+ * segments occupies an equal `1 / POSITION_SEGMENT_COUNT` span of the
+ * curve's `u`), so the spline reaches each waypoint at exactly the same
+ * progress value the old straight-line version did — only the shape
+ * between waypoints changed, not the timing.
  */
 export function sampleCameraPath(progress) {
   const p = THREE.MathUtils.clamp(progress, 0, 1)
@@ -136,7 +174,8 @@ export function sampleCameraPath(progress) {
   const rawSegmentT = b.t === a.t ? 0 : (p - a.t) / (b.t - a.t)
   const segmentT = THREE.MathUtils.smoothstep(rawSegmentT, 0, 1)
 
-  const position = new THREE.Vector3().lerpVectors(a.position, b.position, segmentT)
+  const u = THREE.MathUtils.clamp((i + segmentT) / POSITION_SEGMENT_COUNT, 0, 1)
+  const position = POSITION_CURVE.getPoint(u)
   const lookAt = new THREE.Vector3().lerpVectors(a.lookAt, b.lookAt, segmentT)
 
   return {
