@@ -1,33 +1,37 @@
 import { lightingParams } from '../lighting/volumetricLighting.js'
 
 /**
- * Shared composition anchor for the Phase 2 Digital plinth — the single
- * source of truth for the plinth's size, position, and rotation, plus the
- * local-space offset that separates the Cinema Camera and Monitor across
- * it. `Monitor.jsx`, `CinemaCamera.jsx`, and `DigitalPlinth.jsx` all read
- * from here rather than each hard-coding the shared transform, so moving
- * or resizing the plinth can't let the two objects and their support
- * silently drift out of sync with each other.
+ * Shared spatial anchor for the Phase 2 Digital composition — the single
+ * source of truth for where the Cinema Camera's and Monitor's SEPARATE
+ * stands sit relative to each other and to the light beam. Each object
+ * now owns its own dedicated plinth (`Monitor.jsx`, `CinemaCamera.jsx`)
+ * rather than sharing one — this module only holds what still needs to
+ * stay in sync between them: the common beam center/yaw both stands are
+ * built around, and each stand's own footprint + local-X offset from
+ * that center.
  *
- * `PLINTH_CENTER` stays exactly `lightingParams.spot.target` — the
- * light's own floor target, unchanged from Phase 1D — so the whole
- * two-object composition remains physically grounded within the primary
- * beam by construction, not by hand-tuned coincidence.
+ * `BEAM_CENTER` stays exactly `lightingParams.spot.target` — the light's
+ * own floor target, unchanged since Phase 1D — so both stands remain
+ * physically grounded within the primary beam by construction.
  */
-export const PLINTH = {
-  // Widened from Phase 1D's single-object 1.0 x 0.75 footprint to
-  // comfortably hold both objects side by side, per explicit request.
-  width: 1.9,
-  depth: 0.85,
+export const BEAM_CENTER = lightingParams.spot.target
+export const YAW_DEGREES = 20
+
+// Each stand's own footprint and its local-X offset from BEAM_CENTER
+// (along the shared yaw's own local axis, not raw world X). Offsets are
+// asymmetric with each stand's half-width so the two stands sit close
+// beside each other with a real but modest gap, rather than centered
+// exactly opposite each other regardless of size.
+export const MONITOR_PLINTH = {
+  width: 1.0,
+  depth: 0.75,
   height: 0.72,
+  offsetX: 0.55,
 }
 
-export const PLINTH_YAW_DEGREES = 20
-export const PLINTH_CENTER = lightingParams.spot.target
-export const PLINTH_TOP_Y = PLINTH.height
-
-// Half-separation along the plinth's own local X axis: Monitor sits at
-// +OBJECT_OFFSET_X, Cinema Camera at -OBJECT_OFFSET_X, so the pair reads
-// as a balanced two-object composition centered on the light's floor
-// target rather than either one centered alone.
-export const OBJECT_OFFSET_X = 0.5
+export const CAMERA_PLINTH = {
+  width: 0.7,
+  depth: 0.6,
+  height: 0.72,
+  offsetX: -0.55,
+}

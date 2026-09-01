@@ -3,47 +3,45 @@ import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import { createScreenVideoMaterial } from '../digital/screenVideoMaterial.js'
+import { createStoneWallMaterial } from '../materials/stoneWallMaterial.js'
+import { buildRockGeometry } from '../digital/buildRockGeometry.js'
 import { scrollProgress } from '../timeline/ScrollTimelineProvider.jsx'
 import { FILM_FOCUS_T, FILM_IGNITE_RISE } from '../timeline/filmActBeats.js'
-import { PLINTH_CENTER, PLINTH_TOP_Y, PLINTH_YAW_DEGREES, OBJECT_OFFSET_X } from '../digital/plinthAnchor.js'
+import { BEAM_CENTER, YAW_DEGREES, CAMERA_PLINTH } from '../digital/plinthAnchor.js'
 
 // Phase 2: the cinema-camera object explicitly deferred from Phase 1D
-// (build-status.md §4's scope note), now sharing the widened Digital
-// plinth with the Monitor per explicit request — not its own separate
-// floor-standing object. Sits at the plinth's local -OBJECT_OFFSET_X
-// (Monitor at +OBJECT_OFFSET_X, `Monitor.jsx`/`plinthAnchor.js`), tilted
-// an additional `TILT_TOWARD_MONITOR_DEGREES` on top of the shared plinth
-// yaw so the lens turns toward the Monitor rather than staying parallel
-// to it — "a natural composition on the plinth," per explicit request.
+// (build-status.md §4's scope note). Back to its own dedicated stone
+// plinth (per explicit request for separate stands), positioned beside
+// the Monitor's own plinth (`Monitor.jsx`) — both built around the same
+// beam center/yaw (`plinthAnchor.js`). Tilted an additional
+// `TILT_TOWARD_MONITOR_DEGREES` on top of that shared yaw so the lens
+// turns toward the Monitor rather than staying parallel to it.
 const TILT_TOWARD_MONITOR_DEGREES = 32
 
 const BODY = { width: 0.42, height: 0.28, depth: 0.5, cornerRadius: 0.035 }
 const LENS = { frontRadius: 0.07, rearRadius: 0.09, length: 0.26 }
 const VIEWFINDER = { width: 0.1, height: 0.08, depth: 0.12 }
-// A compact plinth-top mount replaces Phase 2's earlier full-height floor
-// tripod — a tall tripod would read as absurd standing on a plinth
-// shared with the monitor. A short pedestal (base plate + riser) keeps
-// the camera physically supported without competing with the monitor's
-// own stacked-console silhouette.
+// A compact plinth-top mount, not a full-height floor tripod — this
+// object stands on its own plinth, not the floor directly.
 const STAND = { baseRadius: 0.13, baseHeight: 0.03, riserRadius: 0.05, riserHeight: 0.12 }
 
-const bodyCenterHeight = PLINTH_TOP_Y + STAND.baseHeight + STAND.riserHeight + BODY.height / 2
+const bodyCenterHeight = CAMERA_PLINTH.height + STAND.baseHeight + STAND.riserHeight + BODY.height / 2
 const lensCenterZ = BODY.depth / 2 + LENS.length / 2
 const lensFrontZ = BODY.depth / 2 + LENS.length
 
-// World-space anchor, combining the shared plinth's yaw with this
-// object's own local offset AND its extra tilt — both are pure Y-axis
-// rotations, so they compose by simple addition. Exported for
-// `cameraPath.js`'s Act 1 hero-shot keyframe to derive its framing from
-// the object's real geometry rather than hand-picked numbers, the same
-// role `MONITOR_ANCHOR` plays for the Digital handshake.
+// World-space anchor, combining the shared beam yaw with this object's
+// own plinth offset AND its extra tilt — all pure Y-axis rotations, so
+// they compose by simple addition. Exported for `cameraPath.js`'s Act 1
+// lens-dive keyframe to derive its framing from the object's real
+// geometry rather than hand-picked numbers, the same role `MONITOR_ANCHOR`
+// plays for the Digital handshake.
 const Y_AXIS = new THREE.Vector3(0, 1, 0)
-const plinthYawRadians = THREE.MathUtils.degToRad(PLINTH_YAW_DEGREES)
+const yawRadians = THREE.MathUtils.degToRad(YAW_DEGREES)
 const tiltRadians = THREE.MathUtils.degToRad(TILT_TOWARD_MONITOR_DEGREES)
-const totalYawRadians = plinthYawRadians + tiltRadians
+const totalYawRadians = yawRadians + tiltRadians
 
-const localOffset = new THREE.Vector3(-OBJECT_OFFSET_X, 0, 0).applyAxisAngle(Y_AXIS, plinthYawRadians)
-const worldOrigin = localOffset.add(new THREE.Vector3(PLINTH_CENTER[0], 0, PLINTH_CENTER[2]))
+const localOffset = new THREE.Vector3(CAMERA_PLINTH.offsetX, 0, 0).applyAxisAngle(Y_AXIS, yawRadians)
+const worldOrigin = localOffset.add(new THREE.Vector3(BEAM_CENTER[0], 0, BEAM_CENTER[2]))
 const lensForward = new THREE.Vector3(0, 0, 1).applyAxisAngle(Y_AXIS, totalYawRadians)
 const bodyWorldOrigin = worldOrigin.clone().setY(bodyCenterHeight)
 const lensFrontFieldPosition = bodyWorldOrigin.clone().addScaledVector(lensForward, lensFrontZ)
@@ -56,6 +54,11 @@ export const CAMERA_ANCHOR = {
 }
 
 export default function CinemaCamera() {
+  const plinthGeometry = useMemo(
+    () => buildRockGeometry(CAMERA_PLINTH.width, CAMERA_PLINTH.height, CAMERA_PLINTH.depth),
+    [],
+  )
+  const plinthMaterial = useMemo(() => createStoneWallMaterial('#6e685e', [1, 1]), [])
   const bodyGeometry = useMemo(
     () => new RoundedBoxGeometry(BODY.width, BODY.height, BODY.depth, 3, BODY.cornerRadius),
     [],
@@ -125,14 +128,28 @@ export default function CinemaCamera() {
   const standProps = { color: '#161616', roughness: 0.6, metalness: 0.5 }
 
   return (
-    <group position={PLINTH_CENTER} rotation={[0, plinthYawRadians, 0]}>
-      <group position={[-OBJECT_OFFSET_X, 0, 0]} rotation={[0, tiltRadians, 0]}>
+    <group position={BEAM_CENTER} rotation={[0, yawRadians, 0]}>
+      <group position={[CAMERA_PLINTH.offsetX, 0, 0]} rotation={[0, tiltRadians, 0]}>
+        {/* Own dedicated stone plinth — beside, not shared with, the Monitor's */}
+        <mesh
+          position={[0, CAMERA_PLINTH.height / 2, 0]}
+          geometry={plinthGeometry}
+          material={plinthMaterial}
+          castShadow
+          receiveShadow
+        />
+
         {/* Compact plinth-top mount */}
-        <mesh position={[0, PLINTH_TOP_Y + STAND.baseHeight / 2, 0]} geometry={standBaseGeometry} castShadow receiveShadow>
+        <mesh
+          position={[0, CAMERA_PLINTH.height + STAND.baseHeight / 2, 0]}
+          geometry={standBaseGeometry}
+          castShadow
+          receiveShadow
+        >
           <meshStandardMaterial {...standProps} />
         </mesh>
         <mesh
-          position={[0, PLINTH_TOP_Y + STAND.baseHeight + STAND.riserHeight / 2, 0]}
+          position={[0, CAMERA_PLINTH.height + STAND.baseHeight + STAND.riserHeight / 2, 0]}
           geometry={standRiserGeometry}
           castShadow
           receiveShadow
@@ -184,7 +201,7 @@ export default function CinemaCamera() {
           />
         </mesh>
 
-        {/* Film-media screen, just behind the glass — ignites around the Act 1 hero beat */}
+        {/* Film-media screen, just behind the glass — ignites around the Act 1 lens-dive beat */}
         <mesh position={[0, bodyCenterHeight, lensFrontZ - 0.02]} castShadow={false} receiveShadow={false}>
           <circleGeometry args={[LENS.frontRadius * 0.85, 24]} />
           <primitive object={lensScreenMaterial} attach="material" />

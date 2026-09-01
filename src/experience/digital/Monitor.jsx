@@ -3,8 +3,10 @@ import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import { createScreenVideoMaterial } from './screenVideoMaterial.js'
+import { createStoneWallMaterial } from '../materials/stoneWallMaterial.js'
+import { buildRockGeometry } from './buildRockGeometry.js'
 import { onCameraLock, onCameraUnlock } from '../timeline/cameraLockEvent.js'
-import { PLINTH_CENTER, PLINTH_TOP_Y, PLINTH_YAW_DEGREES, OBJECT_OFFSET_X } from './plinthAnchor.js'
+import { BEAM_CENTER, YAW_DEGREES, MONITOR_PLINTH } from './plinthAnchor.js'
 
 // Phase 2: curated Digital work, per experience-design.md §8 ("approximately
 // 2-4 selected Digital projects"). One clip for now — extending to a
@@ -21,13 +23,12 @@ const IGNITE_DAMP_LAMBDA = 4
 
 /**
  * Phase 2 Digital console — a retro/mid-century industrial reference-
- * monitor, now sharing the widened plinth (`plinthAnchor.js`,
- * `DigitalPlinth.jsx`) with the Cinema Camera instead of standing on its
- * own dedicated stone block. The plinth itself and the shared yaw/position
- * transform moved out of this file; `Monitor` now only owns the console
- * geometry, offset `+OBJECT_OFFSET_X` along the plinth's own local X axis
- * (mirrored by `CinemaCamera.jsx`'s `-OBJECT_OFFSET_X`) so the two objects
- * sit side by side rather than stacked at the same origin.
+ * monitor, back to standing on its own dedicated stone plinth (per
+ * explicit request for separate stands rather than one shared plinth),
+ * positioned directly beside the Cinema Camera's own plinth
+ * (`CinemaCamera.jsx`) — both built around the same beam center/yaw
+ * (`plinthAnchor.js`) so they read as a deliberate paired composition,
+ * not two unrelated objects that happen to be nearby.
  *
  * `screenCenterHeight` is computed from the console's actual stacked
  * dimensions below (plinth height + housing offset), not hand-picked.
@@ -48,7 +49,7 @@ const BEZEL = {
   bottom: 0.22,
 }
 
-const housingCenterY = PLINTH_TOP_Y + HOUSING.height / 2
+const housingCenterY = MONITOR_PLINTH.height + HOUSING.height / 2
 const screenWidth = HOUSING.width - BEZEL.side * 2
 const screenHeight = HOUSING.height - BEZEL.top - BEZEL.bottom
 // Bottom bezel is deliberately taller (control-panel area), so the screen
@@ -60,21 +61,18 @@ const screenFrontZ = HOUSING.frontDepth / 2 + 0.002
 const glassFrontZ = screenFrontZ + 0.004
 
 // The screen's real world-space position and facing direction, accounting
-// for both the shared plinth's yaw AND this object's own local X offset —
-// replaces the Phase 1D approximation that used the plinth's bare center
-// point directly (acceptable then, when the monitor sat at that origin
-// unoffset; no longer accurate now that it's offset onto one side of a
-// shared plinth). `cameraPath.js`'s monitor-aligned shot derives its
-// framing from these instead of a hand-adjusted position.
+// for both the shared beam yaw AND this object's own plinth offset.
+// `cameraPath.js`'s monitor-aligned shot derives its framing from these
+// instead of hand-adjusted numbers.
 const Y_AXIS = new THREE.Vector3(0, 1, 0)
-const plinthYawRadians = THREE.MathUtils.degToRad(PLINTH_YAW_DEGREES)
-const screenWorldPosition = new THREE.Vector3(OBJECT_OFFSET_X, screenCenterHeight, screenFrontZ)
-  .applyAxisAngle(Y_AXIS, plinthYawRadians)
-  .add(new THREE.Vector3(PLINTH_CENTER[0], 0, PLINTH_CENTER[2]))
-const screenForward = new THREE.Vector3(0, 0, 1).applyAxisAngle(Y_AXIS, plinthYawRadians)
+const yawRadians = THREE.MathUtils.degToRad(YAW_DEGREES)
+const screenWorldPosition = new THREE.Vector3(MONITOR_PLINTH.offsetX, screenCenterHeight, screenFrontZ)
+  .applyAxisAngle(Y_AXIS, yawRadians)
+  .add(new THREE.Vector3(BEAM_CENTER[0], 0, BEAM_CENTER[2]))
+const screenForward = new THREE.Vector3(0, 0, 1).applyAxisAngle(Y_AXIS, yawRadians)
 
 export const MONITOR_ANCHOR = {
-  position: PLINTH_CENTER,
+  position: BEAM_CENTER,
   screenWidth,
   screenHeight,
   screenCenterHeight,
@@ -138,6 +136,11 @@ export default function Monitor() {
     uniform.value = THREE.MathUtils.damp(uniform.value, igniteTarget.current, IGNITE_DAMP_LAMBDA, delta)
   })
 
+  const plinthGeometry = useMemo(
+    () => buildRockGeometry(MONITOR_PLINTH.width, MONITOR_PLINTH.height, MONITOR_PLINTH.depth),
+    [],
+  )
+  const plinthMaterial = useMemo(() => createStoneWallMaterial('#6e685e', [1, 1]), [])
   const housingGeometry = useMemo(
     () => new RoundedBoxGeometry(HOUSING.width, HOUSING.height, HOUSING.frontDepth, 3, HOUSING.cornerRadius),
     [],
@@ -152,8 +155,17 @@ export default function Monitor() {
   const casingProps = { color: '#2b2a28', roughness: 0.75, metalness: 0.12 }
 
   return (
-    <group position={PLINTH_CENTER} rotation={[0, plinthYawRadians, 0]}>
-      <group position={[OBJECT_OFFSET_X, 0, 0]}>
+    <group position={BEAM_CENTER} rotation={[0, yawRadians, 0]}>
+      <group position={[MONITOR_PLINTH.offsetX, 0, 0]}>
+        {/* Own dedicated stone plinth — beside, not shared with, the Cinema Camera's */}
+        <mesh
+          position={[0, MONITOR_PLINTH.height / 2, 0]}
+          geometry={plinthGeometry}
+          material={plinthMaterial}
+          castShadow
+          receiveShadow
+        />
+
         {/* Rear hump — a smaller, recessed box suggesting the CRT tube's depth */}
         <mesh
           position={[0, housingCenterY, -HOUSING.frontDepth / 2 - HOUSING.rearDepth / 2 + 0.03]}

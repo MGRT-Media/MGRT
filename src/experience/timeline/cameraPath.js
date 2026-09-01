@@ -6,12 +6,13 @@ import { FILM_FOCUS_T } from './filmActBeats.js'
 /**
  * Multi-keyframe path, replacing the single straight opening→monitor line
  * from Phase 1D/2's earlier round. That simplification assumed one single
- * destination (the monitor); it no longer holds now that the Cinema
- * Camera and Monitor share one plinth and the scroll needs to visit both
- * in turn — Act 1's tight hero shot on the Cinema Camera, then a pan/
- * track across the plinth into Act 2's monitor-centered shot, per
- * explicit request. Flagged here as a deliberate supersession of the
- * prior "no waypoints" simplification, not a silent drift back to it.
+ * destination (the monitor); it no longer holds now that the scroll needs
+ * to visit both the Cinema Camera and Monitor in turn — Act 1 dives
+ * straight into the Cinema Camera's lens until the film media fills the
+ * frame, then Act 2 pulls back out of the lens and pans across to the
+ * Monitor-centered shot, per explicit request. Flagged here as a
+ * deliberate supersession of the prior "no waypoints" simplification, not
+ * a silent drift back to it.
  *
  * Still a pure function of `progress` (deterministic, reversible) and
  * still no roll/banking — only the number of waypoints changed, not the
@@ -26,18 +27,27 @@ const START_POSITION = new THREE.Vector3(-1.0, 1.6, 8)
 // look-at height between the two objects' own centers.
 const OPENING_LOOKAT = new THREE.Vector3(MONITOR_ANCHOR.position[0], 1.3, MONITOR_ANCHOR.position[2])
 
-// Act 1 hero beat: tight, dramatic framing on the Cinema Camera's lens —
-// closer than the monitor's own approach distance, and angled slightly
-// above lens height for a more dramatic (less head-on) composition.
-const FILM_HERO_DISTANCE = 1.1
+// Act 1 lens-dive beat: the scroll sequence flies straight into the
+// Cinema Camera's optical glass, per explicit request — not a respectful
+// "hero shot" distance but close enough that the lens becomes a dark
+// circular field dominated by the film media playing inside it
+// (creative-reference.md §6's "Lens transition... approach the lens
+// closely enough that it becomes a dark circular visual field").
+// Distance is derived from the lens's own radius and this camera's fov
+// (45°) so the lens disc subtends ~90% of the vertical half-frame at
+// this keyframe — close/immersive without crossing into near-plane
+// clipping territory (near: 0.05, so this keeps a >3x safety margin).
+const LENS_DIVE_FILL_FRACTION = 0.9
+const LENS_DIVE_HALF_FOV_RADIANS = THREE.MathUtils.degToRad(45 / 2) * LENS_DIVE_FILL_FRACTION
+const LENS_DIVE_DISTANCE = CAMERA_ANCHOR.lensRadius / Math.tan(LENS_DIVE_HALF_FOV_RADIANS)
 const [lensX, lensY, lensZ] = CAMERA_ANCHOR.lensFrontFieldPosition
 const [fwdX, , fwdZ] = CAMERA_ANCHOR.lensForward
-const FILM_HERO_POSITION = new THREE.Vector3(
-  lensX + fwdX * FILM_HERO_DISTANCE,
-  CAMERA_ANCHOR.bodyCenterHeight + 0.12,
-  lensZ + fwdZ * FILM_HERO_DISTANCE,
+const LENS_DIVE_POSITION = new THREE.Vector3(
+  lensX + fwdX * LENS_DIVE_DISTANCE,
+  lensY,
+  lensZ + fwdZ * LENS_DIVE_DISTANCE,
 )
-const FILM_HERO_LOOKAT = new THREE.Vector3(lensX, lensY, lensZ)
+const LENS_DIVE_LOOKAT = new THREE.Vector3(lensX, lensY, lensZ)
 
 // Act 2 arrival: the existing "squarely aligned with the screen" shot,
 // now derived from the Monitor's real world screen position/forward
@@ -55,7 +65,7 @@ const MONITOR_ALIGNED_LOOKAT = new THREE.Vector3(screenX, screenY, screenZ)
 
 const KEYFRAMES = [
   { t: 0, position: START_POSITION, lookAt: OPENING_LOOKAT },
-  { t: FILM_FOCUS_T, position: FILM_HERO_POSITION, lookAt: FILM_HERO_LOOKAT },
+  { t: FILM_FOCUS_T, position: LENS_DIVE_POSITION, lookAt: LENS_DIVE_LOOKAT },
   { t: 1, position: MONITOR_ALIGNED_POSITION, lookAt: MONITOR_ALIGNED_LOOKAT },
 ]
 
