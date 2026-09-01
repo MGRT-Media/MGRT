@@ -245,7 +245,25 @@ Screenshots at scroll 0% (both objects silhouetted together on the shared plinth
 Screenshots at scroll 0% (both stands visible, separated, both still within the beam), ~45% (the lens-dive frame — `film-01-hero.mp4` filling nearly the entire viewport, exactly the "dark circular field" target), and 100% (Monitor-centered, Cinema Camera's own plinth now visibly separate in the foreground). Full scroll to 100% and back to 0% reproduces the opening frame exactly. No console errors. Frame timing: 16.67ms avg, 0 frames >33ms. Mobile viewport (375×812) clean. Production build succeeds. `grep` for `useState`/`setState` — clean.
 
 ### Required next step
-Pacing/framing (dive-in distance/fill fraction, tilt angle, gap size between the two plinths) is a first pass — open to visual-review adjustment. No further mechanism work required unless requested.
+*Superseded — see §4AH.* Pacing/framing is a first pass — open to visual-review adjustment.
+
+---
+
+## 4AH. Refinement — Rounded Lens Glass, Scroll-Snap, Framed Lens-Dive
+
+**Status:** IN PROGRESS (core mechanism working; open to further visual-review adjustment)
+
+### What changed
+- `CinemaCamera.jsx` — the flat-disc front glass replaced with a genuine convex dome: a `LatheGeometry` spherical cap built from a sagitta-derived profile (radius/bulge formula), oriented via the same `rotation={[Math.PI/2,0,0]}` convention already used on the lens barrel cylinder. Material gained `clearcoat`/`clearcoatRoughness`/`ior` on top of the existing `transmission`, per explicit request for "subtle anti-reflective material properties (subtle rim highlights and refractions)" — clearcoat gives the coated-lens look, and the dome's own curvature (rather than a flat plane) is what makes the rim actually brighten at grazing angles instead of a uniform flat highlight. Added a slim `TorusGeometry` "lip" at the barrel's front opening — an open-ended cylinder alone has no edge thickness to read as a physical rim, per explicit request for "the curved lip of the camera lens" to frame the shot.
+- `ScrollTimelineProvider.jsx` — added a **localized** GSAP `ScrollTrigger.snap`: stopping within a small capture radius (0.06) of `FILM_FOCUS_T` pulls the resting scroll position exactly onto it (the "click" lock requested); everywhere else in the timeline remains freely continuous — this is explicitly NOT full-section snapping, and the file's own prior "no section-snapping" note is updated in place to explain the distinction rather than silently contradicted. Scrolling decisively past the capture radius needs no separate "release" logic — the snap function itself just stops applying outside the radius, so it falls straight through into the existing pull-back/pan toward Act 2.
+- `cameraPath.js` — lens-dive fill fraction reduced from 0.9 to 0.82, leaving room for the new barrel lip to actually read as a frame around the video rather than being cropped to the very edge.
+- Autoplay/loop on snap (request point 3) required no new code — `CinemaCamera.jsx`'s existing scroll-progress-driven ignite band (§4AF) already plays the muted, looping clip automatically as progress approaches `FILM_FOCUS_T`; confirmed it still fires correctly now that scroll actually rests there via the snap, rather than reimplementing it.
+
+### Verification
+Scrolled to two different raw stop points on either side of `FILM_FOCUS_T` (within the capture radius) — both settled to pixel-identical framing, confirming the snap engaged correctly. Scrolling decisively further released cleanly into the existing Act 2 pull-back/pan, unaffected. Full scroll to 100% and back to 0% still reproduces the opening frame exactly. No console errors. Frame timing: 16.50ms avg, 0 frames >33ms. Mobile viewport (375×812) clean. Production build succeeds. `grep` for `useState`/`setState` — clean.
+
+### Required next step
+Open to visual-review adjustment (dome bulge amount, lip thickness, snap capture radius, fill fraction). No further mechanism work required unless requested.
 
 ---
 
