@@ -318,7 +318,28 @@ Two different raw scroll-stop points near `t: 1` converge to pixel-identical Mon
 Two different raw scroll-stop points near `ESTABLISH_T` converge to pixel-identical framing — both stands clearly visible side by side, exactly matching the requested establish shot. Snap 2 and Snap 3 re-confirmed still correct and unaffected by the new keyframe spacing. Full scroll to 100% and back to 0% reproduces the opening frame exactly. No console errors. Frame timing: 16.57ms avg, 0 frames >33ms. Mobile viewport (375×812) clean. Production build succeeds. `grep` for `useState`/`setState` — clean.
 
 ### Required next step
-Open to visual-review adjustment (establish distance/framing, capture radii, stage timing). No further mechanism work required unless requested.
+*Superseded — see §4AL.* Open to visual-review adjustment.
+
+---
+
+## 4AL. Feature — Force-Stop Scroll Lock with Timed Release (Snap 2/3)
+
+**Status:** IN PROGRESS (core mechanism verified working; open to further visual-review adjustment)
+
+### Scope note — a documented `useState` exception
+This round introduces the codebase's first `useState` usage (`ScrollLockIndicator.jsx`), which normally fails this project's standing "no React state for scroll-driven values" check (technical-architecture.md §7). It's a deliberate, narrow exception: the rule targets per-frame WebGL values (camera position, uniforms) driving state thrash at 60fps; this is a rare, discrete boolean flip (lock/unlock, twice per snap cycle) on a plain DOM overlay outside the Canvas, not a 3D scene object. Flagged explicitly per project convention rather than silently introduced — `grep` for `useState`/`setState` will no longer come back empty going forward, and that's expected for this one file.
+
+### What changed
+- `filmActBeats.js` — added `SCROLL_LOCK_HOLD_MS` (1750, within the requested 1.5-2s range) and `SCROLL_LOCK_OVERRIDE_DRIFT` (0.05).
+- `ScrollTimelineProvider.jsx` — the scroll-snap's `onComplete` callback now engages a lock when landing exactly on Snap 2 (`FILM_FOCUS_T`) or Snap 3 (`MONITOR_SNAP_T`) — explicitly not Snap 1, per the request's own scoping. Engaging pins `scrollProgress.value` at the snapped value; since every scene consumer (`ScrollCameraRig.jsx`'s camera sampling and its `cameraLockEvent.js` firing, `CinemaCamera.jsx`'s ignite band) reads that one value, pinning it there is sufficient to visually hard-stop the whole scene — no changes needed to any of those consumers, and autoplay-on-lock required no new code (same as §4AF/§4AH). Lenis/GSAP keep tracking the visitor's real scroll position underneath the pin the entire time rather than being blocked outright (`onUpdate` still reads `self.progress`); if that live position drifts more than `SCROLL_LOCK_OVERRIDE_DRIFT` from the pinned value, it reads as a deliberate override and releases the lock immediately — otherwise a `setTimeout` releases it after `SCROLL_LOCK_HOLD_MS`. Either way, `scrollProgress.value` picks up wherever live scroll already is on release — no jump to compute, and `ScrollCameraRig.jsx`'s existing damp layer smooths the catch-up.
+- New `scrollLockEvent.js` — a pub/sub (`onScrollLock`/`onScrollUnlock`), matching `cameraLockEvent.js`'s existing convention.
+- New `ScrollLockIndicator.jsx` + `global.css` additions — the visual/tactile cue: a minimal ring (mounted in `App.jsx`, outside the Canvas per §4's DOM/WebGL separation) that fades in and fills over the hold duration, confirming to the visitor that the pause is intentional and temporary.
+
+### Verification
+Camera genuinely frozen through the hold (identical framing at two points during the pin). Hold duration measured directly via `performance.now()` timestamps: 1751ms between engage and release, matching the 1750ms constant within timer jitter. Indicator verified via computed-style inspection (opacity ramping 0 → ~0.86, correct `stroke-dashoffset` animation) — its intentional subtlety made it hard to catch mid-fade in a single screenshot, so DOM-level inspection was used as the authoritative check instead. Aggressive scroll during the hold breaks the lock early and the camera continues normally toward the next snap (confirmed via screenshot). Snap 1 confirmed NOT to force-stop — scrolling through it and immediately onward reaches Snap 2 on schedule with no stall. Full scroll to 100% and back to 0% reproduces the opening frame exactly. No console errors. Frame timing: 16.65ms avg, 0 frames >33ms. Mobile viewport (375×812) clean. Production build succeeds.
+
+### Required next step
+Open to visual-review adjustment (hold duration, override drift threshold, indicator size/position/style). No further mechanism work required unless requested.
 
 ---
 
