@@ -75,22 +75,35 @@ const SCROLL_LENGTH_MULTIPLIER = 3
  * so nothing can physically scroll past it regardless.
  *
  * Snap 2 (Cinema Lens) needed a genuinely strict lock instead: the
- * previous round's lock only engaged on the snap tween's `onComplete`
+ * original round's lock only engaged on the snap tween's `onComplete`
  * (i.e. once the user had already stopped scrolling near it), so a
- * continuous fast scroll on the visitor's first pass could sail straight
- * through `FILM_FOCUS_T` without the tween ever settling there, skipping
- * the hero video entirely. This round adds real threshold-crossing
- * detection in `onUpdate` (checked every tick, independent of whether
- * scrolling has stopped) plus a genuine hard block: `smoothScroll.lenis`
- * is stopped outright (Lenis's own API for suspending scroll input) and a
+ * continuous fast scroll could sail straight through `FILM_FOCUS_T`
+ * without the tween ever settling there, skipping the hero video
+ * entirely. The fix added real threshold-crossing detection in
+ * `onUpdate` (checked every tick, independent of whether scrolling has
+ * stopped) plus a genuine hard block: `smoothScroll.lenis` is stopped
+ * outright (Lenis's own API for suspending scroll input) and a
  * capture-phase wheel/touchmove listener additionally `preventDefault`s
  * for the hold's duration, so physical scrolling truly cannot advance
- * past the lens — not just a value pinned while the page quietly keeps
- * moving underneath. `hasCompletedLensHold` (a plain closure flag, not
- * React state) means this only happens once per session, on the
- * visitor's actual first pass — scrolling back through `FILM_FOCUS_T`
- * later doesn't re-trigger the hard lock, only the ordinary soft
- * `snapTo`/`onComplete` magnetic click above still applies.
+ * past the lens.
+ *
+ * That first fix only checked "is progress at-or-past `FILM_FOCUS_T`",
+ * which only ever means anything on a forward (scrolling down) pass — it
+ * was also gated behind a permanent `hasCompletedLensHold` flag that
+ * stayed true forever after the first hold, so backscrolling through the
+ * lens later skipped the lock entirely, per explicit follow-up report.
+ * Both are fixed here: the lock is now driven by genuine bidirectional
+ * *crossing* detection (comparing each tick's progress against the
+ * previous tick's, `lastRawProgress` below, and checking whether
+ * `FILM_FOCUS_T` fell strictly between them) rather than a one-sided
+ * "is it past" check or a single-use flag — every time the visitor
+ * crosses `FILM_FOCUS_T`, from either direction, in the same
+ * uninterrupted scroll gesture, holds again. A static "progress >=
+ * FILM_FOCUS_T" re-check without crossing detection would have been
+ * wrong the other way: scrolling up from the Monitor starts at
+ * `progress: 1`, which already satisfies ">= FILM_FOCUS_T" long before
+ * actually reaching the lens, so it would have fired the instant they
+ * started scrolling up instead of when they arrive.
  *
  * A literal second `ScrollTrigger.create({ pin: true })` was considered
  * and deliberately not used: this page has one continuous scrub timeline
@@ -144,8 +157,13 @@ export function ScrollSpacer() {
       monitorLockTimeoutId = setTimeout(releaseMonitorLock, SCROLL_LOCK_HOLD_MS)
     }
 
-    // --- Snap 2 (Cinema Lens) — strict hard lock ---
-    let hasCompletedLensHold = false
+    // --- Snap 2 (Cinema Lens) — strict, bidirectional hard lock ---
+    // `lastRawProgress` is the previous tick's real (unclamped) progress
+    // — comparing it against the current tick's is what makes this a
+    // genuine *crossing* check rather than a one-sided "is it past"
+    // check, so it re-engages correctly on every pass through
+    // `FILM_FOCUS_T`, forward or backward, not just the first one.
+    let lastRawProgress = 0
     let lensHoldActive = false
     let lensHoldTimeoutId = null
 
@@ -163,7 +181,6 @@ export function ScrollSpacer() {
     const releaseLensHold = () => {
       if (!lensHoldActive) return
       lensHoldActive = false
-      hasCompletedLensHold = true
       if (lensHoldTimeoutId) {
         clearTimeout(lensHoldTimeoutId)
         lensHoldTimeoutId = null
@@ -172,10 +189,17 @@ export function ScrollSpacer() {
       window.removeEventListener('touchmove', onLensHoldWheel, { capture: true })
       smoothScroll.lenis.start()
       setScrollLocked(false)
+      // Reset the crossing baseline to exactly the pinned point: the very
+      // next tick's real progress will be on one side or the other of
+      // FILM_FOCUS_T (wherever the visitor continues scrolling), and
+      // since lastRawProgress now equals FILM_FOCUS_T exactly, neither
+      // crossing condition below can fire on that first post-release
+      // tick — otherwise release would immediately re-trigger itself.
+      lastRawProgress = FILM_FOCUS_T
     }
 
     const engageLensHold = (trigger) => {
-      if (lensHoldActive || hasCompletedLensHold) return
+      if (lensHoldActive) return
       lensHoldActive = true
       scrollProgress.value = FILM_FOCUS_T
 
@@ -211,12 +235,21 @@ export function ScrollSpacer() {
         },
         onUpdate: (self) => {
           // Snap 2: checked every tick (not just on scroll-stop) so a
-          // fast, continuous scroll on the first pass still gets caught
-          // exactly at FILM_FOCUS_T instead of sailing through it.
-          if (!hasCompletedLensHold && !lensHoldActive && self.progress >= FILM_FOCUS_T) {
-            engageLensHold(self)
-            return
+          // fast, continuous scroll still gets caught exactly at
+          // FILM_FOCUS_T instead of sailing through it — and checked as
+          // a genuine crossing (FILM_FOCUS_T strictly between the last
+          // tick's progress and this one) so it re-engages on every pass
+          // through the point, forward or backward, not just the first.
+          if (!lensHoldActive) {
+            const crossedForward = lastRawProgress < FILM_FOCUS_T && self.progress >= FILM_FOCUS_T
+            const crossedBackward = lastRawProgress > FILM_FOCUS_T && self.progress <= FILM_FOCUS_T
+            if (crossedForward || crossedBackward) {
+              lastRawProgress = self.progress
+              engageLensHold(self)
+              return
+            }
           }
+          lastRawProgress = self.progress
 
           if (monitorLockActive) {
             // Soft lock: scrollProgress.value stays pinned while real
