@@ -44,10 +44,10 @@ The camera and the captured image.
 The captured image becomes a digital experience.
 
 ### Act 3 — Campaigns
-The digital experience expands into a larger public-facing campaign world.
+The camera pulls back to reveal that the entire world so far has been displayed on a billboard.
 
 ### Act 4 — Return
-The visitor returns to the original environment and MGRT identity.
+The camera dives back through the billboard into the original room, closing the loop.
 
 ### Post-Experience — Explore
 The cinematic sequence transitions into the practical website experience.
@@ -218,10 +218,10 @@ Sound should reinforce the sense that the visitor is inside a physical architect
 Major discoveries may receive extremely subtle sound cues:
 
 ```text
-LIGHT REVEAL       → subtle environmental emergence
-CAMERA DISCOVERY   → restrained physical cue
-MONITOR REVEAL     → subtle tonal transition
-CAMPAIGN EXPANSION → larger environmental presence
+LIGHT REVEAL     → subtle environmental emergence
+CAMERA DISCOVERY → restrained physical cue
+MONITOR REVEAL   → subtle tonal transition
+BILLBOARD REVEAL → held, quiet — no musical sting; let the visual carry it
 ```
 
 These cues should never become obvious "UI sounds."
@@ -318,7 +318,7 @@ Supporting: **Web Design · Digital Experiences**
 Typography should feel physically integrated into the environment.
 
 ### Act transition
-The monitor becomes increasingly connected to a larger visual system. The visitor begins to see that Digital is not the final destination. The viewpoint starts to pull back. The physical environment becomes larger. The monitor becomes one element within a much bigger communication space. This leads directly into Campaigns.
+The monitor remains the visitor's focus through the end of Digital. There is no early hint of what Act 3 reveals — the transition into the pull-back should feel like a natural continuation of the camera's movement around the monitor, not a signal that something is about to change.
 
 ---
 
@@ -327,57 +327,68 @@ The monitor becomes increasingly connected to a larger visual system. The visito
 ### Narrative purpose
 **Campaigns amplify.**
 
-The experience expands from an individual screen into a larger public-facing environment. This is the largest spatial moment of the experience.
+Campaigns is not demonstrated through curated examples of past work. It is demonstrated structurally: the visitor discovers that the entire world they have been standing inside — the Room, the camera, the monitor, everything from Act 0 through Act 2 — is itself a campaign. This is the largest spatial and conceptual moment of the experience.
 
-### Spatial expansion
-The camera pulls back. The monitor becomes smaller within the architecture. Additional large-scale surfaces begin to appear — architectural billboard surfaces, large commercial displays, monumental screens, projected surfaces. The environment should feel larger without introducing an entirely different world.
+### The pull-back
+
+The camera begins a single continuous pull-back from the monitor. Nothing about the interior room changes — no new objects, no additional screens, no separate campaign displays are introduced into the space. Instead, as the pull-back continues, the edges of the room become visible for the first time, and the visitor sees that those edges are the frame of a physical billboard.
+
+```text
+MONITOR (CLOSE) → CAMERA PULLS BACK → ROOM EDGES BECOME VISIBLE
+→ ROOM REVEALED AS A BILLBOARD SURFACE → BILLBOARD SEEN WITHIN EXTERIOR ENVIRONMENT
+```
+
+The entire interior — everything the visitor has experienced since Act 0 — remains visible on the billboard surface throughout the pull-back. It does not cut, fade, or swap to a static image. What the visitor is looking at right now continues to be what they see, at a steadily increasing distance, until its true scale and context become clear.
 
 ### Campaign reveal
-The visitor gradually discovers that the screens carry campaign work. The visual language should communicate: **an idea has left the screen and entered the world.**
 
-Target approximately **3–5 selected campaign examples**. Campaign content may combine advertising, commercial production, photography, digital, social, and brand communication. The work should feel like a connected campaign ecosystem rather than unrelated portfolio pieces.
+The visual language should communicate a single realization: **the world was the campaign.** There is no separate "campaign work" to browse — Film and Digital have just been demonstrated to combine into one integrated piece of MGRT's own campaign capability, proven by the structure of the experience itself rather than described in a gallery.
 
 ### Scale
-Campaigns should feel larger and more outward-facing than the Film and Digital acts. The spatial hierarchy should progress:
+The pull-back moves through a clear spatial hierarchy:
 
 ```text
 FILM       — Personal / intimate
      ↓
 DIGITAL    — Interactive / constructed
      ↓
-CAMPAIGNS  — Large-scale / public / amplified
+CAMPAIGNS  — The intimate world revealed at billboard, then city, scale
 ```
+
+The exterior environment surrounding the billboard should feel like a real, believable place — a street, a plaza, an urban exterior — not an abstract void. It should be composed with the same restraint as the rest of the experience: enough to establish scale and context, not a fully detailed cityscape competing for attention.
 
 ### Campaign typography
 Primary: **CAMPAIGNS**
 Supporting: **Advertising · Commercials · Creative Direction**
 
-Optional supporting copy should remain minimal.
+Typography here should be minimal to the point of near-absence — the reveal itself is the statement. If used at all, it should appear only once the billboard is fully legible as a billboard, not during the pull-back itself.
 
 ### Visual payoff
-This should be the largest spatial reveal of the experience. However, avoid spectacle for spectacle's sake. The environment should become impressive through scale, composition, lighting, movement, content, and architecture — not excessive effects.
+The payoff is the moment the visitor understands what they are looking at — not a moment of added spectacle. Avoid introducing new visual effects, additional screens, crowds, traffic, or other environmental incident at the reveal. The environment should become impressive because of what it reveals, not because of what is added to it.
 
 ---
 
 ## 10. Act 4 — Return
 
 ### Narrative purpose
-The visitor returns to where the experience began. This provides closure. The visitor should now understand that Film, Digital, and Campaigns were not separate worlds — they were different expressions of the same MGRT creative environment.
+The visitor returns to where the experience began — but by diving back into the billboard they just discovered, not by a separate camera movement in the exterior world. This provides closure through the same surface that just delivered the reveal: the visitor re-enters MGRT's own world through MGRT's own campaign.
 
 ### Beginning of return
-The camera begins to withdraw from the Campaign environment. The large screens gradually disappear from view. The environment becomes quieter. Visual complexity decreases.
-
-### Objects leave
-The objects introduced throughout the journey disappear naturally:
+Having established the billboard within its exterior environment, the camera's outward movement stops and reverses. The camera moves back toward the billboard surface, retracing the pull-back rather than cutting or resetting to a new position.
 
 ```text
-CAMPAIGN SCREENS → MONITOR → CAMERA → ORIGINAL ARCHITECTURE
+EXTERIOR ENVIRONMENT → BILLBOARD SURFACE → THROUGH THE SURFACE → INTERIOR ROOM
 ```
 
-Avoid objects simply fading out independently. Whenever possible, their disappearance should be physically motivated by camera movement, occlusion, darkness, distance, architectural framing, or light.
+### Re-entering the room
+
+As the camera crosses the billboard surface, the exterior environment falls away and the interior room becomes the entirety of the frame again — the same room, the same objects, the same light, at the same scale as it was before the pull-back began. This must read as one continuous camera movement, not a cut, fade, or scene swap.
+
+### Objects settle
+Having re-entered, the camera settles into a final resting composition. The monitor and cinema camera may remain visible in the environment or recede from frame — whichever is physically motivated by camera position — but neither should abruptly disappear.
 
 ### Return to original space
-The visitor eventually reaches the same architectural environment established during Act 0. The original directional light is still present; the same spatial language returns. However, the environment is now more visible and understandable. The visitor has effectively completed a journey through MGRT.
+The visitor reaches the same architectural environment established during Act 0. The original directional light is still present; the same spatial language returns. However, the environment now carries a second meaning it did not have at the opening: the visitor understands they are standing inside the very thing that was just revealed as MGRT's campaign. The visitor has effectively completed a journey through MGRT and arrived back where it began, seeing it differently.
 
 ### Final identity
 The final identity appears: **MGRT MEDIA**
@@ -448,7 +459,9 @@ Target: **2–4 selected projects**. Use selected website and digital work insid
 **Avoid:** turning the monitor into a scrolling portfolio website within the website.
 
 ### Campaigns
-Target: **3–5 selected campaigns or campaign examples**. Use campaign work across the larger architectural displays. Campaigns can demonstrate how different disciplines combine into one creative idea. The work should feel connected.
+Campaigns has **no curated portfolio content of its own**. It does not display selected campaign pieces, poster mockups, social feeds, or a gallery of past work. The campaign concept is demonstrated entirely by the structural reveal in Act 3 — the visitor's own preceding journey through Film and Digital, shown to have been a campaign.
+
+**Avoid:** video grids, poster/mockup displays, social-post feeds, project cards, or any curated gallery of campaign work. Introducing browsable content here would compete with, rather than support, the reveal.
 
 ### General rule
 > **Portfolio content should feel discovered inside the world, not inserted on top of it.**
@@ -525,6 +538,12 @@ The same narrative is preserved while the composition changes.
 
 > **Mobile rule:** Never simply shrink the desktop camera framing to fit the phone. Reposition and re-compose the cinematic shots intentionally.
 
+### The billboard reveal on mobile
+
+The general mobile principle — closer framing, reduced environmental breadth — works against the billboard reveal specifically, since the reveal's entire effect depends on a visible jump in scale from an intimate interior to an expansive exterior. Do not compress this act to keep it "close" the way Film or Digital are compressed.
+
+On mobile, the pull-back should still read as a real change in scale — a narrower field of view and a more vertical framing (favoring the phone's aspect ratio) are appropriate, but the distance and the sense of the room becoming small within a larger exterior must remain legible. If the exterior environment must be simplified for mobile performance, simplify its detail before compromising the sense of scale itself.
+
 ### Mobile performance
 When necessary, mobile may reduce geometry complexity, texture resolution, particle count, volumetric complexity, reflection quality, environmental detail, and secondary objects.
 
@@ -547,7 +566,7 @@ Forward scrolling progresses the narrative. Reverse scrolling should naturally r
 
 ```text
 INITIAL REVEAL → FILM DISCOVERY → FILM PAYOFF → DIGITAL REVEAL → DIGITAL PAYOFF
-→ CAMPAIGN EXPANSION → CAMPAIGN PAYOFF → RETURN → FINAL MGRT MEDIA → EXPLORE
+→ BILLBOARD REVEAL → DIVE BACK IN → RETURN → FINAL MGRT MEDIA → EXPLORE
 ```
 
 Exact scroll ranges and animation timings are defined during implementation and performance testing. The sequence should remain concise.
@@ -610,9 +629,31 @@ The same environment, light, atmosphere, and spatial logic should remain present
 
 ---
 
+## 19A. Digital → Reveal Transition (Billboard)
+
+This is the single most important transition in the experience, and the primary technical risk of the project. It must not feel like:
+
+```text
+DIGITAL SCENE → CUT → EXTERIOR SCENE WITH A BILLBOARD ON IT
+```
+
+It should feel like:
+
+```text
+MONITOR (CLOSE) → CONTINUOUS PULL-BACK → ROOM EDGES APPEAR → ROOM REVEALED AS BILLBOARD → EXTERIOR CONTEXT
+```
+
+The interior room — everything the visitor has seen since Act 0 — must remain the same live, continuously rendered content throughout the pull-back. It does not cut, fade, freeze, or swap to a static image at any point. The visitor is looking at the same evolving scene the entire time; only the framing and distance change.
+
+> **Critical rule:** The interior environment must be visibly live for the full duration of the pull-back — not a pre-rendered image applied once the billboard framing is reached. If the interior appears to "freeze" or swap to a still image as the reveal begins, the illusion is broken.
+
+The return dive-back-in in Act 4 is this same transition in reverse, into the same environment — not a new or separately built scene. Whatever technique renders the interior onto the billboard surface must support the camera re-entering it seamlessly.
+
+---
+
 ## 20. Ending & Closure
 
-The ending should mirror the opening.
+The ending should mirror the opening — but through the billboard, not around it.
 
 **Opening:**
 ```text
@@ -621,10 +662,10 @@ DARKNESS → LIGHT → MGRT
 
 **Ending:**
 ```text
-CAMPAIGNS → RETURN → LIGHT → MGRT → STILLNESS → EXPLORE
+CAMPAIGNS (BILLBOARD REVEAL) → DIVE BACK THROUGH THE SURFACE → RETURN → LIGHT → MGRT → STILLNESS → EXPLORE
 ```
 
-The same environment and light source should create a visual bookend. The visitor should recognize the space from the opening. The cinematic sequence should feel complete before practical navigation appears.
+The same environment and light source should create a visual bookend. The visitor should recognize the space from the opening — and additionally recognize it as the same space that was just revealed as MGRT's own campaign. The cinematic sequence should feel complete before practical navigation appears.
 
 ---
 
@@ -635,7 +676,7 @@ The following principles should guide every implementation decision:
 1. **One world** — the experience should feel like one physical environment.
 2. **One journey** — the visitor is moving through a story, not navigating disconnected sections.
 3. **One light** — the primary light is a visual thread through the entire experience.
-4. **Objects have meaning** — camera = Film, monitor = Digital, large screens = Campaigns, architecture = MGRT.
+4. **Objects have meaning** — camera = Film, monitor = Digital, the room itself (revealed as a billboard) = Campaigns, architecture = MGRT.
 5. **Content is discovered** — portfolio work appears naturally inside the world.
 6. **Movement has purpose** — camera movement must communicate discovery, transition, scale, or narrative progression.
 7. **Restraint creates impact** — not every moment needs movement, sound, particles, or effects.

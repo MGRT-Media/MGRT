@@ -146,7 +146,8 @@ PHASE 1
 ├── 1A — Environment Shell
 ├── 1B — Atmosphere & Light
 ├── 1C — Camera & Scroll
-└── 1D — Digital / Monitor Transition Foundation
+├── 1D — Digital / Monitor Transition Foundation
+└── 1E — Billboard Reveal Foundation
 
 PHASE 2
 ├── Film
@@ -186,9 +187,11 @@ Phase 1 establishes and proves the **technical and cinematic foundation** of the
 
 Phase 1D specifically establishes the **monitor, screen, and Film → Digital transition mechanism as a working foundation**. It is not the final Digital act.
 
+Phase 1E specifically establishes the **billboard reveal and dive-back-in mechanism as a working foundation** — the render-to-texture technique, the camera's continuous pull-back and return through the billboard surface, and the boundary crossing between interior and exterior environments — using placeholder or provisional content for the exterior environment. It is not the final Campaigns act, and it does not require final Film or Digital content to be present.
+
 Phase 2 then builds the **final Film, Digital, and Campaigns acts** on top of that proven foundation, replacing provisional elements with the intended final objects, compositions, media, typography, and cinematic treatment.
 
-This prevents the Film → Digital transition from being designed and implemented for the first time only after the full acts have already been built.
+This prevents the Film → Digital transition, and the billboard reveal, from being designed and implemented for the first time only after the full acts have already been built. The billboard reveal in particular is the single highest-risk mechanism in the project — see `technical-architecture.md` §6 — and should not be attempted for the first time under the pressure of finishing final Campaigns content.
 
 > **Phase 1 proves the cinematic mechanisms. Phase 2 builds the final cinematic content and acts on those mechanisms.**
 
@@ -200,7 +203,7 @@ This prevents the Film → Digital transition from being designed and implemente
 Establish the persistent physical environment: architectural shell, floor, walls, structural elements, basic spatial scale, camera starting position, scene composition, and the persistent Three.js environment.
 
 ### Do not add yet
-Portfolio content, campaign media, complex atmospheric effects, audio, advanced post-processing, complex transitions, final typography systems, or secondary decorative objects.
+Portfolio content, billboard reveal mechanics, complex atmospheric effects, audio, advanced post-processing, complex transitions, final typography systems, or secondary decorative objects.
 
 ### Review gate
 The environment must establish the intended physical world before proceeding. Review for scale, composition, spatial depth, material direction, camera placement, negative space, and architectural credibility.
@@ -276,6 +279,42 @@ FILM SECTION → LIGHTING RESET → DIGITAL SECTION
 
 ### Mandatory verification
 Specifically inspect for brightness snap, exposure snap, fog snap, volumetric snap, camera jump, monitor pop-in, scene reset, animation discontinuity, screen-content pop-in, and timeline desynchronization.
+
+If any of these occur, the phase is not ready for approval.
+
+---
+
+## 10A. Phase 1E — Billboard Reveal Foundation
+
+### Objective
+Establish and prove the **technical and cinematic foundation of the Campaigns billboard reveal and its Act 4 reverse (dive-back-in)**: the render-to-texture technique, a continuous camera pull-back from the interior room into a provisional exterior environment, the boundary crossing at the billboard surface, and the reverse camera movement back into the same interior scene graph.
+
+The exterior environment and any surrounding context used here may be **simplified or provisional**. The objective is to prove that the render-target technique, the camera's continuous movement through the boundary, and the reverse re-entry all work correctly — not to build the final exterior environment or its final composition.
+
+### Important scope clarification
+
+**Phase 1E does not constitute the final Campaigns act.** It establishes the underlying render-to-texture mechanism and camera boundary crossing that Phase 2 will build the final Campaigns act upon.
+
+Phase 1E does not require final Film or Digital content, final typography, or final exterior-environment art direction to be present. A placeholder interior (from Phase 1A–1D) and a placeholder exterior are sufficient to prove the mechanism.
+
+Phase 2 will refine this foundation with the final exterior environment composition, materials, and lighting defined in `creative-reference.md` and `experience-design.md`.
+
+### Critical requirement
+The reveal and return must feel like:
+
+```text
+MONITOR (CLOSE) → CONTINUOUS PULL-BACK → BILLBOARD SURFACE REVEALED → EXTERIOR CONTEXT
+→ CAMERA REVERSES → THROUGH THE SURFACE → SAME INTERIOR SCENE, CONTINUING LIVE
+```
+
+It must not feel like:
+
+```text
+DIGITAL SCENE → CUT / FREEZE → STATIC IMAGE ON A BILLBOARD → NEW EXTERIOR SCENE
+```
+
+### Mandatory verification
+Specifically inspect for: the interior render freezing, stuttering, or swapping to a static image at any point during the pull-back; any cut, fade, or load boundary at the billboard surface in either direction; desynchronization between the interior render-target camera and the primary camera; the interior scene being rebuilt or reinstantiated on return rather than being the same persistent scene graph; and any frame-rate cost from the double-render (interior + exterior) that degrades camera smoothness below the standard established in Phase 1C.
 
 If any of these occur, the phase is not ready for approval.
 
@@ -379,7 +418,7 @@ When performance becomes constrained, reduce lower-priority complexity first. Po
 Do not immediately sacrifice the primary cinematic experience.
 
 ### Performance must be tested during
-Initial load, camera movement, the Film sequence, the Film → Digital transition, Campaign expansion, the Return sequence, reverse scrolling, mobile scrolling, and resize events.
+Initial load, camera movement, the Film sequence, the Film → Digital transition, the Campaigns billboard reveal and its render-to-texture cost, the dive-back-in return, reverse scrolling, mobile scrolling, and resize events.
 
 ---
 
@@ -395,7 +434,8 @@ Portfolio assets should remain curated. Do not add content simply because more e
 
 - Film: approximately 2–4 pieces
 - Digital: approximately 2–4 projects
-- Campaigns: approximately 3–5 selected examples
+
+Campaigns has no curated portfolio content — it is demonstrated through the billboard reveal mechanism (Phase 1E), not through selected examples.
 
 Asset quality and relevance are more important than quantity.
 

@@ -144,7 +144,7 @@ APPLICATION
 │   ├── Atmosphere
 │   ├── Film Object
 │   ├── Digital Monitor
-│   ├── Campaign Displays
+│   ├── Billboard Reveal (Exterior + Render Target)
 │   ├── Typography
 │   └── Timeline Controller
 │
@@ -188,7 +188,7 @@ A conceptual scene hierarchy should resemble:
 ```text
 SCENE
 │
-├── Environment
+├── Environment (Interior Room)
 │   ├── Architecture
 │   ├── Floor
 │   ├── Walls
@@ -213,15 +213,14 @@ SCENE
 ├── Digital
 │   └── Physical Monitor
 │
-├── Campaigns
-│   ├── Large Displays
-│   ├── Billboard Surfaces
-│   └── Campaign Media
+├── Campaigns (Billboard Reveal)
+│   ├── Exterior Environment (street / plaza context)
+│   └── Billboard Surface (renders the live Interior Environment via render-to-texture)
 │
 └── Typography / Spatial UI
 ```
 
-This is a **logical organization**, not a requirement that every item become a separate React component or scene graph node.
+This is a **logical organization**, not a requirement that every item become a separate React component or scene graph node. Note that Campaigns does not introduce new interior content — the Interior Room defined above is the same scene graph rendered onto the Billboard Surface; see "Billboard reveal (render-to-texture)" below.
 
 ### Persistent architecture
 The architectural environment should remain present through the entire cinematic journey. The same floor, structural forms, light source, atmospheric space, material language, and spatial scale should connect the acts.
@@ -241,6 +240,20 @@ An object should not simply appear because a scroll threshold was crossed. Its r
 The camera system should support continuous control of position, rotation, field of view, target/look direction, depth of field where appropriate, and near/far clipping planes where necessary.
 
 Camera movement should be deterministic and reversible. The implementation must allow the visitor to scroll forward to progress the timeline and scroll backward to reverse it, without entering invalid intermediate states.
+
+### Billboard reveal (render-to-texture)
+
+The Campaigns reveal requires the Interior Room to remain visible, live, and unmodified while the camera pulls back into an Exterior Environment and that same Interior Room becomes visible on a Billboard Surface. This must be implemented as a render-to-texture (or equivalent render-target) technique: the Interior Room is rendered to a texture every frame, and that texture is applied as the material on the Billboard Surface geometry within the Exterior Environment.
+
+**Requirements:**
+
+- The Interior Room render target must update continuously and in real time — it must never be replaced by a static screenshot, baked image, or pre-rendered video once the pull-back begins.
+- The primary camera and the Interior Room's own render remain two logically separate cameras: the visitor's camera moves through the Exterior Environment, while an internal camera renders the Interior Room to the texture. Both must derive their state from the same master cinematic timeline (§7) so they never desynchronize.
+- The boundary crossing — camera passing through the Billboard Surface, in either direction — must be a single continuous camera movement. Do not implement this as two separate scenes with a cut, fade, or load boundary between them.
+- Act 4's dive-back-in re-enters the same Interior Room scene graph that was being rendered to the billboard texture, not a duplicate or newly instantiated copy. The visitor is returning to the same environment, not a rebuilt one.
+- This technique is a genuine GPU cost (effectively rendering the scene twice per frame during the reveal and return). See §15 for adaptive quality handling specific to the render target.
+
+This is the highest-risk single mechanism in the project and should be prototyped and proven early — see `build-workflow.md` for the corresponding foundation phase.
 
 ### Scene state
 The cinematic sequence should use a normalized progress value:
@@ -380,7 +393,7 @@ Camera Controller     → camera position / rotation / FOV
 Lighting Controller    → light position / intensity / color
 Film Controller        → camera object state / media
 Digital Controller     → monitor state / screen content
-Campaign Controller    → display state / campaign media
+Campaign Controller    → billboard pull-back / render-target coordination / exterior environment state
 Atmosphere Controller  → particles / fog
 ```
 
@@ -576,8 +589,8 @@ Digital work should be presented primarily through the physical monitor. The mon
 
 The monitor should remain a physical 3D object. Screen content should not cause the monitor to behave like a conventional embedded website.
 
-### Campaign media
-Campaign content may be displayed across large architectural screens, billboard surfaces, or projected surfaces. Campaign media should support the scale of the Campaigns act without creating unnecessary GPU, CPU, memory, or network load.
+### Campaigns
+Campaigns has no curated media of its own to load or play back. The Campaigns act is produced entirely by the billboard reveal mechanism — see §5, "Billboard reveal (render-to-texture)" — rather than by displaying additional portfolio assets.
 
 ### Media playback
 Media playback should be controlled by cinematic state rather than arbitrary DOM visibility.
@@ -650,7 +663,7 @@ Assets should be divided into priority levels.
 
 **Near-term** (required shortly after the opening): cinema camera, Film media, monitor, Digital media.
 
-**Deferred** (required later in the experience): campaign displays, campaign media, secondary environmental details, lower-priority effects.
+**Deferred** (required later in the experience): exterior environment geometry and materials, the billboard render-target setup, secondary environmental details, lower-priority effects.
 
 ### Progressive loading
 
@@ -725,10 +738,10 @@ LEVEL 5  Essential cinematic fallback
 The goal is to preserve the story at every level.
 
 ### Features that may be reduced
-Particle count, volumetric resolution, shadow resolution, reflection quality, texture resolution, geometry complexity, post-processing, depth-of-field quality, secondary lights, atmospheric effects, screen effects.
+Particle count, volumetric resolution, shadow resolution, reflection quality, texture resolution, geometry complexity, post-processing, depth-of-field quality, secondary lights, atmospheric effects, screen effects, and the resolution or update rate of the billboard render target (§5/§6).
 
 ### Features that should be protected
-Core camera movement, major object visibility, narrative progression, lighting continuity, the Film → Digital transition, the Campaign reveal, the final MGRT identity, and basic typography hierarchy.
+Core camera movement, major object visibility, narrative progression, lighting continuity, the Film → Digital transition, the Campaign reveal itself (the billboard reveal must occur, live and continuous, even if the render target's resolution is reduced), the final MGRT identity, and basic typography hierarchy.
 
 ### Adaptive quality should be measured
 Quality changes should be based on meaningful performance signals rather than arbitrary device labels whenever practical — sustained frame-rate degradation, rendering time, GPU pressure indicators where available, device capability, viewport size, or memory constraints.
@@ -941,7 +954,7 @@ The technical architecture is considered successfully implemented when:
 - Scroll deterministically controls the cinematic timeline.
 - Forward and reverse scrolling remain stable.
 - Film → Digital contains no visible lighting, exposure, fog, or scene snap.
-- Campaigns expands the existing world rather than replacing it.
+- Campaigns reveals the preceding world as a live billboard, with no cut or freeze in the render, and Act 4 dives back into that same environment.
 - Act 4 returns to the original environment.
 - The final MGRT identity appears in a valid stable state.
 - The cinematic sequence can transition into the practical website.

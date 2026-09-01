@@ -212,15 +212,15 @@ Selected examples of MGRT's digital work may be integrated naturally into the mo
 
 ### Act 3 — Campaigns
 
-Campaigns represent **amplifying ideas and bringing them into the world**. The environment expands to reveal larger screens or billboard-like surfaces carrying selected campaign work.
+Campaigns represent **amplifying ideas and bringing them into the world** — but this is proven structurally, not shown as a gallery of past work. The camera pulls back from the monitor, and the entire preceding world — Room, Film, Digital — is revealed to have been displayed on a physical billboard, seen from a larger exterior environment.
 
 **Services:** advertising, commercial production, creative direction, campaign strategy.
 
-Campaign work may demonstrate advertising, commercial production, photography, digital, social, and brand communication together — how multiple creative disciplines can contribute to one larger idea. Campaigns should feel like the largest spatial expression of the MGRT world, without becoming visually excessive.
+There is no curated campaign portfolio to browse. The reveal itself demonstrates how Film and Digital combine into one integrated campaign — the visitor's own journey through the experience turns out to have been the proof. Campaigns should feel like the largest spatial expression of the MGRT world, without becoming visually excessive.
 
 ### Act 4 — Return
 
-The Campaign environment recedes. The visitor returns to the original architectural space — same visual language, same primary light source as the opening — for a sense of narrative closure. The environment should now feel more understandable and visible than it did at the beginning.
+The visitor returns to the original architectural space by diving back through the billboard surface they just discovered — the same continuous camera movement in reverse, not a cut to a new scene. The same visual language and primary light source as the opening return, for a sense of narrative closure. The environment now carries a second meaning it didn't have at the start: the visitor understands they were standing inside MGRT's own campaign the whole time.
 
 The final identity appears: **MGRT MEDIA**
 Optional supporting line: **FILM · DIGITAL · CAMPAIGNS**
@@ -241,10 +241,10 @@ Every major 3D asset must justify its narrative presence — no decorative objec
 | Cinema camera | Film, capture, visual storytelling |
 | Film frame | The captured moment becoming a story |
 | Monitor / digital display | Digital creation, interaction, experience |
-| Billboard / commercial screen | Campaigns, communication, amplification |
+| The room itself, revealed as a billboard | Campaigns, communication, amplification — MGRT's own world shown to be the campaign |
 | Original architectural space | The world of MGRT itself |
 
-Objects should feel physically connected to one another — camera, monitor, screens, architecture, lighting, and atmosphere all belong to the same visual world.
+Objects should feel physically connected to one another — camera, monitor, architecture, lighting, and atmosphere all belong to the same visual world, and that world is itself the campaign object in Act 3.
 
 ---
 
@@ -330,7 +330,8 @@ Portfolio work exists to demonstrate MGRT's capabilities while supporting the ci
 |---|---:|
 | Film | 2–4 pieces |
 | Digital | 2–4 projects |
-| Campaigns | 3–5 campaign examples |
+
+Campaigns has no curated selection of its own — the campaign concept is proven structurally through the Act 3 reveal (the preceding world shown to be a billboard), not through browsable examples of past work.
 
 These are creative guidelines rather than fixed production requirements. Not every selected project needs to be visible simultaneously.
 
