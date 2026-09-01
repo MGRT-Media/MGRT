@@ -186,7 +186,26 @@ Proceed with Cinema Camera Mesh Integration and Portfolio Media & Screen Content
 Scrolled to 100% (video plays, screen ignites) and back to 0% (video pauses/resets, screen returns to dormant) — reproduces exactly. No console errors. Production build succeeds (73 modules). `grep` for `useState`/`setState` in `src/` — clean.
 
 ### Required next step
-Build the Cinema Camera mesh (`src/experience/film/CinemaCamera.jsx`) so `film-01-hero.mp4` has an anchor to wire into, then extend `cameraPath.js` with Film keyframes.
+*Superseded — see §4AE.* Build the Cinema Camera mesh so `film-01-hero.mp4` has an anchor to wire into.
+
+---
+
+## 4AE. Feature — Cinema Camera Mesh (Phase 2 / Film)
+
+**Status:** IN PROGRESS (mesh placed; camera-path/ignite integration pending)
+
+### What changed
+- New `src/experience/film/CinemaCamera.jsx` — a tripod-mounted physical cinema-camera object (body, lens barrel, front glass, viewfinder, three-leg tripod), matching the declarative-component pattern of `Monitor.jsx`/`Environment.jsx`. Materials are dark, moderately metallic (`metalness: 0.4-0.6`) — a distinct family from the monitor's matte casing (`metalness: 0.12`), per `experience-design.md` §7's physical-object treatment.
+- Positioned at `[-2.1, 0, 2.4]` — between the entrance pillars (`z: 4`) and the monitor's pillar arc (centered `z: -4`), off to the left (`x < 0`) of the monitor's own approach line (`x: 0.6`) so it doesn't block the Phase 1D monitor-aligned shot. Yawed -55° so the lens generally faces back toward the breach's light source, per §7's "the light should naturally reveal the camera."
+- Exports `CAMERA_ANCHOR` (position, lens-front world position, forward vector) — the same role `MONITOR_ANCHOR` plays for the Digital handshake, for the follow-up camera-path keyframes to derive their framing from rather than hand-picked numbers.
+- The lens has a screen behind its front glass, wired to `film-01-hero.mp4` via the same `screenVideoMaterial.js` used for the monitor — currently fixed dormant (`uIgnite` never driven toward 1 yet), since there's no lock/proximity event for this object until the camera path actually approaches it.
+- Mounted in `CinematicExperience.jsx` alongside `Environment`/`Monitor`.
+
+### Verification
+Screenshot at scroll 0% — reads as a recognizable tripod-camera silhouette in the opening reveal, per §7's discovery beat. Full scroll to 100% and back to 0% reproduces exactly (monitor/digital video behavior unaffected). No console errors. Production build succeeds (74 modules). `grep` for `useState`/`setState` — clean. The object isn't yet seen up close during scroll, since `cameraPath.js` is still a single straight line to the monitor with no Film approach segment — expected, addressed by the required next step below.
+
+### Required next step
+Extend `cameraPath.js` with Film discovery/approach/lens-alignment keyframes derived from `CAMERA_ANCHOR`, converting `LOOK_AT` from a fixed constant to a progress-interpolated value, and wire an `onCameraLock`-style event for the lens screen's ignite trigger.
 
 ---
 
