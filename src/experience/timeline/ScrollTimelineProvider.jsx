@@ -16,6 +16,8 @@ import {
   INTRO_ZONE_END_T,
   INTRO_MAX_RATE_PER_SECOND,
   INTRO_INTENT_DECAY_MS,
+  LOCK_CATCH_DURATION_SECONDS,
+  LOCK_CATCH_EASE,
 } from './filmActBeats.js'
 
 gsap.registerPlugin(ScrollTrigger)
@@ -51,14 +53,16 @@ const SCROLL_LENGTH_MULTIPLIER = 3
  * timeline: a `gsap.timeline({ scrollTrigger: { scrub, ... } })` whose
  * ScrollTrigger drives `scrollProgress.value` from 0 to 1 across the
  * spacer's height. Raw wheel/touch input is first normalized into smooth,
- * inertial motion by Lenis (`smoothScroll.js`); `scrub: 1` then adds a
- * further second of its own catch-up smoothing on top, so individual
- * wheel notches/trackpad steps absorb into one continuous, fluid motion
- * rather than each nudging the timeline forward in a visible little step.
- * Lowered from 1.5 back to 1 alongside `cameraPath.js`'s asymmetric ease —
- * with the path itself now fully responsive (linear) through progress
- * 0.85, the extra half-second of scrub lag was adding a dead zone on top
- * of an already-fixed ease-in problem rather than softening anything.
+ * inertial motion by Lenis (`smoothScroll.js`); `scrub` then adds its own
+ * catch-up smoothing on top, so individual wheel notches/trackpad steps
+ * absorb into one continuous, fluid motion rather than each nudging the
+ * timeline forward in a visible little step. Was lowered from 1.5 to 1 in
+ * an earlier round (alongside `cameraPath.js`'s asymmetric ease, since
+ * fixed by later rounds), then raised back to 1.5 per a later explicit
+ * follow-up that the overall scroll speed still felt too fast — it only
+ * meaningfully affects the free-scroll segment between the Lens and
+ * Monitor now, since the intro zone bypasses scrub entirely via its own
+ * hard-capped driver (below).
  *
  * `scrollTrigger.snap` (below) is a deliberate, localized supersession of
  * this file's prior "no section-snapping" note, per explicit request for
@@ -117,6 +121,19 @@ const SCROLL_LENGTH_MULTIPLIER = 3
  * fighting this fix is trying to eliminate. Stopping Lenis achieves the
  * same "physical scrolling does not move the camera forward" result with
  * far less risk, given this project's existing architecture.
+ *
+ * Lock-entry "catch" (Snap 2 and 3) — per explicit follow-up report that
+ * the previous instant `scrollProgress.value = <target>` jump on engaging
+ * a lock felt mechanical/jarring. Both `engageLensHold` and
+ * `engageMonitorLock` now tween into the pinned value over
+ * `LOCK_CATCH_DURATION_SECONDS` with `LOCK_CATCH_EASE` (a decelerating
+ * ease) rather than snapping in one frame, and the hold timer itself only
+ * starts once that catch tween completes — so the whole "arrive, then
+ * hold" sequence reads as one continuous deceleration into a rest rather
+ * than a snap followed by a pause. For the Lens hold (which stops Lenis
+ * outright), the tween's `onUpdate` mirrors each intermediate value onto
+ * the real scroll position the same way `introTick` does, so the native
+ * scrollbar eases in step with the camera instead of jumping ahead of it.
  *
  * Intro hard rate cap (`t: 0` through `INTRO_ZONE_END_T`, i.e.
  * `FILM_FOCUS_T`) — a proportional `wheelMultiplier` damper (0.35x) tried
@@ -276,9 +293,15 @@ export function ScrollSpacer() {
     const engageMonitorLock = () => {
       if (monitorLockActive || lensHoldActive) return
       monitorLockActive = true
-      scrollProgress.value = MONITOR_SNAP_T
       setScrollLocked(true)
-      monitorLockTimeoutId = setTimeout(releaseMonitorLock, SCROLL_LOCK_HOLD_MS)
+      gsap.to(scrollProgress, {
+        value: MONITOR_SNAP_T,
+        duration: LOCK_CATCH_DURATION_SECONDS,
+        ease: LOCK_CATCH_EASE,
+        onComplete: () => {
+          monitorLockTimeoutId = setTimeout(releaseMonitorLock, SCROLL_LOCK_HOLD_MS)
+        },
+      })
     }
 
     // --- Snap 2 (Cinema Lens) — strict, bidirectional hard lock ---
@@ -333,23 +356,32 @@ export function ScrollSpacer() {
       introDriveActive = false // the intro rate cap hands off to the hold, not both at once
       clearTimeout(introIntentDecayTimeoutId)
       introIntentDirection = 0
-      scrollProgress.value = FILM_FOCUS_T
 
-      // Pin the real scroll position to exactly FILM_FOCUS_T's pixel —
-      // not wherever a fast scroll happened to overshoot to — so the
-      // native scrollbar matches what the visitor sees. force: true since
-      // this can fire while Lenis is already stopped (the intro rate cap
-      // handing off directly into this hold) as well as while it's still
-      // running (arriving via ordinary scroll) — Lenis's own scrollTo is
-      // a no-op while stopped otherwise.
-      const targetScroll = trigger.start + (trigger.end - trigger.start) * FILM_FOCUS_T
-      smoothScroll.lenis.scrollTo(targetScroll, { immediate: true, force: true })
+      // Stop Lenis before the catch tween starts, not after — no further
+      // wheel/touch input should move the page even during the ease-in.
       syncScrollSuspension()
       window.addEventListener('wheel', onLensHoldWheel, { capture: true, passive: false })
       window.addEventListener('touchmove', onLensHoldWheel, { capture: true, passive: false })
-
       setScrollLocked(true)
-      lensHoldTimeoutId = setTimeout(releaseLensHold, SCROLL_LOCK_HOLD_MS)
+
+      const scrollRange = trigger.end - trigger.start
+      gsap.to(scrollProgress, {
+        value: FILM_FOCUS_T,
+        duration: LOCK_CATCH_DURATION_SECONDS,
+        ease: LOCK_CATCH_EASE,
+        onUpdate: () => {
+          // Mirror each intermediate value onto the real scroll position
+          // so the native scrollbar eases in step with the camera instead
+          // of jumping ahead of it. force: true since Lenis is already
+          // stopped by this point — its own scrollTo is a no-op while
+          // stopped otherwise.
+          const targetScroll = trigger.start + scrollRange * scrollProgress.value
+          smoothScroll.lenis.scrollTo(targetScroll, { immediate: true, force: true })
+        },
+        onComplete: () => {
+          lensHoldTimeoutId = setTimeout(releaseLensHold, SCROLL_LOCK_HOLD_MS)
+        },
+      })
     }
 
     const timeline = gsap.timeline({
@@ -358,7 +390,12 @@ export function ScrollSpacer() {
         scroller: window,
         start: 'top top',
         end: 'bottom bottom',
-        scrub: 1,
+        // Raised from 1 per explicit follow-up ("scroll speed... still
+        // too fast") — only meaningfully affects the free-scroll segment
+        // between the Lens and Monitor (the intro zone bypasses scrub
+        // entirely via its own hard-capped driver above), giving that
+        // pull-back-and-pan a touch more of its own catch-up lag/weight.
+        scrub: 1.5,
         snap: {
           snapTo,
           duration: { min: 0.2, max: 0.5 },
@@ -428,6 +465,7 @@ export function ScrollSpacer() {
       if (monitorLockTimeoutId) clearTimeout(monitorLockTimeoutId)
       if (lensHoldTimeoutId) clearTimeout(lensHoldTimeoutId)
       if (introIntentDecayTimeoutId) clearTimeout(introIntentDecayTimeoutId)
+      gsap.killTweensOf(scrollProgress)
       gsap.ticker.remove(introTick)
       window.removeEventListener('wheel', onLensHoldWheel, { capture: true })
       window.removeEventListener('touchmove', onLensHoldWheel, { capture: true })

@@ -74,6 +74,22 @@ export const SCROLL_LOCK_OVERRIDE_DRIFT = 0.05
  * time" / no-auto-scroll rule.
  */
 export const INTRO_ZONE_END_T = FILM_FOCUS_T
-export const INTRO_MIN_TRAVERSAL_SECONDS = 2.5
+// Raised from 2.5s per explicit follow-up ("slow down even further") —
+// still a hard ceiling, not a statistical average; see the module doc
+// comment above.
+export const INTRO_MIN_TRAVERSAL_SECONDS = 4.5
 export const INTRO_MAX_RATE_PER_SECOND = INTRO_ZONE_END_T / INTRO_MIN_TRAVERSAL_SECONDS
 export const INTRO_INTENT_DECAY_MS = 150
+
+/**
+ * Snap 2/3 lock-entry "catch" — per explicit request to eliminate the
+ * mechanical/jarring feel of the previous instant `scrollProgress.value =
+ * <target>` jump on engaging a lock. `ScrollTimelineProvider.jsx` now
+ * tweens into the pinned value over this duration with this ease, instead
+ * of snapping to it in one frame — the hold timer itself only starts once
+ * this catch tween completes, so the total "arrive, then hold" sequence
+ * reads as one continuous deceleration rather than a snap followed by a
+ * pause.
+ */
+export const LOCK_CATCH_DURATION_SECONDS = 0.6
+export const LOCK_CATCH_EASE = 'power3.out'
