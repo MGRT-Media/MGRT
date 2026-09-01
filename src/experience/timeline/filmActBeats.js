@@ -55,18 +55,25 @@ export const SCROLL_LOCK_HOLD_MS = 1750
 export const SCROLL_LOCK_OVERRIDE_DRIFT = 0.05
 
 /**
- * Entry-speed dampening for the intro (Entrance -> Establish -> Approach,
- * `t: 0` through `FILM_FOCUS_T`) — per explicit request that a hard flick
- * shouldn't be able to blow through those beats before the Snap 2 pin
- * even engages. Read by `ScrollTimelineProvider.jsx`, which multiplies
- * Lenis's own `wheelMultiplier`/`touchMultiplier` by these values while
- * scroll progress is inside the zone (both live-read per event by Lenis,
- * not cached at construction — confirmed against the installed version,
- * so mutating them at runtime is safe) and restores them to `1` outside
- * it, so the rest of the site's scroll feel is untouched. Skipped
- * entirely under `prefers-reduced-motion` — added friction is the
- * opposite of what that setting asks for.
+ * Intro (Entrance -> Establish -> Approach, `t: 0` through `FILM_FOCUS_T`)
+ * hard rate cap. Superseded a proportional `wheelMultiplier` damper
+ * (0.35x) that turned out not to be strict enough — per direct follow-up
+ * report, a hard or repeated flick could still cover the whole zone in a
+ * handful of events, since a *multiplier* still scales with arbitrarily
+ * large input. This is a genuine ceiling instead: read by
+ * `ScrollTimelineProvider.jsx`, which fully intercepts scroll input for
+ * the zone and drives `scrollProgress.value` itself at a fixed maximum
+ * rate, so no amount of scrolling — hard, soft, repeated, or held down —
+ * can move faster than this. `INTRO_ZONE_END_T / INTRO_MAX_RATE_PER_SECOND`
+ * is therefore a guaranteed minimum traversal time, not just a
+ * statistical slowdown. Still 100% input-driven, not auto-play: the
+ * driver only advances while the visitor is actively scrolling (a short
+ * decay window, `INTRO_INTENT_DECAY_MS`, treats a pause as "stopped");
+ * releasing the wheel/trackpad stops it immediately, same as everywhere
+ * else in the experience, per experience-design.md §3's "Scroll controls
+ * time" / no-auto-scroll rule.
  */
-export const INTRO_DAMPEN_END_T = FILM_FOCUS_T
-export const INTRO_WHEEL_MULTIPLIER = 0.35
-export const INTRO_TOUCH_MULTIPLIER = 0.35
+export const INTRO_ZONE_END_T = FILM_FOCUS_T
+export const INTRO_MIN_TRAVERSAL_SECONDS = 2.5
+export const INTRO_MAX_RATE_PER_SECOND = INTRO_ZONE_END_T / INTRO_MIN_TRAVERSAL_SECONDS
+export const INTRO_INTENT_DECAY_MS = 150

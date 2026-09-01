@@ -13,9 +13,9 @@ import {
   MONITOR_SNAP_CAPTURE_RADIUS,
   SCROLL_LOCK_HOLD_MS,
   SCROLL_LOCK_OVERRIDE_DRIFT,
-  INTRO_DAMPEN_END_T,
-  INTRO_WHEEL_MULTIPLIER,
-  INTRO_TOUCH_MULTIPLIER,
+  INTRO_ZONE_END_T,
+  INTRO_MAX_RATE_PER_SECOND,
+  INTRO_INTENT_DECAY_MS,
 } from './filmActBeats.js'
 
 gsap.registerPlugin(ScrollTrigger)
@@ -118,24 +118,34 @@ const SCROLL_LENGTH_MULTIPLIER = 3
  * same "physical scrolling does not move the camera forward" result with
  * far less risk, given this project's existing architecture.
  *
- * Intro entry-speed dampening (`t: 0` through `INTRO_DAMPEN_END_T`, i.e.
- * `FILM_FOCUS_T`) — per explicit request that a hard flick shouldn't be
- * able to blow through the Entrance/Establish/Approach beats before the
- * Snap 2 pin even engages. `onUpdate` (below) live-mutates
- * `smoothScroll.lenis.options.wheelMultiplier`/`touchMultiplier` between
- * `INTRO_WHEEL_MULTIPLIER`/`INTRO_TOUCH_MULTIPLIER` (inside the zone) and
- * `1` (outside it) every tick. This works only because Lenis reads those
- * two options fresh from `this.options` on every wheel/touch event rather
- * than caching them at construction (confirmed against the installed
- * package) — a deliberately input-level fix (less effective scroll
- * distance per physical input), not a value-decoupling one: real scroll
- * position and `scrollProgress.value` stay exactly 1:1 the whole time, in
- * keeping with experience-design.md §3's "Scroll controls time" /
- * "no auto-scroll" rule. An alternative that let the visual keep
- * advancing after the visitor's hand left the wheel was deliberately
- * rejected for that reason. Skipped entirely under
- * `prefers-reduced-motion`, since added scroll friction is the opposite
- * of what that setting requests.
+ * Intro hard rate cap (`t: 0` through `INTRO_ZONE_END_T`, i.e.
+ * `FILM_FOCUS_T`) — a proportional `wheelMultiplier` damper (0.35x) tried
+ * first turned out not to be strict enough: per direct follow-up report,
+ * a hard/repeated flick could still cover the whole zone in a handful of
+ * events, since a multiplier still scales with arbitrarily large input.
+ * This replaces it with a genuine ceiling: while `scrollProgress.value`
+ * is inside the zone, `onIntroWheel`/`onIntroTouchMove` (capture-phase,
+ * always attached) `preventDefault` every wheel/touch event and instead
+ * of letting it reach Lenis, just record which direction the visitor is
+ * pushing (`introIntentDirection`, decaying back to 0 after
+ * `INTRO_INTENT_DECAY_MS` of no input — a pause reads as "stopped", never
+ * as "keep going"). A `gsap.ticker` callback (`introTick`) then advances
+ * `scrollProgress.value` itself at a flat `INTRO_MAX_RATE_PER_SECOND`
+ * toward whichever direction is currently held, and mirrors that onto
+ * the real scroll position via `lenis.scrollTo(..., { immediate: true,
+ * force: true })` so the native scrollbar stays exactly in sync — `force`
+ * is required here because Lenis's own `scrollTo` is a no-op while
+ * stopped otherwise (confirmed against the installed package source).
+ * Lenis itself stays fully stopped for the zone's entire span (see
+ * `syncScrollSuspension`), so no amount of scrolling can move faster than
+ * this cap, guaranteeing `INTRO_ZONE_END_T / INTRO_MAX_RATE_PER_SECOND`
+ * as a real minimum traversal time rather than a statistical slowdown.
+ * Still fully input-driven, not auto-play or filler motion — advancing
+ * only happens while the visitor is actively pushing in a direction, and
+ * stops the instant they stop, per experience-design.md §3's "Scroll
+ * controls time" rule. Skipped entirely under `prefers-reduced-motion`,
+ * since added scroll friction is the opposite of what that setting
+ * requests.
  */
 export function ScrollSpacer() {
   const spacerRef = useRef(null)
@@ -148,14 +158,94 @@ export function ScrollSpacer() {
     // Read once per mount, not per tick — prefers-reduced-motion doesn't
     // change while the page is open.
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    let introDampenActive = false
 
-    const setIntroDampening = (active) => {
-      if (active === introDampenActive || prefersReducedMotion) return
-      introDampenActive = active
-      smoothScroll.lenis.options.wheelMultiplier = active ? INTRO_WHEEL_MULTIPLIER : 1
-      smoothScroll.lenis.options.touchMultiplier = active ? INTRO_TOUCH_MULTIPLIER : 1
+    // Single source of truth for whether Lenis should be suspended —
+    // both the intro rate-cap and the Snap 2 hard lock need it stopped,
+    // and either can be active independently (e.g. the intro driver is
+    // what CARRIES the visitor into the crossing that engages the lens
+    // hold), so this centralizes the stop()/start() calls rather than
+    // each mechanism calling them directly and risking a redundant or
+    // out-of-order call.
+    let lenisSuspended = false
+    const syncScrollSuspension = () => {
+      const shouldSuspend = introDriveActive || lensHoldActive
+      if (shouldSuspend === lenisSuspended) return
+      lenisSuspended = shouldSuspend
+      if (shouldSuspend) smoothScroll.lenis.stop()
+      else smoothScroll.lenis.start()
     }
+
+    // --- Intro (t: 0 -> INTRO_ZONE_END_T) — hard rate cap ---
+    let introDriveActive = false
+    let introIntentDirection = 0
+    let introIntentDecayTimeoutId = null
+    let touchLastY = null
+
+    const markIntroIntent = (deltaY) => {
+      if (deltaY > 0) introIntentDirection = 1
+      else if (deltaY < 0) introIntentDirection = -1
+      clearTimeout(introIntentDecayTimeoutId)
+      introIntentDecayTimeoutId = setTimeout(() => {
+        introIntentDirection = 0
+      }, INTRO_INTENT_DECAY_MS)
+    }
+
+    const onIntroWheel = (event) => {
+      if (!introDriveActive) return
+      event.preventDefault()
+      markIntroIntent(event.deltaY)
+    }
+    const onIntroTouchStart = (event) => {
+      touchLastY = event.touches[0]?.clientY ?? null
+    }
+    const onIntroTouchMove = (event) => {
+      if (!introDriveActive || touchLastY === null) return
+      event.preventDefault()
+      const currentY = event.touches[0]?.clientY ?? touchLastY
+      // Dragging a finger up the screen is the same gesture as a
+      // positive wheel deltaY (scrolling forward) — match that sign.
+      markIntroIntent(touchLastY - currentY)
+      touchLastY = currentY
+    }
+
+    window.addEventListener('wheel', onIntroWheel, { capture: true, passive: false })
+    window.addEventListener('touchstart', onIntroTouchStart, { capture: true, passive: true })
+    window.addEventListener('touchmove', onIntroTouchMove, { capture: true, passive: false })
+
+    const syncIntroZone = () => {
+      if (prefersReducedMotion) return
+      const inZone = scrollProgress.value < INTRO_ZONE_END_T && !lensHoldActive && !monitorLockActive
+      if (inZone === introDriveActive) return
+      introDriveActive = inZone
+      if (!inZone) {
+        introIntentDirection = 0
+        clearTimeout(introIntentDecayTimeoutId)
+      }
+      syncScrollSuspension()
+    }
+
+    // Advances scrollProgress.value at a flat rate while introDriveActive
+    // and the visitor is actively pushing a direction — see the
+    // module-level doc comment above for the full mechanism.
+    const introTick = (time, deltaMs) => {
+      if (!introDriveActive || introIntentDirection === 0) return
+      // Clamped so a tab coming back from being backgrounded (a huge
+      // single deltaMs) can't produce one giant jump in progress.
+      const deltaSeconds = Math.min(deltaMs, 100) / 1000
+      const step = INTRO_MAX_RATE_PER_SECOND * deltaSeconds * introIntentDirection
+      const next = THREE.MathUtils.clamp(scrollProgress.value + step, 0, INTRO_ZONE_END_T)
+      if (next === scrollProgress.value) return
+      scrollProgress.value = next
+      const trigger = timeline.scrollTrigger
+      if (trigger) {
+        const targetScroll = trigger.start + (trigger.end - trigger.start) * next
+        // force: true — Lenis's own scrollTo is a no-op while stopped
+        // otherwise (confirmed against the installed package source),
+        // and Lenis is deliberately kept stopped for this entire zone.
+        smoothScroll.lenis.scrollTo(targetScroll, { immediate: true, force: true })
+      }
+    }
+    gsap.ticker.add(introTick)
 
     // Pulls the resting scroll position onto whichever snap point (if
     // any) the user stopped within its own capture radius of. Outside
@@ -221,8 +311,8 @@ export function ScrollSpacer() {
       }
       window.removeEventListener('wheel', onLensHoldWheel, { capture: true })
       window.removeEventListener('touchmove', onLensHoldWheel, { capture: true })
-      smoothScroll.lenis.start()
       setScrollLocked(false)
+      syncScrollSuspension()
       // Reset the crossing baseline to exactly the pinned point: the very
       // next tick's real progress will be on one side or the other of
       // FILM_FOCUS_T (wherever the visitor continues scrolling), and
@@ -230,20 +320,31 @@ export function ScrollSpacer() {
       // crossing condition below can fire on that first post-release
       // tick — otherwise release would immediately re-trigger itself.
       lastRawProgress = FILM_FOCUS_T
+      // At exactly FILM_FOCUS_T the visitor is right on the intro zone's
+      // boundary — re-evaluate immediately so scrolling back down into it
+      // re-engages the rate cap on the very next tick rather than waiting
+      // for a stray onUpdate.
+      syncIntroZone()
     }
 
     const engageLensHold = (trigger) => {
       if (lensHoldActive) return
       lensHoldActive = true
+      introDriveActive = false // the intro rate cap hands off to the hold, not both at once
+      clearTimeout(introIntentDecayTimeoutId)
+      introIntentDirection = 0
       scrollProgress.value = FILM_FOCUS_T
 
       // Pin the real scroll position to exactly FILM_FOCUS_T's pixel —
       // not wherever a fast scroll happened to overshoot to — so the
-      // native scrollbar matches what the visitor sees, then stop Lenis
-      // outright so no further wheel/touch input can move the page.
+      // native scrollbar matches what the visitor sees. force: true since
+      // this can fire while Lenis is already stopped (the intro rate cap
+      // handing off directly into this hold) as well as while it's still
+      // running (arriving via ordinary scroll) — Lenis's own scrollTo is
+      // a no-op while stopped otherwise.
       const targetScroll = trigger.start + (trigger.end - trigger.start) * FILM_FOCUS_T
-      smoothScroll.lenis.scrollTo(targetScroll, { immediate: true })
-      smoothScroll.lenis.stop()
+      smoothScroll.lenis.scrollTo(targetScroll, { immediate: true, force: true })
+      syncScrollSuspension()
       window.addEventListener('wheel', onLensHoldWheel, { capture: true, passive: false })
       window.addEventListener('touchmove', onLensHoldWheel, { capture: true, passive: false })
 
@@ -268,8 +369,6 @@ export function ScrollSpacer() {
           },
         },
         onUpdate: (self) => {
-          setIntroDampening(self.progress < INTRO_DAMPEN_END_T)
-
           // Snap 2: checked every tick (not just on scroll-stop) so a
           // fast, continuous scroll still gets caught exactly at
           // FILM_FOCUS_T instead of sailing through it — and checked as
@@ -297,9 +396,16 @@ export function ScrollSpacer() {
             return
           }
 
-          if (!lensHoldActive) {
+          // While the intro driver is active it owns scrollProgress.value
+          // (introTick, above) — the raw self.progress it produces via its
+          // own force-scrollTo calls is expected to already match, but
+          // this fallback must not overwrite a mid-tick driven value with
+          // a stale or reentrant self.progress read.
+          if (!lensHoldActive && !introDriveActive) {
             scrollProgress.value = self.progress
           }
+
+          syncIntroZone()
         },
       },
     })
@@ -321,8 +427,13 @@ export function ScrollSpacer() {
       cancelAnimationFrame(raf)
       if (monitorLockTimeoutId) clearTimeout(monitorLockTimeoutId)
       if (lensHoldTimeoutId) clearTimeout(lensHoldTimeoutId)
+      if (introIntentDecayTimeoutId) clearTimeout(introIntentDecayTimeoutId)
+      gsap.ticker.remove(introTick)
       window.removeEventListener('wheel', onLensHoldWheel, { capture: true })
       window.removeEventListener('touchmove', onLensHoldWheel, { capture: true })
+      window.removeEventListener('wheel', onIntroWheel, { capture: true })
+      window.removeEventListener('touchstart', onIntroTouchStart, { capture: true })
+      window.removeEventListener('touchmove', onIntroTouchMove, { capture: true })
       timeline.scrollTrigger?.kill()
       timeline.kill()
       smoothScroll.dispose()
