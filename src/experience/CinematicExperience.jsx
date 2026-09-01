@@ -1,5 +1,6 @@
 import { Canvas } from '@react-three/fiber'
 import Environment from './Environment.jsx'
+import DigitalPlinth from './digital/DigitalPlinth.jsx'
 import Monitor from './digital/Monitor.jsx'
 import CinemaCamera from './film/CinemaCamera.jsx'
 import { lightingParams } from './lighting/volumetricLighting.js'
@@ -38,6 +39,7 @@ export default function CinematicExperience() {
       <fogExp2 attach="fog" args={[lightingParams.fog.color, lightingParams.fog.density]} />
       <ScrollCameraRig />
       <Environment />
+      <DigitalPlinth />
       <CinemaCamera />
       <Monitor />
     </Canvas>
