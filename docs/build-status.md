@@ -172,6 +172,24 @@ Proceed with Cinema Camera Mesh Integration and Portfolio Media & Screen Content
 
 ---
 
+## 4AD. Feature — Digital Screen Video Wiring (Phase 2 / Digital)
+
+**Status:** IN PROGRESS (Digital media live; Film media pending Cinema Camera mesh)
+
+### What changed
+- Added `public/media/digital/digital-01-website.mp4` and `public/media/film/film-01-hero.mp4` — curated (provisional-quality) clips, ~18MB and ~44MB respectively, placed under a new `public/media/{film,digital}/` convention (`{act}-{index}-{slug}.{ext}`).
+- `src/experience/digital/screenTestPatternMaterial.js` removed; replaced by `src/experience/digital/screenVideoMaterial.js` — same unlit `ShaderMaterial` shape and dormant/ignite blend, now sampling a `THREE.VideoTexture` instead of a procedural pattern.
+- `Monitor.jsx` now creates a muted/loop/playsInline `<video>` element and drives play/pause off the existing `onCameraLock`/`onCameraUnlock` events (§4's original ignite wiring, untouched) — video plays only once the camera locks onto the monitor, pauses and resets on unlock, per `technical-architecture.md` §11's media-playback lifecycle.
+- Film media (`film-01-hero.mp4`) is placed but **not yet wired** — it has no object to attach to until the Cinema Camera mesh (§4AC) exists.
+
+### Verification
+Scrolled to 100% (video plays, screen ignites) and back to 0% (video pauses/resets, screen returns to dormant) — reproduces exactly. No console errors. Production build succeeds (73 modules). `grep` for `useState`/`setState` in `src/` — clean.
+
+### Required next step
+Build the Cinema Camera mesh (`src/experience/film/CinemaCamera.jsx`) so `film-01-hero.mp4` has an anchor to wire into, then extend `cameraPath.js` with Film keyframes.
+
+---
+
 ## 4A. Geometry Refinement — Entrance Pillars (cross-cutting, Phase 1A revision)
 
 **Status:** TECHNICALLY COMPLETE
