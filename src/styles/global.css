@@ -62,3 +62,59 @@ html.lenis,
 html.lenis-smooth {
   scroll-behavior: auto !important;
 }
+
+/*
+ * Force-Stop visual cue (ScrollLockIndicator.jsx) — a minimal ring that
+ * fills over the scroll-lock hold duration. Fixed/pointer-events: none
+ * like .app-shell, since it's a passive cue, never an interaction target.
+ */
+.scroll-lock-indicator {
+  position: fixed;
+  left: 50%;
+  bottom: 48px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  z-index: 10;
+}
+
+.scroll-lock-indicator--visible {
+  opacity: 1;
+}
+
+.scroll-lock-indicator__track {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.16);
+  stroke-width: 2;
+}
+
+.scroll-lock-indicator__sweep {
+  fill: none;
+  /* Matches lightingParams.spot.color's warm tone (volumetricLighting.js) */
+  stroke: rgba(255, 241, 220, 0.85);
+  stroke-width: 2;
+  stroke-linecap: round;
+  transform-origin: 24px 24px;
+  transform: rotate(-90deg);
+  stroke-dashoffset: var(--circumference);
+  animation-name: scroll-lock-sweep;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+@keyframes scroll-lock-sweep {
+  from {
+    stroke-dashoffset: var(--circumference);
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scroll-lock-indicator__sweep {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+}

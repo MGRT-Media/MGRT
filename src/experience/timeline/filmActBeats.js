@@ -32,3 +32,24 @@ export const FILM_IGNITE_RISE = 0.12
 // aligned shot.
 export const MONITOR_SNAP_T = 1
 export const MONITOR_SNAP_CAPTURE_RADIUS = 0.08
+
+/**
+ * Force-Stop / Timed Release — Snap 2 and Snap 3 only, per explicit
+ * request (Snap 1's establish shot stays a soft magnetic snap; nothing
+ * else in the experience is worth the visitor feeling stopped for).
+ * Read by `ScrollTimelineProvider.jsx` (the lock/release logic) and
+ * `ScrollLockIndicator.jsx` (times its visual cue to the same duration).
+ */
+// How long the camera trajectory is force-stopped once it clicks onto
+// Snap 2/3 — within the requested 1.5-2s range.
+export const SCROLL_LOCK_HOLD_MS = 1750
+
+// How far (in normalized 0-1 progress) the LIVE scroll position must
+// drift from the pinned snap point while locked before it counts as a
+// deliberate override attempt and breaks the lock early, per explicit
+// request that "aggressive scrolling... gently breaks the lock." Scroll
+// keeps being tracked underneath the pin the whole time (see
+// ScrollTimelineProvider.jsx) — only the visible camera/video freezes —
+// so a determined scroll accumulates this drift and releases early,
+// while idle or gentle scrolling holds for the full duration.
+export const SCROLL_LOCK_OVERRIDE_DRIFT = 0.05

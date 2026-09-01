@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { createSmoothScroll } from './smoothScroll.js'
+import { setScrollLocked } from './scrollLockEvent.js'
 import {
   ESTABLISH_T,
   ESTABLISH_SNAP_CAPTURE_RADIUS,
@@ -9,6 +10,8 @@ import {
   FILM_SNAP_CAPTURE_RADIUS,
   MONITOR_SNAP_T,
   MONITOR_SNAP_CAPTURE_RADIUS,
+  SCROLL_LOCK_HOLD_MS,
+  SCROLL_LOCK_OVERRIDE_DRIFT,
 } from './filmActBeats.js'
 
 gsap.registerPlugin(ScrollTrigger)
@@ -56,6 +59,25 @@ const SCROLL_LENGTH_MULTIPLIER = 3
  * either scroll direction settles at the same point, and scrolling
  * decisively past one continues normally with no fight — satisfying
  * "release on scroll past this snap point" for free.
+ *
+ * Force-Stop / Timed Release (Snap 2 and 3 only) — landing exactly on
+ * `FILM_FOCUS_T`/`MONITOR_SNAP_T` (the snap tween's `onComplete`) freezes
+ * `scrollProgress.value` in place for `SCROLL_LOCK_HOLD_MS`: every other
+ * consumer in the scene (`ScrollCameraRig.jsx`'s camera sampling AND its
+ * `cameraLockEvent.js` firing, `CinemaCamera.jsx`'s ignite band) reads
+ * `scrollProgress.value`, so pinning that one value here is enough to
+ * visually hard-stop the whole scene without touching any of them.
+ * Crucially, Lenis/GSAP keep tracking the user's actual scroll position
+ * underneath the pin the entire time (`rawProgress`, below) — nothing is
+ * literally blocked. That's what makes the override/safety requirement
+ * (point 4) fall out for free: if the live position drifts more than
+ * `SCROLL_LOCK_OVERRIDE_DRIFT` from the pinned value, that's read as a
+ * deliberate scroll attempt and releases the lock immediately; otherwise
+ * it holds for the full duration and then releases on its own, and
+ * `scrollProgress.value` picks up wherever the (still-moving) live
+ * position already is — no jump to compute, no teleport, and
+ * `ScrollCameraRig.jsx`'s existing damp layer smooths the catch-up either
+ * way.
  */
 export function ScrollSpacer() {
   const spacerRef = useRef(null)
@@ -77,6 +99,31 @@ export function ScrollSpacer() {
       return value
     }
 
+    // Snap points that force-stop the camera (Snap 2/3) vs. Snap 1, which
+    // stays a soft magnetic snap only, per explicit request.
+    const FORCE_STOP_POINTS = [FILM_FOCUS_T, MONITOR_SNAP_T]
+
+    let lockedAtT = null
+    let lockTimeoutId = null
+
+    const releaseLock = () => {
+      if (lockedAtT === null) return
+      lockedAtT = null
+      if (lockTimeoutId) {
+        clearTimeout(lockTimeoutId)
+        lockTimeoutId = null
+      }
+      setScrollLocked(false)
+    }
+
+    const engageLock = (t) => {
+      if (lockedAtT !== null) return // already locked — onComplete firing twice shouldn't restart the timer
+      lockedAtT = t
+      scrollProgress.value = t
+      setScrollLocked(true)
+      lockTimeoutId = setTimeout(releaseLock, SCROLL_LOCK_HOLD_MS)
+    }
+
     const timeline = gsap.timeline({
       scrollTrigger: {
         trigger: spacerRef.current,
@@ -89,9 +136,24 @@ export function ScrollSpacer() {
           duration: { min: 0.2, max: 0.5 },
           ease: 'power2.out',
           delay: 0.05,
+          onComplete: (self) => {
+            if (FORCE_STOP_POINTS.some((t) => Math.abs(self.progress - t) < 0.001)) {
+              engageLock(self.progress)
+            }
+          },
         },
         onUpdate: (self) => {
-          scrollProgress.value = self.progress
+          if (lockedAtT === null) {
+            scrollProgress.value = self.progress
+            return
+          }
+          // Locked: scrollProgress.value stays pinned at lockedAtT (every
+          // scene consumer freezes) while self.progress keeps tracking
+          // the visitor's real scroll underneath, purely to measure drift.
+          if (Math.abs(self.progress - lockedAtT) > SCROLL_LOCK_OVERRIDE_DRIFT) {
+            releaseLock()
+            scrollProgress.value = self.progress
+          }
         },
       },
     })
@@ -111,6 +173,7 @@ export function ScrollSpacer() {
 
     return () => {
       cancelAnimationFrame(raf)
+      if (lockTimeoutId) clearTimeout(lockTimeoutId)
       timeline.scrollTrigger?.kill()
       timeline.kill()
       smoothScroll.dispose()
