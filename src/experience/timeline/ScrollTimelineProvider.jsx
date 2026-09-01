@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import * as THREE from 'three'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { createSmoothScroll } from './smoothScroll.js'
@@ -24,6 +25,17 @@ gsap.registerPlugin(ScrollTrigger)
  * dispatch, per technical-architecture.md §7.
  */
 export const scrollProgress = { value: 0 }
+
+/**
+ * A small "spring" nudge applied while the Snap 2 hard lock (below) is
+ * active and the visitor tries to scroll anyway — read by
+ * `ScrollCameraRig.jsx` to offset the camera very slightly along its own
+ * view axis and decay back to 0, so an attempted scroll produces a
+ * tactile push-and-release instead of nothing at all. Never touches
+ * `scrollProgress.value` itself — purely cosmetic feedback layered on top
+ * of the genuinely frozen camera target.
+ */
+export const scrollLockWobble = { value: 0 }
 
 // Provisional total scroll distance for this phase's camera/scroll proof —
 // not the final act-by-act pacing, which is tuned once Phase 1D/Phase 2
@@ -53,31 +65,42 @@ const SCROLL_LENGTH_MULTIPLIER = 3
  * is NOT full-timeline sectioning — the snap function only pulls the
  * resting scroll position onto one of those three points when the user
  * stops scrolling within its own small capture radius; everywhere else
- * (the entrance glide, the approach into and pull-back out of the lens,
- * the sweep into the Monitor) remains freely continuous. Still fully
- * reversible: all three capture radii are symmetric, so approaching from
- * either scroll direction settles at the same point, and scrolling
- * decisively past one continues normally with no fight — satisfying
- * "release on scroll past this snap point" for free.
+ * remains freely continuous. Still fully reversible: all three capture
+ * radii are symmetric, so approaching from either scroll direction
+ * settles at the same point.
  *
- * Force-Stop / Timed Release (Snap 2 and 3 only) — landing exactly on
- * `FILM_FOCUS_T`/`MONITOR_SNAP_T` (the snap tween's `onComplete`) freezes
- * `scrollProgress.value` in place for `SCROLL_LOCK_HOLD_MS`: every other
- * consumer in the scene (`ScrollCameraRig.jsx`'s camera sampling AND its
- * `cameraLockEvent.js` firing, `CinemaCamera.jsx`'s ignite band) reads
- * `scrollProgress.value`, so pinning that one value here is enough to
- * visually hard-stop the whole scene without touching any of them.
- * Crucially, Lenis/GSAP keep tracking the user's actual scroll position
- * underneath the pin the entire time (`rawProgress`, below) — nothing is
- * literally blocked. That's what makes the override/safety requirement
- * (point 4) fall out for free: if the live position drifts more than
- * `SCROLL_LOCK_OVERRIDE_DRIFT` from the pinned value, that's read as a
- * deliberate scroll attempt and releases the lock immediately; otherwise
- * it holds for the full duration and then releases on its own, and
- * `scrollProgress.value` picks up wherever the (still-moving) live
- * position already is — no jump to compute, no teleport, and
- * `ScrollCameraRig.jsx`'s existing damp layer smooths the catch-up either
- * way.
+ * Snap 3 (Digital Monitor) keeps the softer "freeze scrollProgress.value,
+ * let real scroll keep moving underneath" lock from the previous round —
+ * safe there because `t: 1` is also the page's own native scroll floor,
+ * so nothing can physically scroll past it regardless.
+ *
+ * Snap 2 (Cinema Lens) needed a genuinely strict lock instead: the
+ * previous round's lock only engaged on the snap tween's `onComplete`
+ * (i.e. once the user had already stopped scrolling near it), so a
+ * continuous fast scroll on the visitor's first pass could sail straight
+ * through `FILM_FOCUS_T` without the tween ever settling there, skipping
+ * the hero video entirely. This round adds real threshold-crossing
+ * detection in `onUpdate` (checked every tick, independent of whether
+ * scrolling has stopped) plus a genuine hard block: `smoothScroll.lenis`
+ * is stopped outright (Lenis's own API for suspending scroll input) and a
+ * capture-phase wheel/touchmove listener additionally `preventDefault`s
+ * for the hold's duration, so physical scrolling truly cannot advance
+ * past the lens — not just a value pinned while the page quietly keeps
+ * moving underneath. `hasCompletedLensHold` (a plain closure flag, not
+ * React state) means this only happens once per session, on the
+ * visitor's actual first pass — scrolling back through `FILM_FOCUS_T`
+ * later doesn't re-trigger the hard lock, only the ordinary soft
+ * `snapTo`/`onComplete` magnetic click above still applies.
+ *
+ * A literal second `ScrollTrigger.create({ pin: true })` was considered
+ * and deliberately not used: this page has one continuous scrub timeline
+ * over a single spacer, not a sectioned/pinned layout, and layering
+ * GSAP's DOM-pinning mechanic (which inserts its own spacing and directly
+ * manipulates element position) on top of an already-scrubbing trigger
+ * sharing the same scroller risked exactly the kind of scroll-position
+ * fighting this fix is trying to eliminate. Stopping Lenis achieves the
+ * same "physical scrolling does not move the camera forward" result with
+ * far less risk, given this project's existing architecture.
  */
 export function ScrollSpacer() {
   const spacerRef = useRef(null)
@@ -99,29 +122,75 @@ export function ScrollSpacer() {
       return value
     }
 
-    // Snap points that force-stop the camera (Snap 2/3) vs. Snap 1, which
-    // stays a soft magnetic snap only, per explicit request.
-    const FORCE_STOP_POINTS = [FILM_FOCUS_T, MONITOR_SNAP_T]
+    // --- Snap 3 (Digital Monitor) — soft lock, unchanged from before ---
+    let monitorLockActive = false
+    let monitorLockTimeoutId = null
 
-    let lockedAtT = null
-    let lockTimeoutId = null
-
-    const releaseLock = () => {
-      if (lockedAtT === null) return
-      lockedAtT = null
-      if (lockTimeoutId) {
-        clearTimeout(lockTimeoutId)
-        lockTimeoutId = null
+    const releaseMonitorLock = () => {
+      if (!monitorLockActive) return
+      monitorLockActive = false
+      if (monitorLockTimeoutId) {
+        clearTimeout(monitorLockTimeoutId)
+        monitorLockTimeoutId = null
       }
       setScrollLocked(false)
     }
 
-    const engageLock = (t) => {
-      if (lockedAtT !== null) return // already locked — onComplete firing twice shouldn't restart the timer
-      lockedAtT = t
-      scrollProgress.value = t
+    const engageMonitorLock = () => {
+      if (monitorLockActive || lensHoldActive) return
+      monitorLockActive = true
+      scrollProgress.value = MONITOR_SNAP_T
       setScrollLocked(true)
-      lockTimeoutId = setTimeout(releaseLock, SCROLL_LOCK_HOLD_MS)
+      monitorLockTimeoutId = setTimeout(releaseMonitorLock, SCROLL_LOCK_HOLD_MS)
+    }
+
+    // --- Snap 2 (Cinema Lens) — strict hard lock ---
+    let hasCompletedLensHold = false
+    let lensHoldActive = false
+    let lensHoldTimeoutId = null
+
+    const onLensHoldWheel = (event) => {
+      event.preventDefault()
+      const WOBBLE_MAX = 0.015
+      const WOBBLE_GAIN = WOBBLE_MAX / 300
+      scrollLockWobble.value = THREE.MathUtils.clamp(
+        scrollLockWobble.value + event.deltaY * WOBBLE_GAIN,
+        -WOBBLE_MAX,
+        WOBBLE_MAX,
+      )
+    }
+
+    const releaseLensHold = () => {
+      if (!lensHoldActive) return
+      lensHoldActive = false
+      hasCompletedLensHold = true
+      if (lensHoldTimeoutId) {
+        clearTimeout(lensHoldTimeoutId)
+        lensHoldTimeoutId = null
+      }
+      window.removeEventListener('wheel', onLensHoldWheel, { capture: true })
+      window.removeEventListener('touchmove', onLensHoldWheel, { capture: true })
+      smoothScroll.lenis.start()
+      setScrollLocked(false)
+    }
+
+    const engageLensHold = (trigger) => {
+      if (lensHoldActive || hasCompletedLensHold) return
+      lensHoldActive = true
+      scrollProgress.value = FILM_FOCUS_T
+
+      // Pin the real scroll position to exactly FILM_FOCUS_T's pixel —
+      // not wherever a fast scroll happened to overshoot to — so the
+      // native scrollbar matches what the visitor sees, then stop Lenis
+      // outright so no further wheel/touch input can move the page.
+      const targetScroll = trigger.start + (trigger.end - trigger.start) * FILM_FOCUS_T
+      smoothScroll.lenis.scrollTo(targetScroll, { immediate: true })
+      smoothScroll.lenis.stop()
+      window.addEventListener('wheel', onLensHoldWheel, { capture: true, passive: false })
+      window.addEventListener('touchmove', onLensHoldWheel, { capture: true, passive: false })
+
+      setScrollLocked(true)
+      lensHoldTimeoutId = setTimeout(releaseLensHold, SCROLL_LOCK_HOLD_MS)
     }
 
     const timeline = gsap.timeline({
@@ -137,21 +206,29 @@ export function ScrollSpacer() {
           ease: 'power2.out',
           delay: 0.05,
           onComplete: (self) => {
-            if (FORCE_STOP_POINTS.some((t) => Math.abs(self.progress - t) < 0.001)) {
-              engageLock(self.progress)
-            }
+            if (Math.abs(self.progress - MONITOR_SNAP_T) < 0.001) engageMonitorLock()
           },
         },
         onUpdate: (self) => {
-          if (lockedAtT === null) {
-            scrollProgress.value = self.progress
+          // Snap 2: checked every tick (not just on scroll-stop) so a
+          // fast, continuous scroll on the first pass still gets caught
+          // exactly at FILM_FOCUS_T instead of sailing through it.
+          if (!hasCompletedLensHold && !lensHoldActive && self.progress >= FILM_FOCUS_T) {
+            engageLensHold(self)
             return
           }
-          // Locked: scrollProgress.value stays pinned at lockedAtT (every
-          // scene consumer freezes) while self.progress keeps tracking
-          // the visitor's real scroll underneath, purely to measure drift.
-          if (Math.abs(self.progress - lockedAtT) > SCROLL_LOCK_OVERRIDE_DRIFT) {
-            releaseLock()
+
+          if (monitorLockActive) {
+            // Soft lock: scrollProgress.value stays pinned while real
+            // scroll keeps moving underneath, purely to measure drift.
+            if (Math.abs(self.progress - MONITOR_SNAP_T) > SCROLL_LOCK_OVERRIDE_DRIFT) {
+              releaseMonitorLock()
+              scrollProgress.value = self.progress
+            }
+            return
+          }
+
+          if (!lensHoldActive) {
             scrollProgress.value = self.progress
           }
         },
@@ -173,7 +250,10 @@ export function ScrollSpacer() {
 
     return () => {
       cancelAnimationFrame(raf)
-      if (lockTimeoutId) clearTimeout(lockTimeoutId)
+      if (monitorLockTimeoutId) clearTimeout(monitorLockTimeoutId)
+      if (lensHoldTimeoutId) clearTimeout(lensHoldTimeoutId)
+      window.removeEventListener('wheel', onLensHoldWheel, { capture: true })
+      window.removeEventListener('touchmove', onLensHoldWheel, { capture: true })
       timeline.scrollTrigger?.kill()
       timeline.kill()
       smoothScroll.dispose()
