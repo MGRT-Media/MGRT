@@ -89,7 +89,11 @@ export const INTRO_INTENT_DECAY_MS = 150
  * of snapping to it in one frame — the hold timer itself only starts once
  * this catch tween completes, so the total "arrive, then hold" sequence
  * reads as one continuous deceleration rather than a snap followed by a
- * pause.
+ * pause. Duration and ease both increased per a later explicit follow-up
+ * ("apply heavy exponential deceleration... give the camera weight") —
+ * `power4.out` decelerates harder than `power3.out` right at the very
+ * end of the tween, reading as a heavier "settle" rather than a brisk
+ * ease-out.
  */
-export const LOCK_CATCH_DURATION_SECONDS = 0.6
-export const LOCK_CATCH_EASE = 'power3.out'
+export const LOCK_CATCH_DURATION_SECONDS = 0.75
+export const LOCK_CATCH_EASE = 'power4.out'

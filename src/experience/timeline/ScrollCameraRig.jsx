@@ -5,16 +5,15 @@ import { scrollProgress, scrollLockWobble } from './ScrollTimelineProvider.jsx'
 import { sampleCameraPath } from './cameraPath.js'
 import { updateCameraLockState } from './cameraLockEvent.js'
 
-// Position and lookAt are damped at the *same* rate — sharing one lambda
-// keeps both converging in lockstep rather than one settling before the
-// other (which read as a rotational micro-snap at the monitor lock in an
-// earlier round). No roll/up-tilting here anymore: this round's request
-// explicitly removed banking from the camera path (`cameraPath.js` always
-// returns a fixed lookAt now, no rotation shifts to smooth), so the prior
-// round's up-vector-tilt mechanism was removed rather than left as dead
-// code parameterized to zero.
-const POSITION_DAMP_LAMBDA = 3.5
-const LOOKAT_DAMP_LAMBDA = 3.5
+// Lowered from 3.5 (both were previously equal) per explicit request to
+// give the camera more perceived "weight and inertia" as it settles, and
+// to stop position/rotation from converging in perfect lockstep. Position
+// is intentionally the heavier (slower/lower) of the two, so the camera
+// keeps gliding to its resting spot for a beat after it's already
+// finished turning to face it, rather than both stopping on the same
+// frame.
+const POSITION_DAMP_LAMBDA = 2.6
+const ROTATION_DAMP_LAMBDA = 3.0
 
 // How quickly an attempted-scroll wobble (ScrollTimelineProvider.jsx's
 // Snap 2 hard lock, "Subtle Resistance Fallback") decays back toward 0
@@ -22,21 +21,51 @@ const LOOKAT_DAMP_LAMBDA = 3.5
 // instant snap-back.
 const WOBBLE_DECAY_LAMBDA = 6
 
+// Reused across frames rather than allocated fresh each tick — pure
+// scratch space, never read from outside this module.
+const scratchMatrix = new THREE.Matrix4()
+const targetQuaternionScratch = new THREE.Quaternion()
+const lookAtScratch = new THREE.Vector3()
+const forwardScratch = new THREE.Vector3()
+
+function computeTargetQuaternion(outQuaternion, eye, lookAtPoint, up) {
+  scratchMatrix.lookAt(eye, lookAtPoint, up)
+  return outQuaternion.setFromRotationMatrix(scratchMatrix)
+}
+
 /**
  * Drives the camera from the scroll-derived target every frame, but never
- * snaps directly to it: `THREE.MathUtils.damp` (frame-rate independent,
- * exponential) eases the actual camera position/lookAt toward the target
- * each frame, so motion glides to rest instead of hard-stopping the
- * instant scroll input stops. Still a direct `camera.position`/`lookAt`
- * mutation inside `useFrame` — never a React state update — per
- * technical-architecture.md §7.
+ * snaps directly to it. Position: `THREE.MathUtils.damp` (frame-rate
+ * independent exponential) per axis, as before. Rotation: no longer a
+ * damped lookAt *point* fed through `camera.lookAt()` every frame — per
+ * explicit request that turning to face the lens "felt robotically
+ * hinged... like a sharp pivot on a rigid axis" rather than a fluid arc.
+ * Damping a 3D point and re-deriving a lookAt matrix from it each frame
+ * doesn't interpolate *rotation* at a constant rate; for a large turn
+ * (e.g. dolly-in while also swinging from the establish framing to the
+ * lens) the apparent angular speed can vary in a way that reads as
+ * hinged rather than swept. Real spherical interpolation needs to happen
+ * in rotation-space, so this now derives a target orientation
+ * (`computeTargetQuaternion`, a look-at matrix converted to a quaternion)
+ * and `Quaternion.slerp`s the camera's actual orientation toward it every
+ * frame — genuine constant-angular-velocity rotation, independent of how
+ * far the lookAt point itself is from the camera. Still a direct
+ * `camera.position`/`camera.quaternion` mutation inside `useFrame` —
+ * never a React state update — per technical-architecture.md §7.
  */
 export default function ScrollCameraRig() {
   // Seeded to the progress-0 keyframe so there's no startup glide-in from
   // an arbitrary default on mount — matches cameraPath.js's START_POSITION
-  // and its now-constant lookAt exactly.
+  // and its initial lookAt exactly.
   const dampedPosition = useRef(new THREE.Vector3(-1.0, 1.6, 8))
-  const dampedLookAt = useRef(new THREE.Vector3(...sampleCameraPath(0).lookAt))
+  const dampedQuaternion = useRef(
+    computeTargetQuaternion(
+      new THREE.Quaternion(),
+      dampedPosition.current,
+      new THREE.Vector3(...sampleCameraPath(0).lookAt),
+      new THREE.Vector3(0, 1, 0),
+    ),
+  )
 
   useFrame(({ camera }, delta) => {
     const { position: targetPosition, lookAt: targetLookAt } = sampleCameraPath(scrollProgress.value)
@@ -46,31 +75,32 @@ export default function ScrollCameraRig() {
     pos.y = THREE.MathUtils.damp(pos.y, targetPosition[1], POSITION_DAMP_LAMBDA, delta)
     pos.z = THREE.MathUtils.damp(pos.z, targetPosition[2], POSITION_DAMP_LAMBDA, delta)
 
-    const look = dampedLookAt.current
-    look.x = THREE.MathUtils.damp(look.x, targetLookAt[0], LOOKAT_DAMP_LAMBDA, delta)
-    look.y = THREE.MathUtils.damp(look.y, targetLookAt[1], LOOKAT_DAMP_LAMBDA, delta)
-    look.z = THREE.MathUtils.damp(look.z, targetLookAt[2], LOOKAT_DAMP_LAMBDA, delta)
+    const targetQuaternion = computeTargetQuaternion(
+      targetQuaternionScratch,
+      pos,
+      lookAtScratch.set(targetLookAt[0], targetLookAt[1], targetLookAt[2]),
+      camera.up,
+    )
+    // Frame-rate-independent slerp factor with the same exponential shape
+    // as THREE.MathUtils.damp, so rotation and position share one
+    // consistent "catch-up" feel despite using different lambdas/math.
+    const rotationAlpha = 1 - Math.exp(-ROTATION_DAMP_LAMBDA * delta)
+    dampedQuaternion.current.slerp(targetQuaternion, rotationAlpha)
+    camera.quaternion.copy(dampedQuaternion.current)
 
     // Resistance wobble: decays toward 0 every frame regardless of
     // whether the lock is still active, so a released lock's residual
     // push finishes springing back rather than freezing mid-wobble.
-    // Applied as a tiny pull along the camera's own view axis (position
-    // <-> lookAt), not by perturbing the sampled path progress — keeps
-    // this purely cosmetic and fully decoupled from the actual lock/
-    // camera-path state.
+    // Applied as a tiny pull backward along the camera's own (now
+    // slerped) current view direction — purely cosmetic, decoupled from
+    // the actual lock/camera-path state.
     scrollLockWobble.value = THREE.MathUtils.damp(scrollLockWobble.value, 0, WOBBLE_DECAY_LAMBDA, delta)
     if (scrollLockWobble.value !== 0) {
-      const viewAxis = pos.clone().sub(look)
-      if (viewAxis.lengthSq() > 0) {
-        viewAxis.normalize().multiplyScalar(scrollLockWobble.value)
-        camera.position.copy(pos).add(viewAxis)
-      } else {
-        camera.position.copy(pos)
-      }
+      const forward = forwardScratch.set(0, 0, -1).applyQuaternion(camera.quaternion)
+      camera.position.copy(pos).addScaledVector(forward, -scrollLockWobble.value)
     } else {
       camera.position.copy(pos)
     }
-    camera.lookAt(look)
 
     // Fires cameraLockEvent.js's onCameraLock/onCameraUnlock listeners on
     // the raw scroll progress (not the damped position) — the "lock" is a

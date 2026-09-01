@@ -7,12 +7,23 @@ import { scrollProgress } from '../timeline/ScrollTimelineProvider.jsx'
 // Dark-to-light ignition ramp — replaces the previous approach-fade
 // mechanism (removed; it thinned the beam near the monitor, the opposite
 // of what this round asks for). The room starts near-total darkness at
-// progress 0 and ramps to full established brightness by progress 0.4,
-// then holds there through the monitor lock — the camera's straight
-// diagonal descent (cameraPath.js) is unaffected, this only ever touches
-// light/opacity values, never position or orientation.
+// progress 0 and ramps to full established brightness, then holds there
+// through the rest of the sequence — this only ever touches light/opacity
+// values, never camera position or orientation.
+//
+// IGNITE_END lowered from 0.4 per explicit follow-up ("light enters the
+// room too late... by the time the camera approaches the monitor, the
+// room should already be filled with light"). 0.4 in *progress* terms was
+// already an early fraction of the full 0-1 timeline, but the Intro's own
+// hard rate cap (filmActBeats.js's INTRO_MAX_RATE_PER_SECOND) means
+// progress itself now advances much more slowly in *wall-clock* time
+// through the early part of the scroll than it used to — so a ramp that
+// completed at progress 0.4 was taking noticeably longer in real seconds
+// to finish than it looks like on paper. 0.25 keeps the same "immediate
+// start, thoroughly lit by the approach" shape while actually completing
+// sooner in practice.
 const IGNITE_START = 0
-const IGNITE_END = 0.4
+const IGNITE_END = 0.25
 
 /**
  * Thin R3F adapter around the framework-agnostic lighting controller.
