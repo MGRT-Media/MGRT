@@ -282,7 +282,25 @@ Scrolled to two different raw stop points on either side of `FILM_FOCUS_T` (with
 Screenshots at the opening (quadrupod visible, no stone plinth), the new Approach stage (medium shot, quadrupod legs clearly readable), and Lens Snap (video filling ~95% of frame, lip framing the border, no visible gap between video and lip — cover-fit UV confirmed working). Snap re-verified at the new zoom level: two different raw scroll-stop points converged to pixel-identical framing. Act 2 arrival and full scroll reversibility unaffected. No console errors. Frame timing: 16.57ms avg, 0 frames >33ms. Mobile viewport (375×812) clean. Production build succeeds. `grep` for `useState`/`setState` — clean.
 
 ### Required next step
-Open to visual-review adjustment (quadrupod leg spread/angle, approach distance/timing, zoom tightness). No further mechanism work required unless requested.
+*Superseded — see §4AJ.* Open to visual-review adjustment.
+
+---
+
+## 4AJ. Feature — Camera Snap #2 (Digital Monitor) + Edge-to-Edge Framing
+
+**Status:** IN PROGRESS (core mechanism working; open to further visual-review adjustment)
+
+### What changed
+- `filmActBeats.js` — added `MONITOR_SNAP_T` (`= 1`, the end of the normalized timeline) and its own capture-radius constant, alongside the existing `FILM_FOCUS_T` lens beat. Naming now reflects two named snap points: Camera Snap #1 (Cinema Lens) and Camera Snap #2 (Digital Monitor), per explicit request.
+- `ScrollTimelineProvider.jsx` — the scroll-snap function (§4AH) now checks both capture radii. Stopping near the end of the timeline now clicks the resting scroll position exactly onto `t: 1` rather than settling wherever native scroll deceleration happened to land (e.g. 0.97) — meaningful even though 1.0 is already the natural scroll limit, since it guarantees the final frame is exactly the intended aligned shot.
+- `cameraPath.js` — the Monitor-aligned shot's view distance is now derived via the same fill-fraction approach as the lens dive (§4AI), using `MONITOR_ANCHOR.screenHeight` instead of the lens radius: fraction 0.92 (vs. the lens's 0.95, leaving a touch more room since the monitor's bezel is a real, deliberately visible frame rather than a thin lip). Replaces the previous fixed `2.1` view distance — the web interface now fills the frame edge-to-edge at Snap #2, per explicit request.
+- Autoplay-on-lock for both snaps required no new code: `Monitor.jsx`'s `onCameraLock`/`onCameraUnlock` (§4AF) and `CinemaCamera.jsx`'s scroll-progress ignite band (§4AF/§4AH) already fire correctly now that scroll genuinely rests at each snap's exact target progress — confirmed rather than reimplemented. Quadrupod stand geometry (§4AI) is unchanged this round; re-verified visually only, per the request's restated requirement 1.
+
+### Verification
+Two different raw scroll-stop points near `t: 1` converge to pixel-identical Monitor framing (web interface filling edge-to-edge, thin bezel border, no cropping). Snap #1 (Cinema Lens) re-confirmed still correct and unaffected. Full scroll to 100% and back to 0% reproduces the opening frame exactly. No console errors. Frame timing: 16.61ms avg, 0 frames >33ms. Mobile viewport (375×812) clean. Production build succeeds. `grep` for `useState`/`setState` — clean.
+
+### Required next step
+Open to visual-review adjustment (snap capture radii, monitor fill fraction/bezel margin). No further mechanism work required unless requested.
 
 ---
 
