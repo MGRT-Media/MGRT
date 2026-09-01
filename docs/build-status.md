@@ -441,7 +441,26 @@ Per explicit follow-up: the lock engagement felt mechanical/jerky, and scroll sp
 A full second of extreme wheel flooding now advances progress by ~0.119 (vs. §4AP's ~0.196), matching the new ~0.10/sec cap. Lens and Monitor catch-tweens confirmed arriving and holding correctly, no console errors. Full reversibility (including a bidirectional lens re-lock along the way). 16.67ms avg frame time, 0 frames >33ms. Mobile viewport clean. Production build succeeds.
 
 ### Required next step
-Real-device touch verification still recommended (carried over from §4AP). Otherwise open to visual-review adjustment (catch duration/ease, traversal duration). No further mechanism work required unless requested.
+*Superseded — see §4AR.* Real-device touch verification still recommended (carried over from §4AP).
+
+---
+
+## 4AR. Feature — Smooth Spline Camera Trajectory
+
+**Status:** IN PROGRESS (mechanism verified working; open to further visual-review adjustment)
+
+### Root cause
+Per explicit request: the position path moved in straight lines with sharp directional turns at each keyframe — "geometric and mechanical" rather than a sweeping cinematic curve. §4AI/§4AQ's `smoothstep`-per-segment easing made *speed* C1-continuous at every keyframe (zero velocity at each boundary), but did nothing for the path's *shape* — direction of travel could still change abruptly at a keyframe, since each segment was still a straight `lerpVectors` line.
+
+### What changed
+- `cameraPath.js` — now builds one `THREE.CatmullRomCurve3` through all five keyframe positions (`curveType: 'centripetal'`, Three.js's own default, specified explicitly — chosen over uniform `'catmullrom'` since it stays well-behaved with unevenly spaced control points like these: Approach and Lens Snap sit close together in space, Establish and Monitor sit much farther out, and a uniform parameterization is prone to overshoot/looping in that situation). `sampleCameraPath` maps each segment's existing smoothstep-eased local progress onto that same segment's equal span of the curve's own parameter, so the spline reaches every waypoint at exactly the same progress value the straight-line version did — only the shape between waypoints changed, not the timing.
+- `lookAt` deliberately left as segment-wise eased lerp, not curved: only three distinct look targets exist across five keyframes (several segments intentionally share one — the whole entrance glide keeps looking at the same point, a pure dolly with no reframe), so there's no meaningfully "kinked" rotation path to smooth the shape of, the way there is for position.
+
+### Verification
+Every keyframe (Entrance, Establish, Approach, Lens Snap, Monitor) still lands in exactly the same framing as before — confirmed via screenshot at each, including the tight lens-lock and edge-to-edge monitor shots, which depend on exact position/lookAt precision (both still land correctly, confirming the curve passes exactly through the intended waypoints). Intermediate frames (mid-approach, mid-pull-back) show smooth curved transitions with no clipping or overshoot artifacts. Full reversibility (bidirectional lens re-lock still correctly re-triggers mid-test). No console errors. 16.55ms avg frame time, 0 frames >33ms. Mobile viewport clean. Production build succeeds.
+
+### Required next step
+Real-device touch verification still recommended (carried over from §4AP). Otherwise open to visual-review adjustment. No further mechanism work required unless requested.
 
 ---
 
