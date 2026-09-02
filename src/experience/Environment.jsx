@@ -3,8 +3,17 @@ import { useMemo } from 'react'
 import VolumetricLightingRig from './lighting/VolumetricLightingRig.jsx'
 import { createStoneWallMaterial, stoneRepeatForSize } from './materials/stoneWallMaterial.js'
 
-const HALL_WIDTH = 14
-const HALL_DEPTH = 32
+// Widened/deepened (14x32 -> 20x38) per explicit request: the previous
+// dimensions left almost no room for a genuine wide establishing orbit
+// outside the pillar ring — §4BD's exterior orbit was already pushed to
+// 6.9, a mere 0.1 from these old ±7 walls. "If the existing room is too
+// small... increase the room dimensions... preserve the existing
+// architectural proportions" — the production ensemble itself
+// (`BEAM_CENTER`/`Monitor.jsx`/`CinemaCamera.jsx`) is untouched, at its
+// same absolute position; only the surrounding architecture grows around
+// it, which is also what gives the pillar ring (below) room to grow too.
+const HALL_WIDTH = 20
+const HALL_DEPTH = 38
 const HALL_HEIGHT = 9
 
 /**
@@ -34,26 +43,23 @@ const SURFACE_TONE = {
  * "use the project's actual positions" principle already applied to the
  * Cinema Camera/Monitor anchors.
  *
- * Radius (6.5 in the previous arc) is reduced to 4.6 here for a reason the
- * old semicircle never had to deal with: a FULL ring needs an exterior
- * orbit path outside it that still fits inside this hall's own walls
- * (`HALL_WIDTH` 14, so ±7 from center) — 6.5 already left almost no
- * margin for the pillars themselves, let alone a camera path around the
- * outside of them. 4.6 leaves the ring itself comfortable clearance from
- * the walls AND leaves real room (`cameraPath.js`'s `ORBIT_RADIUS`, 6.2)
- * for the camera to circle outside it before entering, without brushing
- * the side walls at the orbit's widest points (θ: 90°/270°).
+ * Radius raised again, 4.6 -> 5.5, alongside this round's `HALL_WIDTH`/
+ * `HALL_DEPTH` increase (see those constants' own comment) — the same
+ * "far + low + wide" request that's been the throughline of every recent
+ * camera-path round finally gets real room to work in: with the wider
+ * hall, `cameraPath.js`'s exterior `ORBIT_RADIUS` no longer has to sit a
+ * bare 0.1 from the walls to be "far from the pillars" — see that file's
+ * own comment for the new numbers.
  *
  * 12 pillars at exactly 30° apart (unchanged spacing philosophy from the
  * previous arc's ~26.7°) is also a deliberate number: it happens to place
- * a natural gap almost exactly opposite the Cinema Camera's own real
- * angular position around this ring's center (see `cameraPath.js`'s
- * `ENTRY_GATE_ANGLE` derivation) — the "gate" the entrance path enters
- * through is a genuine gap this arrangement already has, not an invented
- * doorway cut into the ring.
+ * a natural gap close to the Cinema Camera lens's own real optical axis
+ * (see `cameraPath.js`'s gate-angle derivation) — the "gate" the entrance
+ * path enters through is a genuine gap this arrangement already has, not
+ * an invented doorway cut into the ring.
  */
 export const PILLAR_RING_CENTER = [0, -4]
-export const PILLAR_RING_RADIUS = 4.6
+export const PILLAR_RING_RADIUS = 5.5
 export const PILLAR_COUNT = 12
 
 const pillarPositions = Array.from({ length: PILLAR_COUNT }, (_, i) => {

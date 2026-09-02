@@ -17,15 +17,21 @@ export const lightingParams = {
     color: '#fff1dc',
     intensity: 55,
     // Repositioned to coincide with the z: -3 clerestory window
-    // (`Environment.jsx`'s `Window`, right side wall, x: +7) so the beam
-    // visually originates at the window rather than an unmarked point in
-    // space — "key light streams directly through the windows." `target`
-    // is intentionally unchanged: `Monitor.jsx`'s `MONITOR_ANCHOR.position`
-    // and therefore the entire camera path's monitor-aligned endpoint
-    // (`cameraPath.js`) are both derived from this exact point, so moving
-    // it would silently relocate the monitor and the whole scroll
-    // destination — a much bigger change than "reposition the light."
-    position: [6.85, 6.3, -3],
+    // (`Environment.jsx`'s `Window`, right side wall) so the beam visually
+    // originates at the window rather than an unmarked point in space —
+    // "key light streams directly through the windows." X re-derived this
+    // round from the same 0.15-inside-the-wall offset as before
+    // (`HALL_WIDTH / 2 - 0.15`) after `Environment.jsx`'s hall widened
+    // 14 -> 20 (wall moved from x: 7 to x: 10) — without this, the breach
+    // itself would move to the new wall but the light would stay behind at
+    // the OLD wall's position, floating in mid-air instead of shining
+    // through the opening. `target` is intentionally unchanged:
+    // `Monitor.jsx`'s `MONITOR_ANCHOR.position` and therefore the entire
+    // camera path's monitor-aligned endpoint (`cameraPath.js`) are both
+    // derived from this exact point, so moving it would silently relocate
+    // the monitor and the whole scroll destination — a much bigger change
+    // than "reposition the light."
+    position: [9.85, 6.3, -3],
     target: [0.6, 0, -3.5],
     angle: 0.32,
     penumbra: 0.92,

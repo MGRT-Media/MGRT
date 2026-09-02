@@ -3,7 +3,7 @@ import { MONITOR_ANCHOR } from '../digital/Monitor.jsx'
 import { CAMERA_ANCHOR } from '../film/CinemaCamera.jsx'
 import { BEAM_CENTER } from '../digital/plinthAnchor.js'
 import { PILLAR_RING_CENTER, PILLAR_RING_RADIUS } from '../Environment.jsx'
-import { ESTABLISH_T, FILM_FOCUS_T } from './filmActBeats.js'
+import { ESTABLISH_T, FILM_FOCUS_T, INTRO_ALIGN_T } from './filmActBeats.js'
 
 /**
  * Multi-keyframe path, replacing the single straight opening→monitor line
@@ -137,18 +137,16 @@ const [lensFwdX, , lensFwdZ] = CAMERA_ANCHOR.lensForward
 // correct way to find "the gap aligned with the lens."
 const gateCrossing = rayCircleIntersection(lensFrontX, lensFrontZ, lensFwdX, lensFwdZ, PILLAR_RING_RADIUS)
 
-// Pushed out again from §4BC's 6.8, per explicit "much further away...
-// substantial space... this is important." A standalone check confirmed
-// the CatmullRom spline through evenly-spaced points on a true circle
-// tracks the circle almost exactly (no meaningful overshoot beyond the
-// nominal radius), so the only real ceiling is the hall's own ±7 side
-// walls (`HALL_WIDTH` 14, unchanged/untouched — this is a camera-path
-// round only): any half-circle around this ring necessarily passes
-// through one of its two ±X extremes (θ: 90°/270°, where |x| equals this
-// radius exactly, since `PILLAR_RING_CENTER`'s x is 0). 6.9 is very close
-// to that ceiling — a real but narrow 0.1 margin — which is as far as a
-// single concentric circle can go in this room without touching the wall.
-const ORBIT_RADIUS = 6.9
+// Pushed out again from §4BD's 6.9 — this time with real room to do it in:
+// `Environment.jsx`'s hall widened from 14 to 20 this round specifically
+// because 6.9 left almost no margin (0.1) from the old ±7 walls, which is
+// the opposite of "substantial open space between the camera and the
+// nearest pillars." At the new ±10 walls, 9.0 leaves a genuinely
+// comfortable 1.0 margin — nearly the whole width increase went straight
+// into more real distance, not just more margin-of-error. Ring-to-orbit
+// clearance also grew independently, from §4BD's 2.3 to 3.5 (`ORBIT_RADIUS`
+// `9.0` minus the ring's own now-larger `PILLAR_RING_RADIUS`, `5.5`).
+const ORBIT_RADIUS = 9.0
 
 // §4BD fix — the exterior alignment angle: the SAME lens-axis ray crossed
 // at `ORBIT_RADIUS` instead of `PILLAR_RING_RADIUS`. §4BC swept the orbit
@@ -168,17 +166,20 @@ const ORBIT_RADIUS = 6.9
 const orbitAlignCrossing = rayCircleIntersection(lensFrontX, lensFrontZ, lensFwdX, lensFwdZ, ORBIT_RADIUS)
 const ORBIT_ALIGN_ANGLE = angleOnRing(orbitAlignCrossing)
 
-// Lowered again from §4BC (3.0 -> 2.2 start, 1.7 -> 1.0 at the gate) per
-// explicit "lower the camera further... grounded... pillars should feel
-// tall and imposing... do not make it excessively low." 2.2 sits just
-// above human eye height — grounded without reading as a worm's-eye/
-// Dutch-angle shot (no roll is ever applied anywhere in this file). 1.0
-// at the gate continues descending toward, rather than jumping to,
-// `APPROACH_POSITION`'s own real height (~0.94, derived from
-// `CAMERA_ANCHOR.bodyCenterHeight` below) — the smallest remaining step
-// this file has used yet for "no separate final drop."
-const ORBIT_START_Y = 2.2
-const GATE_Y = 1.0
+// Lowered again from §4BD (2.2 -> 1.8 start, 1.0 -> 1.3 at the gate) per
+// explicit "the vertical movement should be almost imperceptible compared
+// with the horizontal circular movement... do not create a large
+// crane-down movement." 1.8 sits right at ordinary human eye height —
+// "looking across the room rather than down into it" is now close to
+// literal: both `ORBIT_ENTRANCE_LOOKAT` (y: 2.0) and
+// `ORBIT_ENSEMBLE_LOOKAT` (y: 1.8, below) sit almost level with this
+// height, rather than notably below a much higher camera as in earlier
+// rounds. The total exterior descent (1.8 -> 1.3, just 0.5) is
+// deliberately smaller than §4BD's (2.2 -> 1.0, 1.2) even though the
+// orbit itself is now much larger — height and horizontal scale are
+// independent knobs, and this round only turns the first one down.
+const ORBIT_START_Y = 1.8
+const GATE_Y = 1.3
 
 const ORBIT_POINT_COUNT = 6
 const HALF_CIRCLE_DEGREES = 180
@@ -245,7 +246,7 @@ const APPROACH_POSITION = new THREE.Vector3(
 // ~3.7 and `APPROACH_DISTANCE`'s 1.0) keeps this a genuine waypoint along
 // the same corridor `GATE_POSITION`/`APPROACH_POSITION`/
 // `LENS_DIVE_POSITION` already sit on, at a height continuing the same
-// gentle descent (1.0 at the gate -> 0.97 here -> `APPROACH_POSITION`'s
+// gentle descent (1.3 at the gate -> 0.97 here -> `APPROACH_POSITION`'s
 // own ~0.94). The `ESTABLISH_T` scroll-snap pause itself
 // (`filmActBeats.js`) is untouched — only where the camera physically is
 // when it fires moved, same principle as the gate/orbit changes above.
@@ -296,18 +297,21 @@ const MONITOR_ALIGNED_POSITION = new THREE.Vector3(
 )
 const MONITOR_ALIGNED_LOOKAT = new THREE.Vector3(screenX, screenY, screenZ)
 
-// Orbit body keyframes span t: 0 -> 0.12 (six points, evenly spaced),
-// leaving 0.12 -> 0.135 for the gate crossing and 0.135 -> ESTABLISH_T for
-// the final settle — unchanged envelope from §4AY/§4BA, only the shape of
-// the points inside it changed. The LAST orbit point already looks at
+// Orbit body keyframes span t: 0 -> INTRO_ALIGN_T (six points, evenly
+// spaced), leaving INTRO_ALIGN_T -> 0.135 for the gate crossing and
+// 0.135 -> ESTABLISH_T for the final settle — unchanged envelope from
+// §4AY/§4BA, only the shape of the points inside it changed.
+// `INTRO_ALIGN_T` (imported from `filmActBeats.js`, not a local constant)
+// is also exactly where `ScrollTimelineProvider.jsx`'s one-shot intro
+// cinematic auto-play lands — the two files share this single value so
+// they can't silently drift apart. The LAST orbit point already looks at
 // `LENS_LOOKAT`, not `ORBIT_ENSEMBLE_LOOKAT` — per explicit "the camera
 // should be correctly aligned before it enters the gap... no second
 // alignment movement," the reframe onto the lens happens over this last
 // (still exterior) orbit segment, so orientation is already settled by
 // the time the gate itself is reached, matching the position alignment.
-const ORBIT_BODY_T_END = 0.12
 const orbitKeyframes = orbitPositions.map((position, i) => ({
-  t: (ORBIT_BODY_T_END * i) / (ORBIT_POINT_COUNT - 1),
+  t: (INTRO_ALIGN_T * i) / (ORBIT_POINT_COUNT - 1),
   position,
   lookAt: i === 0 ? ORBIT_ENTRANCE_LOOKAT : i === ORBIT_POINT_COUNT - 1 ? LENS_LOOKAT : ORBIT_ENSEMBLE_LOOKAT,
 }))

@@ -14,8 +14,9 @@ import {
   MONITOR_SNAP_CAPTURE_RADIUS,
   SCROLL_LOCK_HOLD_MS,
   SCROLL_LOCK_OVERRIDE_DRIFT,
-  INTRO_ZONE_END_T,
-  INTRO_MAX_RATE_PER_SECOND,
+  INTRO_ALIGN_T,
+  INTRO_CINEMATIC_MIN_DURATION_SECONDS,
+  INTRO_CINEMATIC_MAX_DURATION_SECONDS,
   INTRO_INTENT_DECAY_MS,
   LOCK_CATCH_DURATION_SECONDS,
   LOCK_CATCH_EASE,
@@ -35,6 +36,18 @@ gsap.registerPlugin(ScrollTrigger)
  */
 function easeSectionJump(t) {
   return 1 - (1 - t) ** 3
+}
+
+/**
+ * Ease-in-out for the intro cinematic (below) — a genuine "wind up, glide,
+ * settle" shape rather than the sharper ease-out every other tween in this
+ * file uses, per explicit request that this specific move read as "slow,
+ * smooth and deliberate... one continuous opening shot in a premium
+ * commercial" — a cinematic camera move typically doesn't snap into motion
+ * from a dead stop the way a UI transition does.
+ */
+function easeIntroCinematic(t) {
+  return t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2
 }
 
 /**
@@ -147,37 +160,26 @@ const SCROLL_LENGTH_MULTIPLIER = 3
  * hold" sequence reads as one continuous deceleration into a rest rather
  * than a snap followed by a pause. For the Lens hold (which stops Lenis
  * outright), the tween's `onUpdate` mirrors each intermediate value onto
- * the real scroll position the same way `introTick` does, so the native
- * scrollbar eases in step with the camera instead of jumping ahead of it.
+ * the real scroll position the same way `playIntroCinematic` does, so the
+ * native scrollbar eases in step with the camera instead of jumping ahead
+ * of it.
  *
- * Intro hard rate cap (`t: 0` through `INTRO_ZONE_END_T`, i.e.
- * `FILM_FOCUS_T`) — a proportional `wheelMultiplier` damper (0.35x) tried
- * first turned out not to be strict enough: per direct follow-up report,
- * a hard/repeated flick could still cover the whole zone in a handful of
- * events, since a multiplier still scales with arbitrarily large input.
- * This replaces it with a genuine ceiling: while `scrollProgress.value`
- * is inside the zone, `onIntroWheel`/`onIntroTouchMove` (capture-phase,
- * always attached) `preventDefault` every wheel/touch event and instead
- * of letting it reach Lenis, just record which direction the visitor is
- * pushing (`introIntentDirection`, decaying back to 0 after
- * `INTRO_INTENT_DECAY_MS` of no input — a pause reads as "stopped", never
- * as "keep going"). A `gsap.ticker` callback (`introTick`) then advances
- * `scrollProgress.value` itself at a flat `INTRO_MAX_RATE_PER_SECOND`
- * toward whichever direction is currently held, and mirrors that onto
- * the real scroll position via `lenis.scrollTo(..., { immediate: true,
- * force: true })` so the native scrollbar stays exactly in sync — `force`
- * is required here because Lenis's own `scrollTo` is a no-op while
- * stopped otherwise (confirmed against the installed package source).
- * Lenis itself stays fully stopped for the zone's entire span (see
- * `syncScrollSuspension`), so no amount of scrolling can move faster than
- * this cap, guaranteeing `INTRO_ZONE_END_T / INTRO_MAX_RATE_PER_SECOND`
- * as a real minimum traversal time rather than a statistical slowdown.
- * Still fully input-driven, not auto-play or filler motion — advancing
- * only happens while the visitor is actively pushing in a direction, and
- * stops the instant they stop, per experience-design.md §3's "Scroll
- * controls time" rule. Skipped entirely under `prefers-reduced-motion`,
- * since added scroll friction is the opposite of what that setting
- * requests.
+ * Intro cinematic (`t: 0` through `INTRO_ALIGN_T`) — superseded the
+ * previous continuous, input-driven hard-rate-cap mechanism entirely, per
+ * explicit request that the opening no longer be continuously scroll-
+ * driven at all: "ONE SCROLL -> ONE COMPLETE CAMERA MOVE... the scroll
+ * should act as a trigger, not a continuous steering mechanism." The
+ * first wheel/touch event triggers `playIntroCinematic(INTRO_ALIGN_T)` — a
+ * single fixed-duration `smoothScroll.lenis.scrollTo(..., { force: true })`
+ * tween, structurally identical to `navigateToSection`'s own jump
+ * mechanism — and every event during that tween (`introCinematicActive`)
+ * is swallowed outright, including further wheel input, direct nav
+ * clicks, and chapter gestures (see `navigateToSection`'s own guard and
+ * `isChapterTransitionLocked`). Once it completes, `chapterModeActive`
+ * flips true and control hands off to the existing chapter-mode gesture
+ * system for the next scroll — see `playIntroCinematic`'s own doc comment
+ * for the full mechanism, including how reversing past Film replays this
+ * same tween backward rather than resuming any form of continuous scroll.
  */
 export function ScrollSpacer() {
   const spacerRef = useRef(null)
@@ -191,25 +193,25 @@ export function ScrollSpacer() {
     // change while the page is open.
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
-    // Single source of truth for whether Lenis should be suspended —
-    // both the intro rate-cap and the Snap 2 hard lock need it stopped,
-    // and either can be active independently (e.g. the intro driver is
-    // what CARRIES the visitor into the crossing that engages the lens
-    // hold), so this centralizes the stop()/start() calls rather than
-    // each mechanism calling them directly and risking a redundant or
-    // out-of-order call.
+    // Every scroll-position change in this experience now comes from a
+    // controlled, `force: true` tween — the intro cinematic
+    // (`playIntroCinematic`), a chapter-mode jump (`navigateToSection`), or
+    // a lock catch-tween (`engageLensHold`/`engageMonitorLock`) — never
+    // from free/continuous Lenis-driven scroll, per this round's "the
+    // scroll should act as a trigger, not a continuous steering
+    // mechanism." There is therefore no remaining case where Lenis should
+    // run un-suspended: it's stopped once, for the entire mounted
+    // lifetime of this component. `syncScrollSuspension` is kept as a
+    // named function (rather than a bare `.stop()` call inlined at mount)
+    // purely so every existing call site below — `releaseLensHold`,
+    // `engageLensHold`, `cancelActiveDriversAndLocks`, etc. — keeps
+    // working unmodified; each call is just an idempotent no-op after the
+    // first.
     let lenisSuspended = false
     const syncScrollSuspension = () => {
-      // chapterModeActive keeps Lenis suspended for the entire Film-and-
-      // beyond span, per explicit request that scroll input become a
-      // navigation trigger rather than something that moves physical
-      // scroll position — the only scroll motion once in chapter mode
-      // comes from this file's own forced (`force: true`) jumps.
-      const shouldSuspend = introDriveActive || lensHoldActive || chapterModeActive
-      if (shouldSuspend === lenisSuspended) return
-      lenisSuspended = shouldSuspend
-      if (shouldSuspend) smoothScroll.lenis.stop()
-      else smoothScroll.lenis.start()
+      if (lenisSuspended) return
+      lenisSuspended = true
+      smoothScroll.lenis.stop()
     }
 
     // --- Chapter mode (Film and beyond) ---
@@ -238,80 +240,16 @@ export function ScrollSpacer() {
     let isDirectJumpActive = false
     let jumpToken = 0
 
-    // --- Intro (t: 0 -> INTRO_ZONE_END_T) — hard rate cap ---
-    let introDriveActive = false
-    let introIntentDirection = 0
-    let introIntentDecayTimeoutId = null
-    let touchLastY = null
-
-    const markIntroIntent = (deltaY) => {
-      if (deltaY > 0) introIntentDirection = 1
-      else if (deltaY < 0) introIntentDirection = -1
-      clearTimeout(introIntentDecayTimeoutId)
-      introIntentDecayTimeoutId = setTimeout(() => {
-        introIntentDirection = 0
-      }, INTRO_INTENT_DECAY_MS)
-    }
-
-    const onIntroWheel = (event) => {
-      if (!introDriveActive) return
-      event.preventDefault()
-      markIntroIntent(event.deltaY)
-    }
-    const onIntroTouchStart = (event) => {
-      touchLastY = event.touches[0]?.clientY ?? null
-    }
-    const onIntroTouchMove = (event) => {
-      if (!introDriveActive || touchLastY === null) return
-      event.preventDefault()
-      const currentY = event.touches[0]?.clientY ?? touchLastY
-      // Dragging a finger up the screen is the same gesture as a
-      // positive wheel deltaY (scrolling forward) — match that sign.
-      markIntroIntent(touchLastY - currentY)
-      touchLastY = currentY
-    }
-
-    window.addEventListener('wheel', onIntroWheel, { capture: true, passive: false })
-    window.addEventListener('touchstart', onIntroTouchStart, { capture: true, passive: true })
-    window.addEventListener('touchmove', onIntroTouchMove, { capture: true, passive: false })
-
-    const syncIntroZone = () => {
-      // A direct-navigation jump owns scrollProgress.value for its own
-      // duration (below) — letting this re-engage the rate-cap driver
-      // mid-transit would fight the jump's own Lenis tween.
-      if (prefersReducedMotion || isDirectJumpActive) return
-      const inZone = scrollProgress.value < INTRO_ZONE_END_T && !lensHoldActive && !monitorLockActive
-      if (inZone === introDriveActive) return
-      introDriveActive = inZone
-      if (!inZone) {
-        introIntentDirection = 0
-        clearTimeout(introIntentDecayTimeoutId)
-      }
-      syncScrollSuspension()
-    }
-
-    // Advances scrollProgress.value at a flat rate while introDriveActive
-    // and the visitor is actively pushing a direction — see the
-    // module-level doc comment above for the full mechanism.
-    const introTick = (time, deltaMs) => {
-      if (!introDriveActive || introIntentDirection === 0) return
-      // Clamped so a tab coming back from being backgrounded (a huge
-      // single deltaMs) can't produce one giant jump in progress.
-      const deltaSeconds = Math.min(deltaMs, 100) / 1000
-      const step = INTRO_MAX_RATE_PER_SECOND * deltaSeconds * introIntentDirection
-      const next = THREE.MathUtils.clamp(scrollProgress.value + step, 0, INTRO_ZONE_END_T)
-      if (next === scrollProgress.value) return
-      scrollProgress.value = next
-      const trigger = timeline.scrollTrigger
-      if (trigger) {
-        const targetScroll = trigger.start + (trigger.end - trigger.start) * next
-        // force: true — Lenis's own scrollTo is a no-op while stopped
-        // otherwise (confirmed against the installed package source),
-        // and Lenis is deliberately kept stopped for this entire zone.
-        smoothScroll.lenis.scrollTo(targetScroll, { immediate: true, force: true })
-      }
-    }
-    gsap.ticker.add(introTick)
+    // --- Intro cinematic (t: 0 <-> INTRO_ALIGN_T) — one-shot auto-play ---
+    // `introCinematicActive` is set for the tween's full duration and is
+    // this mechanism's own "isTransitioning" guard, mirroring
+    // `isDirectJumpActive`'s role for nav jumps. `introCinematicPlayed`
+    // flips true once the FORWARD play (t: 0 -> INTRO_ALIGN_T) completes —
+    // from then on, further wheel/touch input is chapter-mode's job, not
+    // this trigger's (see `onIntroTriggerWheel` below, defined once
+    // `playIntroCinematic` itself exists further down, after `timeline`).
+    let introCinematicActive = false
+    let introCinematicPlayed = false
 
     // Pulls the resting scroll position onto whichever snap point (if
     // any) the user stopped within its own capture radius of. Outside
@@ -397,27 +335,19 @@ export function ScrollSpacer() {
       // crossing condition below can fire on that first post-release
       // tick — otherwise release would immediately re-trigger itself.
       lastRawProgress = FILM_FOCUS_T
-      // At exactly FILM_FOCUS_T the visitor is right on the intro zone's
-      // boundary — re-evaluate immediately so scrolling back down into it
-      // re-engages the rate cap on the very next tick rather than waiting
-      // for a stray onUpdate.
-      syncIntroZone()
     }
 
     const engageLensHold = (trigger) => {
       if (lensHoldActive) return
       lensHoldActive = true
       // FILM IS THE MODE SWITCH — the instant the camera reaches Film,
-      // whether by continuous intro scroll crossing FILM_FOCUS_T or by a
-      // direct nav-click jump, the experience permanently leaves ACT 0's
-      // continuous scroll and enters chapter mode (see CHAPTER_ORDER and
-      // the gesture handlers below). Reversed only by the chapter-gesture
-      // handler's own backward-exit-from-Film case, or by clicking Intro.
+      // whether via the intro cinematic's own hand-off into chapter mode
+      // or a direct nav-click jump, the experience is in chapter mode (see
+      // CHAPTER_ORDER and the gesture handlers below). Reversed only by
+      // the chapter-gesture handler's own backward-exit-from-Film case
+      // (which replays the intro cinematic), or by clicking Intro.
       currentChapter = 'film'
       chapterModeActive = true
-      introDriveActive = false // the intro rate cap hands off to the hold, not both at once
-      clearTimeout(introIntentDecayTimeoutId)
-      introIntentDirection = 0
 
       // Stop Lenis before the catch tween starts, not after — no further
       // wheel/touch input should move the page even during the ease-in.
@@ -474,7 +404,12 @@ export function ScrollSpacer() {
           // a genuine crossing (FILM_FOCUS_T strictly between the last
           // tick's progress and this one) so it re-engages on every pass
           // through the point, forward or backward, not just the first.
-          if (!lensHoldActive && !isDirectJumpActive) {
+          // `!introCinematicActive` matters specifically for the REVERSE
+          // intro cinematic (Film -> t: 0): that tween's own progress
+          // legitimately crosses back through FILM_FOCUS_T on its way
+          // down, and without this guard that crossing would wrongly
+          // re-engage the lens hold mid-reverse-play.
+          if (!lensHoldActive && !isDirectJumpActive && !introCinematicActive) {
             const crossedForward = lastRawProgress < FILM_FOCUS_T && self.progress >= FILM_FOCUS_T
             const crossedBackward = lastRawProgress > FILM_FOCUS_T && self.progress <= FILM_FOCUS_T
             if (crossedForward || crossedBackward) {
@@ -495,16 +430,9 @@ export function ScrollSpacer() {
             return
           }
 
-          // While the intro driver is active it owns scrollProgress.value
-          // (introTick, above) — the raw self.progress it produces via its
-          // own force-scrollTo calls is expected to already match, but
-          // this fallback must not overwrite a mid-tick driven value with
-          // a stale or reentrant self.progress read.
-          if (!lensHoldActive && !introDriveActive) {
+          if (!lensHoldActive) {
             scrollProgress.value = self.progress
           }
-
-          syncIntroZone()
         },
       },
     })
@@ -526,17 +454,10 @@ export function ScrollSpacer() {
     // Tears down whichever driver/lock is currently active so a jump
     // always starts from a clean slate, reusing each mechanism's own
     // release function rather than duplicating its cleanup (listener
-    // removal, timers, etc). Monitor's lock is soft (never stops Lenis),
-    // so only Lens hold and the intro driver need an explicit
-    // syncScrollSuspension() afterwards.
+    // removal, timers, etc).
     const cancelActiveDriversAndLocks = () => {
       if (lensHoldActive) releaseLensHold()
       if (monitorLockActive) releaseMonitorLock()
-      if (introDriveActive) {
-        introDriveActive = false
-        introIntentDirection = 0
-        clearTimeout(introIntentDecayTimeoutId)
-      }
       scrollLockWobble.value = 0
       gsap.killTweensOf(scrollProgress)
       syncScrollSuspension()
@@ -555,6 +476,10 @@ export function ScrollSpacer() {
     const navigateToSection = (sectionKey) => {
       const targetT = SECTION_TARGETS[sectionKey]
       if (targetT === undefined) return
+      // The intro cinematic (below) is this file's own one-shot, uninterruptible
+      // move — per explicit request, input during it must not "trigger another
+      // section." A nav click landing mid-tween is exactly that case.
+      if (introCinematicActive) return
       const trigger = timeline.scrollTrigger
       if (!trigger) return
 
@@ -579,8 +504,8 @@ export function ScrollSpacer() {
 
       smoothScroll.lenis.scrollTo(targetScroll, {
         // prefers-reduced-motion: jump straight there rather than tweening,
-        // consistent with introTick's own handling of the setting elsewhere
-        // in this file.
+        // consistent with playIntroCinematic's own handling of the setting
+        // elsewhere in this file.
         immediate: prefersReducedMotion,
         duration,
         easing: easeSectionJump,
@@ -603,17 +528,102 @@ export function ScrollSpacer() {
             // 'intro' — also exits chapter mode if the visitor was in it
             // (e.g. clicking the Intro mark while at Film/Digital), so
             // `currentChapter`/scroll-suspension stay synchronized with
-            // where the camera actually landed rather than leaking the
-            // Film/Digital chapter state into what is now the continuous
-            // intro span again.
+            // where the camera actually landed. Note this lands at t: 0
+            // exactly (`SECTION_TARGETS.intro`), past the exterior orbit
+            // this round added — the "one-shot forward play" only exists
+            // to get FROM here TO `INTRO_ALIGN_T`, so landing back at the
+            // literal start correctly requires the intro cinematic to be
+            // played again before chapter mode can resume, hence resetting
+            // `introCinematicPlayed` here too.
             currentChapter = 'intro'
             chapterModeActive = false
+            introCinematicPlayed = false
             syncScrollSuspension()
-            syncIntroZone()
           }
         },
       })
     }
+
+    // --- Intro cinematic playback ---
+    // The actual one-shot mover, structurally parallel to `navigateToSection`
+    // above (same `smoothScroll.lenis.scrollTo(..., { force: true })`
+    // mechanism, so `scrollProgress.value` tracks the real scroll position
+    // through `timeline`'s own `onUpdate` fallback exactly like every other
+    // jump in this file — no second, parallel way of driving progress).
+    // `targetT` is either `INTRO_ALIGN_T` (the forward entrance, called from
+    // `onIntroTriggerWheel`/`onIntroTriggerTouchMove` below) or `0` (the
+    // reverse replay, called from `goToChapterIndex`'s nextIndex < 0 case).
+    const playIntroCinematic = (targetT) => {
+      if (introCinematicActive) return
+      const trigger = timeline.scrollTrigger
+      if (!trigger) return
+      introCinematicActive = true
+      gsap.killTweensOf(scrollProgress)
+      syncScrollSuspension()
+
+      const startT = scrollProgress.value
+      const distance = Math.abs(targetT - startT)
+      const duration = THREE.MathUtils.clamp(
+        INTRO_CINEMATIC_MIN_DURATION_SECONDS * (distance / INTRO_ALIGN_T),
+        INTRO_CINEMATIC_MIN_DURATION_SECONDS,
+        INTRO_CINEMATIC_MAX_DURATION_SECONDS,
+      )
+      const scrollRange = trigger.end - trigger.start
+      const targetScroll = trigger.start + scrollRange * targetT
+
+      smoothScroll.lenis.scrollTo(targetScroll, {
+        immediate: prefersReducedMotion,
+        duration,
+        easing: easeIntroCinematic,
+        force: true,
+        onComplete: () => {
+          introCinematicActive = false
+          scrollProgress.value = targetT
+          lastRawProgress = targetT
+          if (targetT === 0) {
+            // Reverse play landed back at the literal start — ready for
+            // the forward cinematic to be triggered again.
+            currentChapter = 'intro'
+            chapterModeActive = false
+            introCinematicPlayed = false
+          } else {
+            // Forward play landed at the exterior alignment point, already
+            // on the straight lens axis — hand off to the EXISTING
+            // chapter-mode gesture system for the next scroll, per
+            // explicit "restore normal chapter-based navigation." The
+            // very next chapter gesture resolves to 'film'
+            // (`CHAPTER_ORDER.indexOf('intro')` is -1, so `goToNextChapter`
+            // steps to index 0) and travels the rest of the way — already
+            // guaranteed a straight line — via the unmodified
+            // `navigateToSection('film')` -> `engageLensHold` path.
+            introCinematicPlayed = true
+            chapterModeActive = true
+          }
+        },
+      })
+    }
+
+    // First wheel/touch gesture, and ONLY the first, triggers the one-shot
+    // forward play — every event afterward (including ones that arrive
+    // WHILE the tween is running) is swallowed here, per explicit "should
+    // NOT speed up/interrupt/change/skip... allow the movement to complete
+    // naturally." Once `introCinematicPlayed` flips true, chapter mode's
+    // own listeners (below) take over entirely; this listener goes
+    // permanently quiet from then on (until/unless a reverse play resets
+    // it, per `playIntroCinematic`'s own `onComplete`).
+    const onIntroTriggerWheel = (event) => {
+      if (currentChapter !== 'intro' || introCinematicPlayed) return
+      event.preventDefault()
+      playIntroCinematic(INTRO_ALIGN_T)
+    }
+    const onIntroTriggerTouchMove = (event) => {
+      if (currentChapter !== 'intro' || introCinematicPlayed) return
+      event.preventDefault()
+      playIntroCinematic(INTRO_ALIGN_T)
+    }
+
+    window.addEventListener('wheel', onIntroTriggerWheel, { capture: true, passive: false })
+    window.addEventListener('touchmove', onIntroTriggerTouchMove, { capture: true, passive: false })
 
     // --- Chapter mode input (Film and beyond) ---
     // Mirrors the intro zone's own "fully intercept input, drive state
@@ -641,24 +651,24 @@ export function ScrollSpacer() {
     let chapterGestureDecayTimeoutId = null
     let chapterTouchLastY = null
 
-    const isChapterTransitionLocked = () => isDirectJumpActive || lensHoldActive || monitorLockActive
+    const isChapterTransitionLocked = () =>
+      isDirectJumpActive || lensHoldActive || monitorLockActive || introCinematicActive
 
     const resetChapterGesture = () => {
       chapterGestureAccum = 0
       clearTimeout(chapterGestureDecayTimeoutId)
     }
 
-    // nextIndex < 0 (stepping back from Film) hands off to the EXISTING
-    // continuous intro driver instead of a discrete jump — reversing
-    // through the Film mode-switch boundary should read as one continuous
-    // backward glide, not a jump-cut to t: 0, per "the intro should be
-    // able to move backwards smoothly."
+    // nextIndex < 0 (stepping back from Film) replays the intro cinematic
+    // in reverse — Film all the way back to t: 0, one continuous shot —
+    // rather than a discrete jump-cut, since there is no longer a
+    // continuous intro driver to hand off to (this round replaced it
+    // entirely with the one-shot `playIntroCinematic`, which is
+    // bidirectional by construction: it's driven by the exact same
+    // `sampleCameraPath`, a pure function of progress).
     const goToChapterIndex = (nextIndex) => {
       if (nextIndex < 0) {
-        currentChapter = 'intro'
-        chapterModeActive = false
-        syncScrollSuspension()
-        syncIntroZone()
+        playIntroCinematic(0)
         return
       }
       if (nextIndex >= CHAPTER_ORDER.length) return // Digital is the last reachable chapter for now
@@ -710,15 +720,12 @@ export function ScrollSpacer() {
       cancelAnimationFrame(raf)
       if (monitorLockTimeoutId) clearTimeout(monitorLockTimeoutId)
       if (lensHoldTimeoutId) clearTimeout(lensHoldTimeoutId)
-      if (introIntentDecayTimeoutId) clearTimeout(introIntentDecayTimeoutId)
       if (chapterGestureDecayTimeoutId) clearTimeout(chapterGestureDecayTimeoutId)
       gsap.killTweensOf(scrollProgress)
-      gsap.ticker.remove(introTick)
       window.removeEventListener('wheel', onLensHoldWheel, { capture: true })
       window.removeEventListener('touchmove', onLensHoldWheel, { capture: true })
-      window.removeEventListener('wheel', onIntroWheel, { capture: true })
-      window.removeEventListener('touchstart', onIntroTouchStart, { capture: true })
-      window.removeEventListener('touchmove', onIntroTouchMove, { capture: true })
+      window.removeEventListener('wheel', onIntroTriggerWheel, { capture: true })
+      window.removeEventListener('touchmove', onIntroTriggerTouchMove, { capture: true })
       window.removeEventListener('wheel', onChapterWheel, { capture: true })
       window.removeEventListener('touchstart', onChapterTouchStart, { capture: true })
       window.removeEventListener('touchmove', onChapterTouchMove, { capture: true })

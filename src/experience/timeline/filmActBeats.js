@@ -55,30 +55,37 @@ export const SCROLL_LOCK_HOLD_MS = 1750
 export const SCROLL_LOCK_OVERRIDE_DRIFT = 0.05
 
 /**
- * Intro (Entrance -> Establish -> Approach, `t: 0` through `FILM_FOCUS_T`)
- * hard rate cap. Superseded a proportional `wheelMultiplier` damper
- * (0.35x) that turned out not to be strict enough — per direct follow-up
- * report, a hard or repeated flick could still cover the whole zone in a
- * handful of events, since a *multiplier* still scales with arbitrarily
- * large input. This is a genuine ceiling instead: read by
- * `ScrollTimelineProvider.jsx`, which fully intercepts scroll input for
- * the zone and drives `scrollProgress.value` itself at a fixed maximum
- * rate, so no amount of scrolling — hard, soft, repeated, or held down —
- * can move faster than this. `INTRO_ZONE_END_T / INTRO_MAX_RATE_PER_SECOND`
- * is therefore a guaranteed minimum traversal time, not just a
- * statistical slowdown. Still 100% input-driven, not auto-play: the
- * driver only advances while the visitor is actively scrolling (a short
- * decay window, `INTRO_INTENT_DECAY_MS`, treats a pause as "stopped");
- * releasing the wheel/trackpad stops it immediately, same as everywhere
- * else in the experience, per experience-design.md §3's "Scroll controls
- * time" / no-auto-scroll rule.
+ * Intro cinematic (Entrance -> exterior half-circle, `t: 0` through
+ * `INTRO_ALIGN_T`) — superseded the previous continuous, input-driven
+ * hard-rate-cap mechanism entirely, per explicit request: "the initial
+ * camera movement should no longer be continuous scroll-driven... ONE
+ * SCROLL -> ONE COMPLETE CAMERA MOVE... do not map the camera's exact
+ * position directly to scroll progress... the scroll should act as a
+ * trigger, not as a continuous steering mechanism." One scroll/touch
+ * gesture now triggers a single, fixed-duration auto-play tween from
+ * `t: 0` to `INTRO_ALIGN_T` (`ScrollTimelineProvider.jsx`'s
+ * `playIntroCinematic`); further input during that tween is ignored
+ * entirely, and once it completes, control hands off to the existing
+ * chapter-mode gesture system (`CHAPTER_GESTURE_THRESHOLD` below) rather
+ * than resuming any form of continuous scroll.
+ *
+ * `INTRO_ALIGN_T` matches `cameraPath.js`'s own `ORBIT_BODY_T_END` — the
+ * exact progress value where the exterior orbit's last keyframe sits,
+ * already exactly aligned with the Film lens (see that file's own
+ * derivation). Shared here, not duplicated, so the two files can't drift
+ * out of sync with each other.
  */
-export const INTRO_ZONE_END_T = FILM_FOCUS_T
-// Raised from 2.5s per explicit follow-up ("slow down even further") —
-// still a hard ceiling, not a statistical average; see the module doc
-// comment above.
-export const INTRO_MIN_TRAVERSAL_SECONDS = 4.5
-export const INTRO_MAX_RATE_PER_SECOND = INTRO_ZONE_END_T / INTRO_MIN_TRAVERSAL_SECONDS
+export const INTRO_ALIGN_T = 0.12
+// Slow, smooth, deliberate — "one continuous opening shot in a premium
+// commercial." Scaled by how far a given one-shot move actually travels
+// (`ScrollTimelineProvider.jsx`'s `playIntroCinematic`): the forward
+// entrance (distance `INTRO_ALIGN_T`) lands at exactly the minimum: a
+// reverse move all the way back from Film (distance `FILM_FOCUS_T`, ~3.75x
+// farther) scales up but is capped at the maximum rather than dragging on
+// for proportionally as long.
+export const INTRO_CINEMATIC_MIN_DURATION_SECONDS = 6
+export const INTRO_CINEMATIC_MAX_DURATION_SECONDS = 12
+
 export const INTRO_INTENT_DECAY_MS = 150
 
 /**
