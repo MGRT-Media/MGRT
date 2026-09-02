@@ -1015,6 +1015,26 @@ Investigating the reported gap found the root cause: the video screen mesh sat 0
 
 ---
 
+## 4BP. Refinement — Proportional Vertical Rise Across the Film→Digital Arc
+
+**Status:** DONE
+
+### Brief
+Two requests, one already resolved and reconfirmed, one new refinement:
+1. Rounded corners on "the video element... matching the curved profile of the lens opening" — clarified with the human (`AskUserQuestion`, since the CSS/HTML vocabulary in the brief could plausibly mean either the §4BN modal's real DOM `<video>` or the Film lens screen): confirmed it's the lens screen. No change needed or possible — `CinemaCamera.jsx`'s screen has always been a `circleGeometry`, not a rectangle, so there's no CSS/border-radius surface and no sharp corners to round in the first place; §4BO's flush-fit fix already addressed the actual visible symptom (the gap).
+2. Make the §4BO pull-back/push-in hand-off's vertical rise (lens height → monitor height) read as one smooth, continuous climb across the WHOLE arc — not concentrated into the second segment only.
+
+### What changed
+- **`cameraPath.js`** — `HANDOFF_PULLBACK_POSITION`'s Y changed from a flat `CAMERA_ANCHOR.bodyCenterHeight + 0.1` to `THREE.MathUtils.lerp(lensY, screenY, HANDOFF_PULLBACK_T_FRACTION)` — the same `0.15` fraction the pull-back keyframe itself sits at in time (`HANDOFF_PULLBACK_T_FRACTION`, now a named constant instead of an inline `0.15` literal duplicated in two places). `lensY` (`0.84`) and `screenY` (`1.195`) — the lens sits noticeably lower than the monitor screen, a real ~0.355-unit difference verified numerically — so the pull-back keyframe's new Y (`0.893`) lands proportionally along that climb rather than at an independently-chosen height, keeping the vertical ascent rate roughly proportional to elapsed time across both the pull-back and push-forward segments instead of flat-then-late-lift.
+- No new animation mechanism: Y is just one component of the same 3D position every other axis already moves through via `sampleCameraPath`'s per-segment `smoothstep` easing and Catmull-Rom spline — per explicit "no harsh snapping or linear stops," this was already guaranteed by construction for every axis simultaneously, so the fix is entirely about WHERE the waypoint sits, not a new easing/animation layer.
+
+### Verification
+- Production build succeeds.
+- Verified numerically (not live) via a standalone script: `lensY: 0.84`, `screenY: 1.195`, new proportional pull-back Y: `0.893` (vs. the old flat `0.94`, which overshot the proportional value at that time-fraction rather than tracking it) — confirms the new formula produces the intended, evenly-distributed climb.
+- **Not live-verified this round**: the preview pane remained hidden (`document.hidden === true`, checked again) for this entire round — same persistent condition as §4BO, with the same reasoning for why no DOM-level workaround exists for this kind of change. Actually watching the Film→Digital arc's vertical pacing remains queued up alongside §4BO's own unverified items for whenever the preview is next reliably visible.
+
+---
+
 ## 4A. Geometry Refinement — Entrance Pillars (cross-cutting, Phase 1A revision)
 
 **Status:** TECHNICALLY COMPLETE
