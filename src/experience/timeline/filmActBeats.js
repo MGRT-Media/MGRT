@@ -76,29 +76,28 @@ export const SCROLL_LOCK_OVERRIDE_DRIFT = 0.05
  * out of sync with each other.
  */
 export const INTRO_ALIGN_T = 0.12
-// Slow, smooth, deliberate — "one continuous opening shot in a premium
-// commercial." Scaled by how far a given one-shot move actually travels
-// (`ScrollTimelineProvider.jsx`'s `playIntroCinematic`): the forward
-// entrance (distance `INTRO_ALIGN_T`) lands at exactly the minimum: a
-// reverse move all the way back from Film (distance `FILM_FOCUS_T`, ~3.75x
-// farther) scales up but is capped at the maximum rather than dragging on
-// for proportionally as long. Raised again (6 -> 9, 12 -> 16) per explicit
-// follow-up to slow the spiral down further — the room's own orbit radius
-// has also grown considerably (§4BE, 6.9 -> 9.0), so the camera now covers
-// more real distance than when 6s was originally tuned.
-export const INTRO_CINEMATIC_MIN_DURATION_SECONDS = 9
-export const INTRO_CINEMATIC_MAX_DURATION_SECONDS = 16
+// Exactly 2.5s for the forward play (distance `INTRO_ALIGN_T`, which always
+// lands at exactly the minimum), per explicit request for a strict,
+// input-speed-independent duration — "regardless of how fast, slow, or
+// aggressively the user scrolls... the duration... must remain completely
+// fixed." Not scrubbed or scaled by wheel delta at all: `playIntroCinematic`
+// is triggered by the mere presence of a qualifying event, not its
+// magnitude (see `onIntroTriggerWheel`/`onIntroTriggerTouchMove`,
+// `ScrollTimelineProvider.jsx`). The reverse move (Film back to `t: 0`,
+// ~3.75x farther) isn't covered by that same explicit spec — kept
+// proportionally scaled and capped rather than also pinned to a single
+// fixed value, since forcing a full reverse traverse into the same 2.5s
+// the much shorter forward entrance gets would read as rushed.
+export const INTRO_CINEMATIC_MIN_DURATION_SECONDS = 2.5
+export const INTRO_CINEMATIC_MAX_DURATION_SECONDS = 5
 
-// The one specific hop from the exterior alignment point (`INTRO_ALIGN_T`)
-// to Film, whether triggered by the "second scroll" gesture or a direct
-// nav-click while already there — a fixed duration, not the general
-// `JUMP_MIN/MAX_DURATION_SECONDS` distance-scaled range below, per
-// explicit follow-up to slow this specific leg down without also slowing
-// the unrelated Film<->Digital chapter hop that range also governs. Set
-// well above what that formula would otherwise produce for this distance
-// (`FILM_FOCUS_T - INTRO_ALIGN_T` ≈ 0.33, which the general formula would
-// clamp to ~1.1s) so "straight to the lens" reads as deliberate, not brisk.
-export const INTRO_TO_FILM_DURATION_SECONDS = 4.5
+// Exactly 1.5s for the "second scroll" leg — the exterior alignment point
+// (`INTRO_ALIGN_T`) to Film — per the same explicit fixed-duration
+// request. Kept as its own dedicated constant rather than folded into the
+// general `JUMP_MIN/MAX_DURATION_SECONDS` distance-scaled range below,
+// which also governs the unrelated Film<->Digital chapter hop and other
+// direct-nav jumps — this stays untouched by this leg's own fixed value.
+export const INTRO_TO_FILM_DURATION_SECONDS = 1.5
 
 export const INTRO_INTENT_DECAY_MS = 150
 
