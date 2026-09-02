@@ -479,7 +479,27 @@ Per explicit follow-up: hard stops felt rigid/mechanical, lens entry felt "robot
 Every keyframe (Entrance, Establish, Approach, Lens Snap, Monitor) still lands in exactly the same framing — confirmed via screenshot, including the tight lens-lock and edge-to-edge monitor shots (both depend on exact position/orientation precision). Room visibly well-lit by ~22% progress (previously would still have been mostly dark at that point given the slower intro pacing). Full reversibility, no console errors, 16.68ms avg frame time, 0 frames >33ms. Mobile viewport clean. Production build succeeds.
 
 ### Required next step
-Real-device touch verification still recommended (carried over from §4AP). Watch specifically for any recurrence of the "rotational micro-snap" §4AF found with decoupled lambdas — theorized here to have been a point-interpolation artifact rather than a lambda-decoupling one, but not exhaustively re-tested against that specific historical repro. Otherwise open to visual-review adjustment.
+*Superseded — see §4AT.* Real-device touch verification still recommended (carried over from §4AP). Watch specifically for any recurrence of the "rotational micro-snap" §4AF found with decoupled lambdas.
+
+---
+
+## 4AT. Feature — Four-Line Chapter Indicator (FILM / DIGITAL / CAMPAIGNS / RETURN)
+
+**Status:** IN PROGRESS (mechanism verified working; open to further visual-review adjustment)
+
+### What changed
+A minimal fixed cinematic chapter marker, per explicit request — deliberately *not* navigation: four thin horizontal lines along the left edge, the active one slightly longer/warmer with its label, the other three subdued and unlabeled. Small scale, restrained opacity, quick (not "large") transitions.
+
+- New `SectionIndicator.jsx` (DOM overlay, mounted in `App.jsx` alongside `ScrollLockIndicator.jsx`) derives its active chapter directly from `scrollProgress.value` — the same normalized progress driving the Three.js camera — via `cameraPath.js`'s own `FILM_FOCUS_T` constant (imported, not re-derived), per explicit "do not create a second independent section-detection system" instruction.
+- Uses ordinary `useState` for the active index — the same documented exception `ScrollLockIndicator.jsx` already established, since this changes at most once in the whole current build, not per frame. Polls `scrollProgress.value` once per animation frame but only calls `setActiveIndex` on an actual chapter change.
+- **Scope note:** only FILM and DIGITAL have a real scroll-progress boundary in the built experience right now. CAMPAIGNS (the billboard reveal, Phase 1E) and RETURN (the dive-back-in, Phase 3) are both still NOT STARTED (§3's Phase Progress tracker), so there is no real boundary to derive their active state from yet. Rather than invent placeholder progress ranges for them — which would itself be the second independent detection system this request rules out — their lines render but stay permanently inactive until those acts are actually built. Not blocking on this since the request explicitly says not to redesign the cinematic sequence to accommodate this element.
+- **Visibility note:** the request asks for this to disappear outside "Experience mode" into a normal `WORK` section. That mode doesn't exist in the app yet — the whole current app IS the cinematic experience — so it renders unconditionally for now, ready for a `visible` prop once that mode-switch is actually built.
+
+### Verification
+FILM active with label at scroll 0%. Correctly transitions to DIGITAL past the Lens lock (FILM reverts to subdued), confirmed via screenshot. Reverses cleanly back to FILM on scroll-to-top. Mobile viewport (375×812) scales the indicator down appropriately via a dedicated breakpoint. No console errors. 16.52ms avg frame time, 0 frames >33ms. Production build succeeds.
+
+### Required next step
+Once Phase 1E (Campaigns) and Phase 3 (Return) are built, `getActiveIndex` in `SectionIndicator.jsx` will need real boundaries for those two states — flagged in its own code comment. Otherwise open to visual-review adjustment (line spacing, label style, indicator position).
 
 ---
 
