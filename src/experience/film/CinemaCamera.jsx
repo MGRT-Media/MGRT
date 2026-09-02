@@ -306,13 +306,24 @@ export default function CinemaCamera() {
 
         {/*
           Film-media screen, just behind the glass — ignites around the Act 1
-          lens-dive beat. Radius widened from an earlier 0.85x to 0.94x the
-          barrel's own opening radius (nearly the lip's inner edge) so no
-          dark gap of barrel material shows between the video and the lip,
-          per explicit request to eliminate dead space inside the aperture.
+          lens-dive beat. Previously sat 0.02 units back inside the tapered
+          barrel at 0.94x the FRONT opening's radius — that fraction was
+          only ever measured against the opening at z: lensFrontZ, but the
+          screen itself sat recessed where the (tapered, frontRadius ->
+          rearRadius) barrel tube is measurably wider, leaving a real,
+          visible ring gap between the video's edge and the lip's inner
+          edge, per explicit follow-up report. Fixed by moving the screen
+          flush to the same z the lip itself sits at (a hair behind it,
+          `- 0.001`, purely to avoid z-fighting with the lip's own
+          geometry) and sizing it to `GLASS_RADIUS` — the exact radius the
+          glass dome in front of it already uses, which was itself derived
+          to nestle just inside the lip's inner edge (`buildLensGlassGeometry`'s
+          own comment) — so the video now touches the same boundary the
+          glass already touches, with no gap and no separate constant to
+          keep in sync.
         */}
-        <mesh position={[0, bodyCenterHeight, lensFrontZ - 0.02]} castShadow={false} receiveShadow={false}>
-          <circleGeometry args={[LENS.frontRadius * 0.94, 32]} />
+        <mesh position={[0, bodyCenterHeight, lensFrontZ - 0.001]} castShadow={false} receiveShadow={false}>
+          <circleGeometry args={[GLASS_RADIUS, 32]} />
           <primitive object={lensScreenMaterial} attach="material" />
         </mesh>
       </group>

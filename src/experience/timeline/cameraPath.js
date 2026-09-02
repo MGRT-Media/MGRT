@@ -322,6 +322,38 @@ const MONITOR_ALIGNED_POSITION = new THREE.Vector3(
 )
 const MONITOR_ALIGNED_LOOKAT = new THREE.Vector3(screenX, screenY, screenZ)
 
+// Film -> Digital hand-off: a quick pull-back away from the lens before
+// pushing forward onto the monitor, per explicit request for that
+// specific two-part beat ("slight pan/dolly backwards... followed by...
+// dolly forwards... focusing in directly onto the monitor") rather than
+// the single continuous dolly-out this hop used before. Retreats along
+// the same lens-forward axis `APPROACH_POSITION`/`LENS_DIVE_POSITION`
+// already sit on, to a distance between the two of them (deeper than
+// `APPROACH_DISTANCE`, since this needs to read as its own deliberate
+// widening beat, not just retrace the earlier approach) — a new value
+// rather than literally reusing `APPROACH_POSITION`'s exact coordinate a
+// second time: revisiting an identical point elsewhere in the same
+// continuous Catmull-Rom spline risks an unpredictable tangent/curvature
+// right where a clean, easily-reasoned-about retreat matters most.
+// `HANDOFF_PULLBACK_T` sits close to `FILM_FOCUS_T` (15% of the
+// Film->Digital span) so the retreat itself is quick — `sampleCameraPath`
+// already gives every segment zero velocity at both ends (per-segment
+// `smoothstep` easing), so the camera naturally settles to a brief stop
+// at the peak of the pull-back before accelerating into the much longer
+// forward push toward the monitor, without needing an explicit pause.
+// Looks toward `ORBIT_ENSEMBLE_LOOKAT` (reused, not duplicated — the same
+// point that already frames both the Cinema Camera and Monitor together
+// during the opening orbit) rather than staying on `LENS_LOOKAT`, so the
+// retreat itself reads as "revealing the next destination," not just
+// backing away from the last one.
+const HANDOFF_PULLBACK_T = FILM_FOCUS_T + (1 - FILM_FOCUS_T) * 0.15
+const HANDOFF_PULLBACK_DISTANCE = 1.6
+const HANDOFF_PULLBACK_POSITION = new THREE.Vector3(
+  lensX + fwdX * HANDOFF_PULLBACK_DISTANCE,
+  CAMERA_ANCHOR.bodyCenterHeight + 0.1,
+  lensZ + fwdZ * HANDOFF_PULLBACK_DISTANCE,
+)
+
 // Orbit body keyframes span t: 0 -> INTRO_ALIGN_T (six points, evenly
 // spaced), leaving INTRO_ALIGN_T -> 0.135 for the gate crossing and
 // 0.135 -> ESTABLISH_T for the final settle — unchanged envelope from
@@ -347,6 +379,7 @@ const KEYFRAMES = [
   { t: ESTABLISH_T, position: ESTABLISH_POSITION, lookAt: LENS_LOOKAT }, // Snap 1 — Studio Scene, a waypoint on the same straight corridor
   { t: APPROACH_T, position: APPROACH_POSITION, lookAt: LENS_LOOKAT }, // Approach
   { t: FILM_FOCUS_T, position: LENS_DIVE_POSITION, lookAt: LENS_LOOKAT }, // Snap 2 — Cinema Lens
+  { t: HANDOFF_PULLBACK_T, position: HANDOFF_PULLBACK_POSITION, lookAt: ORBIT_ENSEMBLE_LOOKAT }, // Film -> Digital hand-off: quick pull-back
   { t: 1, position: MONITOR_ALIGNED_POSITION, lookAt: MONITOR_ALIGNED_LOOKAT }, // Snap 3 — Digital Monitor
 ]
 
@@ -364,9 +397,13 @@ const KEYFRAMES = [
 // right after it — exactly where the request most explicitly prohibits
 // one ("once the camera passes through the pillar gap... ONLY straight
 // forward... no additional curve"). Every segment strictly before this
-// zone (the curved orbit itself) and after it (lens-dive -> monitor)
-// still uses the spline — those ARE genuine directional changes, not a
-// case the "no correction after entering" rule was ever about.
+// zone (the curved orbit itself) and after it (lens-dive -> hand-off
+// pull-back -> monitor) still uses the spline — those ARE genuine
+// directional changes, not a case the "no correction after entering" rule
+// was ever about. `STRAIGHT_ZONE_END_INDEX` is computed, not a literal —
+// appending the hand-off pull-back keyframe after `LENS_DIVE_POSITION`
+// (rather than before it) left this arithmetic, and therefore the
+// straight-line guarantee itself, untouched.
 const STRAIGHT_ZONE_START_INDEX = ORBIT_POINT_COUNT - 1 // last orbit point's index
 const STRAIGHT_ZONE_END_INDEX = STRAIGHT_ZONE_START_INDEX + 4 // LENS_DIVE_POSITION's index
 
