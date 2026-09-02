@@ -836,6 +836,23 @@ Slow down both one-shot moves: the exterior half-circle ("the spiral," triggered
 
 ---
 
+## 4BH. Refinement — Fixed, Exact Durations for the First Two Scroll Transitions
+
+**Status:** DONE
+
+### Brief
+Enforce exact, fixed durations for the intro's two one-shot camera moves, independent of scroll speed/intensity: first scroll (Intro → paused outside the pillars) = exactly 2.5s; second scroll (paused → Film) = exactly 1.5s; Film→Digital and beyond unchanged. The request's own "State 1/2/3" naming was ambiguous against the actual three-leg architecture built in §4BE/§4BF (intro half-circle → pause → straight approach to Film), so this was resolved via `AskUserQuestion` rather than guessed — the user's answer ("the first transition(2.5s) then stop at pause, wait for next scroll then transition (1.5s)") confirmed the pause stays exactly as built, mapping onto the two existing legs rather than collapsing them.
+
+### What changed
+- **`filmActBeats.js`** — `INTRO_CINEMATIC_MIN_DURATION_SECONDS` `9 → 2.5` (the forward play's distance always equals `INTRO_ALIGN_T`, so this alone pins the first-scroll half-circle to exactly 2.5s). `INTRO_TO_FILM_DURATION_SECONDS` `4.5 → 1.5` (pins the second-scroll straight approach to exactly 1.5s, per the same `navigateToSection` `isIntroToFilm` special-case added in §4BG). `INTRO_CINEMATIC_MAX_DURATION_SECONDS` (governs only the reverse Film→0 replay, not covered by this request) rescaled `16 → 5`, preserving the original ~1.78x MIN/MAX ratio against the new, much smaller MIN rather than leaving a now-wildly-disproportionate 6.4x gap.
+- No other file touched: `playIntroCinematic`'s duration formula and `navigateToSection`'s `isIntroToFilm` branch (both already structurally correct, per §4BE/§4BG) automatically produce the new exact durations from these constants alone. The existing `introCinematicActive`/`isDirectJumpActive` flags already fully satisfy the request's "lock input during transition" ask, and `onIntroTriggerWheel`/`onIntroTriggerTouchMove` were already fully decoupled from `event.deltaY` magnitude — treating the scroll as a discrete trigger, not a scrub — so no new lock flag or input-handling change was needed.
+
+### Verification
+- Production build succeeds; `useState`/leftover-debug-log grep clean; diff scoped to the one constants file.
+- **Live-verified this round** (preview pane was reachable): dispatched a synthetic wheel event on a fresh mount, waited 3s — camera completed the half-circle and held steady outside the pillars framing the Cinema Camera and Monitor (matches the 2.5s first leg + settle). Dispatched a second wheel event, waited 2s — camera moved straight in through the pillar gap toward the lens (matches the 1.5s second leg). No console errors either pass.
+
+---
+
 ## 4A. Geometry Refinement — Entrance Pillars (cross-cutting, Phase 1A revision)
 
 **Status:** TECHNICALLY COMPLETE
