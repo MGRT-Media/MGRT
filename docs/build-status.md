@@ -699,6 +699,30 @@ A further pass on the exterior-orbit entrance: the single most important require
 
 ---
 
+## 4BB. Refinement — Geometry-Derived Half-Circle, Perfect Lens Alignment (supersedes §4BA's clock-face anchoring)
+
+**Status:** DONE (mechanism verified via standalone script + production build; live in-browser re-check blocked by an environment issue — see below)
+
+### Brief
+Drop the clock-face vocabulary entirely. Derive the whole exterior entrance from the scene's actual geometry instead: choose a start position based on composition, sweep roughly half a circle, and — the single hard requirement — end the half-circle with the camera outside the ring, perfectly aligned with the Film lens, so continuing straight through the pillar gap leads directly at it (CAMERA → GAP → LENS collinear, not just angularly close). Also: move farther back than §4BA's radius, and lower the camera for a more grounded, imposing perspective.
+
+### What changed
+- **`cameraPath.js`** — the gate is now derived from the **lens's own optical axis**, not the Cinema Camera stand's position. §4BA's gate used `nearestGapAngle` on the stand's angular position from the ring center — that turned out to be the wrong signal: the lens is tilted an extra `TILT_TOWARD_MONITOR_DEGREES` (32°) beyond the stand's own yaw (`CinemaCamera.jsx`), so the direction the lens actually *faces* differs from "outward from ring center through the stand" by several tens of degrees (confirmed: the two methods gave `194°` vs. `137°` — a 57° difference). This round instead casts a ray from `CAMERA_ANCHOR.lensFrontFieldPosition` along `CAMERA_ANCHOR.lensForward` — the exact same axis the existing Approach/Snap 2 keyframes already sit on — and finds where it crosses the pillar ring (`rayCircleIntersection`, a standard ray-circle solve). That crossing point *is* `GATE_POSITION`: gate, lens-front, lens-dive, and approach are now genuinely collinear by construction, which is what makes "no major corrective turn after the half-circle" a geometric guarantee rather than a tuning target.
+  - **Orbit start is the gate's antipodal point** (`ENTRY_GATE_ANGLE + 180°`) on the orbit's own circle — not an independently chosen position, so "choose the best start" is answered by the lens's own facing direction plus "go the long way around."
+  - **`ORBIT_RADIUS`** raised from §4BA's `6.6` to `6.8`, per explicit "significantly farther back... this is important" — close to the practical ceiling (any half-circle from this gate's antipodal point necessarily crosses one of the ring's ±X extremes at θ: 90°/270°, where `|x|` equals the radius exactly, regardless of which arc is chosen; `6.8` leaves a narrow but real `0.2` margin from the `±7` walls).
+  - **Height lowered**: `ORBIT_START_Y` `4.4 → 3.0`, `GATE_Y` `1.9 → 1.7`, per explicit "lower the camera... more grounded... pillars should feel tall and imposing" — still glides continuously with no separate final drop.
+  - Six evenly-spaced orbit points (unchanged count from §4BA) now step down from the antipodal start at `180° / 6 = 30°` intervals — the clock-face labels are gone, but the same richness/rhythm is preserved.
+  - `CHECKPOINT_OFFSET_DEGREES` (the old fixed "15° from the gate" figure, itself a leftover from an even earlier clock-based round) is gone — the last pure-orbit point now naturally lands one `30°` step short of the gate, an artifact of "6 evenly-spaced points across a half-circle" rather than a separately hand-picked number.
+- **`VolumetricLightingRig.jsx`** — `IGNITE_END` re-derived from `0.063` to `0.06`, tracking the brief's simpler new phrasing ("by approximately the midpoint of the half-circle") — the orbit body still spans `t: 0 → 0.12`, so its literal midpoint is `0.06`. Mechanism otherwise unchanged (one continuous curve, flat after this point through Film/Digital).
+
+### Verification
+- Production build succeeds; `useState`/leftover-debug-log grep clean.
+- The lens-axis/gate math was verified with a standalone Node script (mirroring `CinemaCamera.jsx`'s exact yaw/tilt/offset composition) *before* trusting it in the app: `lensFrontFieldPosition ≈ (0.20, -2.90)`, `lensForward ≈ (0.788, 0.616)`, ray-circle crossing at `≈ (3.12, -0.62)` — angle `137.3°`, sitting `12.7°` clear of the nearest pillar (comfortably inside that gap's `30°` span, not aimed at a pillar). All six orbit-stop world positions and the wall-clearance calculation at the swept range's `θ: 270°` crossing (`max |x| ≈ 6.79` against the `6.8` radius and `7.0` wall) were checked the same way.
+- App-mount sanity checked on a freshly restarted dev server + fresh tab: canvas present, no error overlay, no console errors — confirms the code is syntactically and referentially correct (no leftover references to the removed clock-face helpers or the old stand-based gate derivation; `grep` also confirms this directly).
+- **Not independently re-verified this round**: live scroll-driven playback in the browser preview. The preview pane was intermittently reported "hidden" by the host UI throughout this round (`requestAnimationFrame` measured firing zero times over 2 real seconds while hidden, via the same direct test loop used in §4AZ) — a host-UI visibility state outside this session's control, not a code issue; confirmed the *code itself* is sound via the build + fresh-mount checks above instead. A live visual re-check (does the wider/lower orbit actually read as more imposing, does the final approach genuinely feel straight with no corrective turn) is recommended once the preview is visible, before treating the creative bar — not just the geometry — as fully met.
+
+---
+
 ## 4A. Geometry Refinement — Entrance Pillars (cross-cutting, Phase 1A revision)
 
 **Status:** TECHNICALLY COMPLETE
