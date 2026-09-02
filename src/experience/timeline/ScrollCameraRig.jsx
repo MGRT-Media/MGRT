@@ -54,9 +54,19 @@ function computeTargetQuaternion(outQuaternion, eye, lookAtPoint, up) {
  */
 export default function ScrollCameraRig() {
   // Seeded to the progress-0 keyframe so there's no startup glide-in from
-  // an arbitrary default on mount — matches cameraPath.js's START_POSITION
-  // and its initial lookAt exactly.
-  const dampedPosition = useRef(new THREE.Vector3(-1.0, 1.6, 8))
+  // an arbitrary default on mount — reads `sampleCameraPath(0)` directly
+  // rather than a copied literal, matching `CinematicExperience.jsx`'s own
+  // `SEED_POSITION` (its `<Canvas camera position={...}>` prop). A prior
+  // round's hardcoded `(-1.0, 1.6, 8)` fell out of sync with the real
+  // progress-0 position after several later rounds changed the exterior
+  // orbit's radius/height/room scale (§4BE, §4BK) without this literal
+  // being updated — exactly the "visible jump/readjustment on load" bug
+  // this was meant to prevent: on mount, the Canvas's own seed placed the
+  // camera correctly, but this rig's *separate* `dampedPosition` ref still
+  // started from the stale value, so the very first frames visibly damped
+  // FROM the wrong position TO the correct one. Importing the function
+  // instead of a copied number makes this class of drift impossible again.
+  const dampedPosition = useRef(new THREE.Vector3(...sampleCameraPath(0).position))
   const dampedQuaternion = useRef(
     computeTargetQuaternion(
       new THREE.Quaternion(),

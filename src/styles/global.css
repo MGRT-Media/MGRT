@@ -254,3 +254,69 @@ html.lenis-smooth {
     transition: none;
   }
 }
+
+/*
+ * Full-screen toggle (FullscreenButton.jsx) — visible from Film onward,
+ * bottom-right so it doesn't compete with the side navigation (left) or
+ * the scroll-lock cue (bottom-center). Always mounted, faded via a
+ * `--visible` class rather than conditionally rendered, matching
+ * `.scroll-lock-indicator`'s own pattern — `pointer-events` follows the
+ * same toggle so the invisible button can't be tabbed/clicked while
+ * hidden.
+ */
+.fullscreen-toggle {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 5;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(13, 13, 13, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 50%;
+  color: rgba(255, 255, 255, 0.75);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94), transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+    border-color 0.3s ease, color 0.3s ease;
+}
+
+.fullscreen-toggle--visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.fullscreen-toggle:hover,
+.fullscreen-toggle:focus-visible {
+  /* Matches lightingParams.spot.color's warm tone, this project's one
+     recurring accent color. */
+  border-color: rgba(255, 241, 220, 0.6);
+  color: rgba(255, 241, 220, 0.9);
+}
+
+.fullscreen-toggle:focus-visible {
+  outline: 1px solid rgba(255, 241, 220, 0.6);
+  outline-offset: 3px;
+}
+
+@media (max-width: 640px) {
+  .fullscreen-toggle {
+    right: 16px;
+    bottom: 16px;
+    width: 36px;
+    height: 36px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fullscreen-toggle {
+    transition: none;
+  }
+}
