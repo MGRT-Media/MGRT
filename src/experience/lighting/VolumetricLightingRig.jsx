@@ -15,21 +15,20 @@ import { scrollProgress } from '../timeline/ScrollTimelineProvider.jsx'
 // lighting" state to desync from the camera; it's one physical light
 // source the whole way through, by construction.
 //
-// IGNITE_END re-derived, 0.05 -> 0.063, to track cameraPath.js's §4BA
-// wide-orbit redesign (which replaced the previous 3-point orbit body with
-// six real clock stops, 8:00 through the 3:15 checkpoint, evenly spaced
-// across t: 0 -> 0.12): "5:30" is the request's own named full-reveal
-// milestone, and re-solving it against the new clock-to-ring-angle math
-// (cameraPath.js's `clockToRingAngle`) places it about 52.6% of the way
-// from 8:00 to the 3:15 checkpoint — 0.12 * 0.526 ≈ 0.063. Still one
-// single continuous curve holding flat at full brightness for the rest of
-// the orbit, the gate, Establish, Approach, and Film, per explicit "do
-// NOT brighten significantly further... maintain the established
-// lighting... no lighting reset." `smoothstep`'s own S-shape (slow-fast-
-// slow) still gives the earlier "6:00: pillars separating from darkness,
-// not yet fully visible" partial-reveal beat for free.
+// IGNITE_END re-derived again, 0.063 -> 0.06, to track cameraPath.js's
+// latest wide-half-circle redesign: the request dropped the clock-face
+// vocabulary entirely in favor of "by approximately the midpoint of the
+// half-circle, the room should be fully readable." The orbit body still
+// spans t: 0 -> 0.12 (`ORBIT_BODY_T_END`), so its literal midpoint is
+// 0.06 — simpler and more precise than re-solving a named clock position
+// against the ring's geometry, now that there isn't one. Still one single
+// continuous curve holding flat at full brightness for the rest of the
+// orbit, the gate, Establish, Approach, and Film, per explicit "maintain
+// the established lighting... no reset of the atmosphere." `smoothstep`'s
+// own S-shape (slow-fast-slow) still gives an earlier partial-reveal beat
+// (pillars separating from darkness, not yet fully visible) for free.
 const IGNITE_START = 0
-const IGNITE_END = 0.063
+const IGNITE_END = 0.06
 
 /**
  * Thin R3F adapter around the framework-agnostic lighting controller.

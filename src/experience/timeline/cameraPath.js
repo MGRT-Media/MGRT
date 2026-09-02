@@ -1,8 +1,8 @@
 import * as THREE from 'three'
 import { MONITOR_ANCHOR } from '../digital/Monitor.jsx'
 import { CAMERA_ANCHOR } from '../film/CinemaCamera.jsx'
-import { BEAM_CENTER, YAW_DEGREES, CAMERA_STAND } from '../digital/plinthAnchor.js'
-import { PILLAR_RING_CENTER, PILLAR_RING_RADIUS, PILLAR_COUNT } from '../Environment.jsx'
+import { BEAM_CENTER } from '../digital/plinthAnchor.js'
+import { PILLAR_RING_CENTER, PILLAR_RING_RADIUS } from '../Environment.jsx'
 import { ESTABLISH_T, FILM_FOCUS_T } from './filmActBeats.js'
 
 /**
@@ -38,60 +38,65 @@ import { ESTABLISH_T, FILM_FOCUS_T } from './filmActBeats.js'
  * and neither replaces the other.
  */
 /**
- * Entrance: wide exterior orbit + gate entry — a third directorial pass on
- * the opening shot (refines §4AY's orbit; supersedes §4AX's half-moon-
- * through-open-air version), per explicit request that the single most
- * important requirement is distance: "keep the camera far behind the
- * pillars during the entire 8:00 -> 3:15 movement so the viewer can
- * clearly see and understand the pillar circle." §4AY's orbit read too
- * close/tight (`ORBIT_RADIUS` only 1.6 past `PILLAR_RING_RADIUS`) for a
- * genuine wide establishing shot — this round pushes the radius out and
- * anchors the whole sweep to real clock-face positions (8:00 through
- * 3:15) instead of an arbitrary total-sweep-degrees constant.
+ * Entrance: wide exterior half-circle, ending in perfect lens alignment —
+ * a fourth directorial pass on the opening shot (refines §4BA/§4AY's
+ * orbit; supersedes §4AX's half-moon-through-open-air version), per
+ * explicit request to derive the whole shot from the scene's actual
+ * geometry rather than fixed clock positions, with one hard requirement:
+ * the half-circle must finish "perfectly aligned with the Film camera/
+ * lens, creating a straight path through a gap between the pillars
+ * toward the lens" — CAMERA -> GAP -> LENS genuinely collinear, not just
+ * angularly close.
  *
- * Two phases, both still living inside `t: 0 -> ESTABLISH_T` (the
- * existing Snap 1 boundary is unchanged — this is a camera-path change,
- * not a scroll-timeline one, per the same scope reasoning as §4AY):
+ * **The gate is derived from the lens's own optical axis, not the Cinema
+ * Camera's position.** §4BA's gate (`nearestGapAngle` of the camera
+ * *stand's* angular position from the ring center) turned out to be the
+ * wrong signal: the lens is tilted an extra `TILT_TOWARD_MONITOR_DEGREES`
+ * beyond the stand's own yaw (`CinemaCamera.jsx`), so the direction the
+ * lens actually FACES differs from "outward from ring center through the
+ * stand" by several tens of degrees. This round instead casts a ray from
+ * `CAMERA_ANCHOR.lensFrontFieldPosition` along `CAMERA_ANCHOR.lensForward`
+ * — the exact same axis the existing Approach/Snap 2 keyframes below
+ * already sit on — and finds where that ray crosses the pillar ring
+ * (`rayCircleIntersection`). That crossing point IS `GATE_POSITION`: by
+ * construction, gate/lens-front/lens-dive/approach are all genuinely
+ * collinear, so "no major corrective turn" after the half-circle is a
+ * geometric guarantee, not a tuning target. Checked this lands in a real
+ * gap (not aimed at a pillar) before trusting it: the crossing sits
+ * ~12.7° clear of the nearest pillar, comfortably inside that gap's ~30°
+ * span — confirmed via a standalone script before relying on it in-app.
  *
- * **Phase 1 — wide exterior orbit.** Six real points on a single circle
- * of their own (`ORBIT_RADIUS`, concentric with the pillar ring): 8:00,
- * 7:00, 6:00, 5:00, 4:00, then the 3:15 checkpoint — matching the
- * request's own named clock stops exactly, not an approximation. Clock
- * positions are anchored to this ring's real geometry via the one point
- * that's tied to something physical rather than a clock pick: "3:15" is
- * defined as `ENTRY_GATE_ANGLE + CHECKPOINT_OFFSET_DEGREES` (unchanged
- * from §4AY), and every other clock stop is derived from that same
- * offset (`clockToRingAngle` below) — so "8:00" is a genuine ~142.5°
- * around this ring's own center, not a hand-picked coordinate. That span
- * is "roughly a half-circle" per explicit request (142.5° against a
- * true 180°, using real clock-face degrees: each hour is 30°, and 3:15
- * lands at 97.5° into its hour).
+ * **The orbit is the antipodal half-circle from that gate**, at
+ * `ORBIT_RADIUS` (concentric with the pillar ring, pushed further out
+ * than §4BA's 6.6 per explicit "significantly farther back... this is
+ * important") — `ORBIT_START_ANGLE` is simply `gateAngle + 180°`, so the
+ * start is the single point on the ring's exterior circle diametrically
+ * opposite the lens, not an independently chosen position. `ORBIT_POINT_COUNT`
+ * evenly-spaced points step down from there toward the gate at
+ * `HALF_CIRCLE_DEGREES / ORBIT_POINT_COUNT` intervals each, with the last
+ * pure-orbit point landing one interval short of the gate — the gate
+ * itself then pulls the radius in from `ORBIT_RADIUS` to
+ * `PILLAR_RING_RADIUS` over that final stretch. Direction (which of the
+ * two possible half-circle arcs) is chosen to pass through the room's
+ * deeper, darker side first — consistent with the "observe the mysterious
+ * dark space, then arrive at the lit lens" progression established in
+ * earlier rounds, and the same physical direction of travel this file has
+ * used since §4AY.
  *
- * **Phase 2 — the gate.** Unchanged in mechanism from §4AY: from the
- * checkpoint (still on the wide orbit), `GATE_POSITION` pulls the radius
- * in from `ORBIT_RADIUS` all the way to `PILLAR_RING_RADIUS` over that
- * final 15° of arc — a real gap between two real pillars
- * (`ENTRY_GATE_ANGLE`, re-derived from the Cinema Camera's actual
- * angular position, not picked by eye), not an invented doorway. From
- * the gate onward the path hands off to the unchanged
- * `ESTABLISH_POSITION`.
+ * Height glides from `ORBIT_START_Y` down to `GATE_Y` across all orbit
+ * points plus the gate — both lowered from §4BA (4.4 -> 3.0 start,
+ * 1.9 -> 1.7 at the gate) per explicit "lower the camera... more
+ * grounded... pillars should feel tall and imposing," while still
+ * arriving already close to Film height with no separate final drop.
  *
- * Height still glides continuously from a high `ORBIT_START_Y` crane
- * vantage down to `GATE_Y` across all six orbit points plus the gate, so
- * there is still no separate "final drop" — unchanged from §4AY.
- *
- * Look-at is unchanged in structure from §4AY: `ORBIT_ENTRANCE_LOOKAT`
- * (broad ring/architecture, used once, at 8:00) hands off to
- * `ORBIT_ENSEMBLE_LOOKAT` (the production ensemble — Cinema Camera and
- * Monitor both sit near this point, which is why holding it keeps both
- * "visible somewhere within the frame" throughout the sweep, per explicit
- * request) held across the five subsequent orbit beats (7:00 through the
- * 3:15 checkpoint), which hands off to the existing `ESTABLISH_LOOKAT`
- * from the gate onward. Combined with the camera's own position sweeping
- * widely around that fixed target, the framing evolves continuously
- * on its own — still not a "perfect video-game orbit" (constant radius
- * *and* look target *and* nothing else varying): this path changes
- * radius at the gate, changes height throughout, and eases every segment.
+ * Look-at is unchanged in structure from earlier rounds:
+ * `ORBIT_ENTRANCE_LOOKAT` (the ring's own center, used once at the start)
+ * hands off to `ORBIT_ENSEMBLE_LOOKAT` (near both the Cinema Camera and
+ * Monitor, held for the rest of the orbit body) which hands off to the
+ * existing `ESTABLISH_LOOKAT` from the gate onward — camera position
+ * sweeping widely around a fixed look target, not a locked tracking shot
+ * or a constant-radius "video game orbit" (this path changes radius at
+ * the gate, changes height throughout, and eases every segment).
  */
 function pointOnRing(angleDegrees, radius, y) {
   const angle = THREE.MathUtils.degToRad(angleDegrees)
@@ -102,16 +107,6 @@ function pointOnRing(angleDegrees, radius, y) {
   )
 }
 
-// Re-derives the Cinema Camera stand's world origin — the same
-// yaw + local-offset composition `CinemaCamera.jsx` computes internally
-// for its own `worldOrigin`, which isn't exported since nothing else has
-// needed it before now.
-const cameraStandOrigin = new THREE.Vector3(CAMERA_STAND.offsetX, 0, 0)
-  .applyAxisAngle(new THREE.Vector3(0, 1, 0), THREE.MathUtils.degToRad(YAW_DEGREES))
-  .add(new THREE.Vector3(BEAM_CENTER[0], 0, BEAM_CENTER[2]))
-
-const RING_STEP_DEGREES = 360 / PILLAR_COUNT
-
 /** This point's angle around the pillar ring, in the same 0°-at-back-apex convention `Environment.jsx`'s own `pillarPositions` uses. */
 function angleOnRing(point) {
   const dx = point.x - PILLAR_RING_CENTER[0]
@@ -119,68 +114,69 @@ function angleOnRing(point) {
   return (THREE.MathUtils.radToDeg(Math.atan2(dx, -dz)) + 360) % 360
 }
 
-// Pillars sit at multiples of RING_STEP_DEGREES (Environment.jsx); gaps
-// between adjacent pillars therefore sit at the half-step offsets.
-function nearestGapAngle(angleDegrees) {
-  const halfStep = RING_STEP_DEGREES / 2
-  const steps = Math.round((angleDegrees - halfStep) / RING_STEP_DEGREES)
-  return (steps * RING_STEP_DEGREES + halfStep + 360) % 360
+/**
+ * Where a ray (origin, direction — XZ only, Y ignored) first crosses a
+ * circle of the given radius around `PILLAR_RING_CENTER`, travelling
+ * forward (`t > 0`) from the origin. Standard ray-circle intersection;
+ * picks the larger (farther) root, since the lens axis's ray also crosses
+ * an imaginary circle of this radius a second time behind the camera body
+ * (`t < 0`, irrelevant here).
+ */
+function rayCircleIntersection(originX, originZ, dirX, dirZ, radius) {
+  const ox = originX - PILLAR_RING_CENTER[0]
+  const oz = originZ - PILLAR_RING_CENTER[1]
+  const a = dirX * dirX + dirZ * dirZ
+  const b = 2 * (ox * dirX + oz * dirZ)
+  const c = ox * ox + oz * oz - radius * radius
+  const t = (-b + Math.sqrt(b * b - 4 * a * c)) / (2 * a)
+  return { x: originX + dirX * t, z: originZ + dirZ * t }
 }
 
-const ENTRY_GATE_ANGLE = nearestGapAngle(angleOnRing(cameraStandOrigin))
-const CHECKPOINT_OFFSET_DEGREES = 15
-const checkpointAngle = ENTRY_GATE_ANGLE + CHECKPOINT_OFFSET_DEGREES
+const [lensFrontX, , lensFrontZ] = CAMERA_ANCHOR.lensFrontFieldPosition
+const [lensFwdX, , lensFwdZ] = CAMERA_ANCHOR.lensForward
 
-// Pushed out from §4AY's 6.2, per explicit "the single most important
-// requirement" that the orbit read as a genuinely wide establishing shot,
-// not a tight loop. Capped by the hall's own ±7 side walls (`HALL_WIDTH`
-// 14, unchanged/untouched — this is a camera-path round only): the
-// 8:00->3:15 sweep passes through θ: 270° (see `clockToRingAngle` below),
-// where |x| equals this radius exactly since `PILLAR_RING_CENTER`'s x is
-// 0, so 6.6 is close to the practical ceiling while keeping a real 0.4
-// margin from the wall.
-const ORBIT_RADIUS = 6.6
+// The straight corridor's ring crossing — see the module doc above for
+// why this (not the Cinema Camera stand's own angular position) is the
+// correct way to find "the gap aligned with the lens."
+const gateCrossing = rayCircleIntersection(lensFrontX, lensFrontZ, lensFwdX, lensFwdZ, PILLAR_RING_RADIUS)
+const ENTRY_GATE_ANGLE = angleOnRing(gateCrossing)
 
-// Standard clock-face degrees (12 at 0°, clockwise), one hour = 30°.
-function clockToDegrees(hour, minute = 0) {
-  return ((hour % 12) + minute / 60) * 30
-}
+// Pushed out from §4BA's 6.6, per explicit "significantly farther
+// back... this is important." Still capped by the hall's own ±7 side
+// walls (`HALL_WIDTH` 14, unchanged/untouched — this is a camera-path
+// round only): any half-circle from `ENTRY_GATE_ANGLE`'s antipodal point
+// necessarily passes through one of the ring's two ±X extremes (θ: 90°/
+// 270°, where |x| equals this radius exactly, since `PILLAR_RING_CENTER`'s
+// x is 0) regardless of which arc is chosen — 6.8 is close to the
+// practical ceiling while keeping a real, if narrow, 0.2 margin from the
+// wall (checked via a standalone script before trusting it, and verified
+// visually for clipping — see build-status.md).
+const ORBIT_RADIUS = 6.8
 
-// Anchors the request's clock-face vocabulary to this ring's real angular
-// coordinates via the one clock position that's tied to actual geometry
-// rather than a pick: "3:15" IS `checkpointAngle` (derived from the real
-// gate above). Every other named stop (8:00 through 4:00) is read off the
-// same clock face and shifted by that one offset, so "8:00" is a genuine
-// position around this ring's center, not an independently chosen angle.
-const CLOCK_TO_RING_OFFSET = checkpointAngle - clockToDegrees(3, 15)
-function clockToRingAngle(hour, minute = 0) {
-  return clockToDegrees(hour, minute) + CLOCK_TO_RING_OFFSET
-}
+const ORBIT_START_Y = 3.0
+const GATE_Y = 1.7
 
-const ORBIT_START_Y = 4.4
-const GATE_Y = 1.9
+const ORBIT_POINT_COUNT = 6
+const HALF_CIRCLE_DEGREES = 180
+const ORBIT_STEP_DEGREES = HALF_CIRCLE_DEGREES / ORBIT_POINT_COUNT
 
-// Six real clock stops, evenly spaced in scroll progress and in height —
-// matches the request's own named sequence (8:00 -> 7:00 -> 6:00 -> 5:00
-// -> 4:00 -> 3:15) exactly, rather than approximating it with fewer points.
-const ORBIT_CLOCK_STOPS = [
-  { hour: 8, minute: 0 },
-  { hour: 7, minute: 0 },
-  { hour: 6, minute: 0 },
-  { hour: 5, minute: 0 },
-  { hour: 4, minute: 0 },
-  { hour: 3, minute: 15 }, // the checkpoint — ~15° from the gate, still on the wide orbit
-]
+// Diametrically opposite the gate on the orbit's own circle — the start
+// position is therefore a direct consequence of where the lens points,
+// not an independently chosen coordinate. Stepping DOWN from here by
+// `ORBIT_STEP_DEGREES` per point (same direction of travel established in
+// §4AY/§4BA) sweeps through the room's deeper, darker side first.
+const ORBIT_START_ANGLE = ENTRY_GATE_ANGLE + HALF_CIRCLE_DEGREES
 
 function heightAtOrbitFraction(f) {
   return THREE.MathUtils.lerp(ORBIT_START_Y, GATE_Y, f)
 }
 
-const orbitPositions = ORBIT_CLOCK_STOPS.map(({ hour, minute }, i) => {
-  const f = i / (ORBIT_CLOCK_STOPS.length - 1)
-  return pointOnRing(clockToRingAngle(hour, minute), ORBIT_RADIUS, heightAtOrbitFraction(f))
+const orbitPositions = Array.from({ length: ORBIT_POINT_COUNT }, (_, i) => {
+  const angle = ORBIT_START_ANGLE - i * ORBIT_STEP_DEGREES
+  const f = i / ORBIT_POINT_COUNT // < 1 even for the last point — it's one step short of the gate, not at it
+  return pointOnRing(angle, ORBIT_RADIUS, heightAtOrbitFraction(f))
 })
-const GATE_POSITION = pointOnRing(ENTRY_GATE_ANGLE, PILLAR_RING_RADIUS, GATE_Y)
+const GATE_POSITION = new THREE.Vector3(gateCrossing.x, GATE_Y, gateCrossing.z)
 
 // Opening look direction — deliberately NOT the production ensemble.
 // Aimed at the pillar ring's own center at a modest height, so the first
@@ -189,13 +185,12 @@ const GATE_POSITION = pointOnRing(ENTRY_GATE_ANGLE, PILLAR_RING_RADIUS, GATE_Y)
 // inside it is revealed.
 const ORBIT_ENTRANCE_LOOKAT = new THREE.Vector3(PILLAR_RING_CENTER[0], 2.0, PILLAR_RING_CENTER[1])
 
-// Held across the five subsequent orbit beats (7:00 through the 3:15
-// checkpoint) — the Cinema Camera and Monitor "remain the primary visual
-// subjects... visible somewhere within the frame throughout" per explicit
-// request, achieved by holding this target (which sits near both of them)
-// fixed while the camera's own position sweeps widely around it (see the
-// module doc above for why that reads as observed discovery, not a
-// locked mechanical tracking shot).
+// Held across the remaining orbit beats — the Cinema Camera and Monitor
+// "remain the primary visual subjects... visible somewhere within the
+// frame throughout" per explicit request, achieved by holding this target
+// (which sits near both of them) fixed while the camera's own position
+// sweeps widely around it (see the module doc above for why that reads as
+// observed discovery, not a locked mechanical tracking shot).
 const ORBIT_ENSEMBLE_LOOKAT = new THREE.Vector3(BEAM_CENTER[0], 1.8, BEAM_CENTER[2])
 
 // Establish look-at: the shared plinth ensemble's center, at a height
@@ -269,19 +264,19 @@ const MONITOR_ALIGNED_POSITION = new THREE.Vector3(
 )
 const MONITOR_ALIGNED_LOOKAT = new THREE.Vector3(screenX, screenY, screenZ)
 
-// Orbit body keyframes span t: 0 -> 0.12 (six clock stops, evenly spaced),
+// Orbit body keyframes span t: 0 -> 0.12 (six points, evenly spaced),
 // leaving 0.12 -> 0.135 for the gate crossing and 0.135 -> ESTABLISH_T for
-// the final settle — unchanged envelope from §4AY, only the shape/count of
-// points inside it changed.
+// the final settle — unchanged envelope from §4AY/§4BA, only the shape of
+// the points inside it changed.
 const ORBIT_BODY_T_END = 0.12
-const orbitKeyframes = ORBIT_CLOCK_STOPS.map((stop, i) => ({
-  t: (ORBIT_BODY_T_END * i) / (ORBIT_CLOCK_STOPS.length - 1),
-  position: orbitPositions[i],
+const orbitKeyframes = orbitPositions.map((position, i) => ({
+  t: (ORBIT_BODY_T_END * i) / ORBIT_POINT_COUNT,
+  position,
   lookAt: i === 0 ? ORBIT_ENTRANCE_LOOKAT : ORBIT_ENSEMBLE_LOOKAT,
 }))
 
 const KEYFRAMES = [
-  ...orbitKeyframes, // 8:00 (t: 0) through the 3:15 checkpoint (t: 0.12)
+  ...orbitKeyframes, // Antipodal start (t: 0) through the last pure-orbit point, one step short of the gate
   { t: 0.135, position: GATE_POSITION, lookAt: ESTABLISH_LOOKAT }, // Through the gate — radius pulls in from the orbit to the ring itself
   { t: ESTABLISH_T, position: ESTABLISH_POSITION, lookAt: ESTABLISH_LOOKAT }, // Snap 1 — Studio Scene
   { t: APPROACH_T, position: APPROACH_POSITION, lookAt: LENS_LOOKAT }, // Approach
