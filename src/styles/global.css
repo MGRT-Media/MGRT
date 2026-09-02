@@ -118,3 +118,84 @@ html.lenis-smooth {
     stroke-dashoffset: 0;
   }
 }
+
+/*
+ * Four-line chapter marker (SectionIndicator.jsx) — a cinematic chapter
+ * cue, not navigation: fixed/pointer-events: none so it's never an
+ * interaction target, restrained opacity and small scale throughout,
+ * only a quick opacity/width transition on state change (no large
+ * animation, per explicit request).
+ */
+.section-indicator {
+  position: fixed;
+  left: 28px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.section-indicator__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.section-indicator__line {
+  display: block;
+  width: 18px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.16);
+  transition: width 0.25s ease, background-color 0.25s ease;
+}
+
+.section-indicator__row--active .section-indicator__line {
+  width: 30px;
+  /* Matches lightingParams.spot.color's warm tone (volumetricLighting.js),
+     the same active-state color already used by .scroll-lock-indicator. */
+  background: rgba(255, 241, 220, 0.85);
+}
+
+.section-indicator__label {
+  font-size: 9px;
+  font-family: system-ui, sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 241, 220, 0.85);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  white-space: nowrap;
+}
+
+.section-indicator__row--active .section-indicator__label {
+  opacity: 0.75;
+}
+
+@media (max-width: 640px) {
+  .section-indicator {
+    left: 16px;
+    gap: 18px;
+  }
+
+  .section-indicator__line {
+    width: 13px;
+  }
+
+  .section-indicator__row--active .section-indicator__line {
+    width: 22px;
+  }
+
+  .section-indicator__label {
+    font-size: 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .section-indicator__line,
+  .section-indicator__label {
+    transition: none;
+  }
+}
