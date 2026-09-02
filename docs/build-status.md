@@ -818,6 +818,24 @@ The request described the exact "one-shot intro, pause outside the pillars, seco
 
 ---
 
+## 4BG. Refinement — Slower First and Second Scroll Durations
+
+**Status:** DONE
+
+### Brief
+Slow down both one-shot moves: the exterior half-circle ("the spiral," triggered by the first scroll) and the straight approach to the lens (triggered by the second scroll).
+
+### What changed
+- **`filmActBeats.js`** — `INTRO_CINEMATIC_MIN_DURATION_SECONDS`/`INTRO_CINEMATIC_MAX_DURATION_SECONDS` raised `6/12 → 9/16`. The forward play (distance `INTRO_ALIGN_T`) always lands at exactly the min, so this directly slows the first scroll's half-circle from 6s to 9s; the reverse play (Film back to `t: 0`) scales up proportionally and is now capped at 16s instead of 12.
+- New `INTRO_TO_FILM_DURATION_SECONDS` (`4.5`) — a fixed duration specifically for the "second scroll" leg (exterior alignment point → Film), used instead of the general `JUMP_MIN/MAX_DURATION_SECONDS` distance-scaled formula that hop would otherwise fall under. That general formula also governs the unrelated Film↔Digital chapter hop and other direct-nav jumps; special-casing this one leg (`ScrollTimelineProvider.jsx`'s `navigateToSection`, gated on `sectionKey === 'film' && currentChapter === 'intro'` — true only when the camera is still conceptually "in the intro," whether the hop was triggered by a scroll gesture or a direct nav-click from that same state) slows down exactly the leg asked for without touching Film↔Digital's own already-tuned pacing (previously ~1.1s for this specific distance under the general formula; now a deliberate 4.5s).
+
+### Verification
+- Production build succeeds; `useState`/leftover-debug-log grep clean; diff scoped to the two files that actually own these durations.
+- App-mount sanity checked on a freshly restarted dev server + fresh tab: canvas present, no error overlay, no console errors.
+- **Not independently re-verified this round**: live scroll-driven interaction, actually feeling the new pacing — the preview pane was again reported "hidden," the same persistent condition across recent rounds. A live pass confirming both durations read as "slower" without feeling sluggish is the natural next check once the preview is visible.
+
+---
+
 ## 4A. Geometry Refinement — Entrance Pillars (cross-cutting, Phase 1A revision)
 
 **Status:** TECHNICALLY COMPLETE
