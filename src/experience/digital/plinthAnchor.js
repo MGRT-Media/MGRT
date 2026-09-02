@@ -22,11 +22,18 @@ export const YAW_DEGREES = 20
 // asymmetric with each stand's half-width so the two stands sit close
 // beside each other with a real but modest gap, rather than centered
 // exactly opposite each other regardless of size.
+// offsetX widened from 0.55 to 0.85 (and CAMERA_STAND's mirrored below),
+// per explicit direction that the Cinema Camera and Monitor read as two
+// distinct destinations within one production world, not two props placed
+// beside each other — "the visitor should subconsciously understand
+// there is somewhere else in this room." The room easily accommodates the
+// wider gap (SHELL_WIDTH 14, and both objects still sit well inside the
+// establish shot's frame — verified visually after the change).
 export const MONITOR_PLINTH = {
   width: 1.0,
   depth: 0.75,
   height: 0.72,
-  offsetX: 0.55,
+  offsetX: 0.85,
 }
 
 // The Cinema Camera no longer stands on a stone plinth — per explicit
@@ -36,6 +43,6 @@ export const MONITOR_PLINTH = {
 // `MONITOR_PLINTH.height` so the two objects read at a comparable scale
 // beside each other despite their very different support structures.
 export const CAMERA_STAND = {
-  offsetX: -0.55,
+  offsetX: -0.85,
   standHeight: 0.7,
 }

@@ -36,13 +36,61 @@ import { ESTABLISH_T, FILM_FOCUS_T } from './filmActBeats.js'
  * (spatial smoothness of the path itself vs. temporal response to input)
  * and neither replaces the other.
  */
-const START_POSITION = new THREE.Vector3(-1.0, 1.6, 8)
+/**
+ * Entrance arc (Entrance start -> Arc apex -> Snap 1 establish) — a
+ * deliberate directorial redesign, per explicit request to think like a
+ * filmmaker rather than solve an A-to-B interpolation problem. The
+ * previous version was a near-straight, flat-height push down the room's
+ * Z axis (start and establish shared the exact same y: 1.6, with only a
+ * ~1.6-unit sideways drift) — technically smooth, but not a shot anyone
+ * would direct.
+ *
+ * The new shape is a genuine half-moon: the camera opens HIGH (y: 4.4 —
+ * roughly half the hall's own height, a real "crane" vantage that reads
+ * the room's scale before anything else) and CENTERED BETWEEN the
+ * entrance pillars (x: -1.6, keeping their existing "gateway the camera
+ * passes through" framing intact), then sweeps in one broad, continuous
+ * arc toward the room's lit side (bulging right, toward the breach/
+ * beam — ARC_APEX_POSITION below) before curving back and settling into
+ * the establish position — while continuously losing height the entire
+ * way, so by the time it reaches the establish shot it has ALREADY
+ * arrived at shooting height (1.6) rather than dropping into it. Three
+ * points (start, apex, establish) are enough for CatmullRom to read as
+ * one elegant crescent rather than a mechanical A-to-B-to-C — a second
+ * apex point was considered and rejected as an S-curve, which is
+ * explicitly the wrong shape here.
+ *
+ * The look-at direction tells its own, separate story (see
+ * ENTRANCE_LOOKAT/ESTABLISH_LOOKAT below): the opening frame looks at the
+ * room in general — space and light — not the plinths, so the ensemble
+ * isn't revealed until the camera has already discovered the space around
+ * it. That reframe happens over the Entrance -> Apex segment; from the
+ * apex onward the camera holds on the plinth ensemble for a clean glide
+ * to rest, exactly like the previous version's final approach did.
+ */
+const START_POSITION = new THREE.Vector3(-1.6, 4.4, 9.0)
+
+// Broad crescent apex — the half-moon's outward bulge, swinging toward the
+// room's lit (+X, breach/beam) side as the camera discovers the space,
+// roughly midway down in both height and depth before curving back to the
+// establish position's more centered x. Not a snap/lock point of its own
+// (no `t` constant exported for it) — purely a shape control point for the
+// spline, at t: 0.07, giving the sweep itself a bit more of the opening
+// zone's short runway than the final glide-to-rest that follows it.
+const ARC_APEX_T = 0.07
+const ARC_APEX_POSITION = new THREE.Vector3(2.6, 2.4, 3.2)
+
+// Opening look direction — deliberately NOT the plinth ensemble. Aimed
+// generally into the room's depth at a modest height, so the first thing
+// the audience reads is the space and its light, not the destination —
+// per explicit direction not to reveal everything simultaneously.
+const ENTRANCE_LOOKAT = new THREE.Vector3(0, 1.8, -2)
 
 // Establish look-at: the shared plinth ensemble's center, at a height
-// between the two stands' own centers — used by both the entrance start
-// and the Snap 1 establish point below, so that whole opening segment is
-// a pure dolly-in (position changes, look direction doesn't) rather than
-// a reframe, reading as a clean glide into the room.
+// between the two stands' own centers — held from the arc apex through
+// the establish point (a pure dolly for that final stretch, no further
+// reframe) so the "architecture, then the production ensemble" reveal
+// reads as one continuous settle, not a series of separate look-cuts.
 const ESTABLISH_LOOKAT = new THREE.Vector3(MONITOR_ANCHOR.position[0], 1.3, MONITOR_ANCHOR.position[2])
 
 // Snap 1 — Studio Scene (Establish): where the entrance glide settles,
@@ -110,7 +158,8 @@ const MONITOR_ALIGNED_POSITION = new THREE.Vector3(
 const MONITOR_ALIGNED_LOOKAT = new THREE.Vector3(screenX, screenY, screenZ)
 
 const KEYFRAMES = [
-  { t: 0, position: START_POSITION, lookAt: ESTABLISH_LOOKAT }, // Entrance start
+  { t: 0, position: START_POSITION, lookAt: ENTRANCE_LOOKAT }, // Entrance start — high, wide, looking at the space itself
+  { t: ARC_APEX_T, position: ARC_APEX_POSITION, lookAt: ESTABLISH_LOOKAT }, // Arc apex — the half-moon's outward sweep, reframing onto the ensemble
   { t: ESTABLISH_T, position: ESTABLISH_POSITION, lookAt: ESTABLISH_LOOKAT }, // Snap 1 — Studio Scene
   { t: APPROACH_T, position: APPROACH_POSITION, lookAt: LENS_LOOKAT }, // Approach
   { t: FILM_FOCUS_T, position: LENS_DIVE_POSITION, lookAt: LENS_LOOKAT }, // Snap 2 — Cinema Lens
@@ -137,8 +186,8 @@ const KEYFRAMES = [
  * while centripetal stays well-behaved.
  *
  * `lookAt` is deliberately NOT put through the same curve treatment: only
- * three distinct look targets exist across five keyframes (several
- * segments intentionally share one, e.g. the whole entrance glide keeps
+ * four distinct look targets exist across six keyframes (several segments
+ * intentionally share one, e.g. the arc apex through establish keeps
  * looking at `ESTABLISH_LOOKAT` — a pure dolly, no reframe), so there's
  * no meaningfully "kinked" rotation path to smooth the shape of the way
  * there is for position — segment-wise eased lerp between look targets
