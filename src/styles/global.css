@@ -120,20 +120,21 @@ html.lenis-smooth {
 }
 
 /*
- * Four-line chapter marker (SectionIndicator.jsx) — a cinematic chapter
+ * Five-line cinematic chapter marker (SectionIndicator.jsx) — a chapter
  * cue, not navigation: fixed/pointer-events: none so it's never an
- * interaction target, restrained opacity and small scale throughout,
- * only a quick opacity/width transition on state change (no large
- * animation, per explicit request).
+ * interaction target, restrained opacity and small scale throughout, a
+ * brief power2.out-equivalent transition on state change (no large
+ * animation, per explicit request). ~44px from the left edge on desktop
+ * (within the requested ~40-50px range), vertically centered.
  */
 .section-indicator {
   position: fixed;
-  left: 28px;
+  left: 44px;
   top: 50%;
   transform: translateY(-50%);
   display: flex;
   flex-direction: column;
-  gap: 26px;
+  gap: 24px;
   pointer-events: none;
   z-index: 5;
 }
@@ -146,14 +147,16 @@ html.lenis-smooth {
 
 .section-indicator__line {
   display: block;
-  width: 18px;
+  width: 14px;
   height: 1px;
   background: rgba(255, 255, 255, 0.16);
-  transition: width 0.25s ease, background-color 0.25s ease;
+  /* Approximates GSAP's power2.out, per explicit suggestion, without
+     pulling in GSAP for a two-property CSS transition. */
+  transition: width 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94), background-color 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
 .section-indicator__row--active .section-indicator__line {
-  width: 30px;
+  width: 38px;
   /* Matches lightingParams.spot.color's warm tone (volumetricLighting.js),
      the same active-state color already used by .scroll-lock-indicator. */
   background: rgba(255, 241, 220, 0.85);
@@ -166,7 +169,7 @@ html.lenis-smooth {
   text-transform: uppercase;
   color: rgba(255, 241, 220, 0.85);
   opacity: 0;
-  transition: opacity 0.25s ease;
+  transition: opacity 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   white-space: nowrap;
 }
 
@@ -176,16 +179,16 @@ html.lenis-smooth {
 
 @media (max-width: 640px) {
   .section-indicator {
-    left: 16px;
-    gap: 18px;
+    left: 18px;
+    gap: 16px;
   }
 
   .section-indicator__line {
-    width: 13px;
+    width: 10px;
   }
 
   .section-indicator__row--active .section-indicator__line {
-    width: 22px;
+    width: 26px;
   }
 
   .section-indicator__label {
