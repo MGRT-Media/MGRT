@@ -12,7 +12,9 @@ import { BEAM_CENTER, YAW_DEGREES, MONITOR_PLINTH } from './plinthAnchor.js'
 // Phase 2: curated Digital work, per experience-design.md §8 ("approximately
 // 2-4 selected Digital projects"). One clip for now — extending to a
 // scroll-mapped sequence of several is future work, not part of this swap.
-const DIGITAL_MEDIA_SRC = '/media/digital/digital-01-website.mp4'
+// Exported so FullscreenButton.jsx's modal CTA (§4BN) can play the same
+// file directly, instead of hardcoding this path a second time.
+export const DIGITAL_MEDIA_SRC = '/media/digital/digital-01-website.mp4'
 
 /**
  * Phase 2 Digital console — a retro/mid-century industrial reference-

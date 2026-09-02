@@ -16,6 +16,10 @@ import { BEAM_CENTER, YAW_DEGREES, CAMERA_STAND } from '../digital/plinthAnchor.
 // so the lens turns toward the Monitor rather than staying parallel to it.
 const TILT_TOWARD_MONITOR_DEGREES = 32
 
+// Exported so FullscreenButton.jsx's modal CTA (§4BN) can play the same
+// file directly, instead of hardcoding this path a second time.
+export const FILM_MEDIA_SRC = '/media/film/film-01-hero.mp4'
+
 const BODY = { width: 0.42, height: 0.28, depth: 0.5, cornerRadius: 0.035 }
 const LENS = { frontRadius: 0.07, rearRadius: 0.09, length: 0.26 }
 const VIEWFINDER = { width: 0.1, height: 0.08, depth: 0.12 }
@@ -161,7 +165,7 @@ export default function CinemaCamera() {
   // regardless of scroll direction or speed.
   const video = useMemo(() => {
     const el = document.createElement('video')
-    el.src = '/media/film/film-01-hero.mp4'
+    el.src = FILM_MEDIA_SRC
     el.loop = true
     el.muted = true
     el.playsInline = true

@@ -67,12 +67,13 @@ html.lenis-smooth {
  * Force-Stop visual cue (ScrollLockIndicator.jsx) — a minimal ring that
  * fills over the scroll-lock hold duration. Fixed/pointer-events: none
  * like .app-shell, since it's a passive cue, never an interaction target.
+ * Bottom-right per explicit request to swap this and .fullscreen-toggle's
+ * positions (that one is now bottom-center, below).
  */
 .scroll-lock-indicator {
   position: fixed;
-  left: 50%;
-  bottom: 48px;
-  transform: translateX(-50%);
+  right: 24px;
+  bottom: 24px;
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.35s ease;
@@ -257,17 +258,20 @@ html.lenis-smooth {
 
 /*
  * Full-screen toggle (FullscreenButton.jsx) — visible from Film onward,
- * bottom-right so it doesn't compete with the side navigation (left) or
- * the scroll-lock cue (bottom-center). Always mounted, faded via a
- * `--visible` class rather than conditionally rendered, matching
- * `.scroll-lock-indicator`'s own pattern — `pointer-events` follows the
- * same toggle so the invisible button can't be tabbed/clicked while
- * hidden.
+ * bottom-center per explicit request to swap this and
+ * `.scroll-lock-indicator`'s positions (that one is now bottom-right,
+ * above). Always mounted, faded via a `--visible` class rather than
+ * conditionally rendered, matching `.scroll-lock-indicator`'s own
+ * pattern — `pointer-events` follows the same toggle so the invisible
+ * button can't be tabbed/clicked while hidden. The hidden/visible states'
+ * `translate()` combines the fade-in lift with the fixed `-50%` centering
+ * `left: 50%` needs — both live in one `transform` since a single element
+ * can only have one.
  */
 .fullscreen-toggle {
   position: fixed;
-  right: 24px;
-  bottom: 24px;
+  left: 50%;
+  bottom: 48px;
   z-index: 5;
   width: 40px;
   height: 40px;
@@ -282,14 +286,14 @@ html.lenis-smooth {
   -webkit-tap-highlight-color: transparent;
   pointer-events: none;
   opacity: 0;
-  transform: translateY(6px);
+  transform: translate(-50%, 6px);
   transition: opacity 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94), transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94),
     border-color 0.3s ease, color 0.3s ease;
 }
 
 .fullscreen-toggle--visible {
   opacity: 1;
-  transform: translateY(0);
+  transform: translate(-50%, 0);
   pointer-events: auto;
 }
 
@@ -308,8 +312,7 @@ html.lenis-smooth {
 
 @media (max-width: 640px) {
   .fullscreen-toggle {
-    right: 16px;
-    bottom: 16px;
+    bottom: 36px;
     width: 36px;
     height: 36px;
   }
@@ -317,6 +320,81 @@ html.lenis-smooth {
 
 @media (prefers-reduced-motion: reduce) {
   .fullscreen-toggle {
+    transition: none;
+  }
+}
+
+/*
+ * Full-viewport video pop-up (FullscreenVideoModal.jsx) — a custom CTA
+ * overlay, not browser-native fullscreen, per explicit request. Sits
+ * above everything else in this experience (z-index 50 vs. the highest
+ * existing UI layer at 10) since it's meant to fully take over the view.
+ */
+.fullscreen-modal {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  animation: fullscreen-modal-in 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.fullscreen-modal__video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: var(--color-void);
+}
+
+.fullscreen-modal__close {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 51;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(13, 13, 13, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 50%;
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color 0.3s ease, color 0.3s ease;
+}
+
+.fullscreen-modal__close:hover,
+.fullscreen-modal__close:focus-visible {
+  border-color: rgba(255, 241, 220, 0.6);
+  color: rgba(255, 241, 220, 0.9);
+}
+
+.fullscreen-modal__close:focus-visible {
+  outline: 1px solid rgba(255, 241, 220, 0.6);
+  outline-offset: 3px;
+}
+
+@keyframes fullscreen-modal-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fullscreen-modal {
+    animation: none;
+  }
+
+  .fullscreen-modal__close {
     transition: none;
   }
 }
