@@ -120,12 +120,15 @@ html.lenis-smooth {
 }
 
 /*
- * Five-line cinematic chapter marker (SectionIndicator.jsx) — a chapter
- * cue, not navigation: fixed/pointer-events: none so it's never an
- * interaction target, restrained opacity and small scale throughout, a
- * brief power2.out-equivalent transition on state change (no large
- * animation, per explicit request). ~44px from the left edge on desktop
- * (within the requested ~40-50px range), vertically centered.
+ * Five-line cinematic side navigation (SectionIndicator.jsx) — reads as a
+ * series of small marks at the edge of the screen, not a conventional
+ * navbar: restrained opacity/scale throughout, a brief power2.out-
+ * equivalent transition on every state change (hover, focus, active — no
+ * large animation, per explicit request). ~44px from the left edge on
+ * desktop (within the requested ~40-50px range), vertically centered. Each
+ * row is a real <button> (clickable — see the file's own doc comment for
+ * how clicks reach the camera), so this container no longer blocks pointer
+ * events the way the passive-only version did.
  */
 .section-indicator {
   position: fixed;
@@ -135,7 +138,6 @@ html.lenis-smooth {
   display: flex;
   flex-direction: column;
   gap: 24px;
-  pointer-events: none;
   z-index: 5;
 }
 
@@ -143,6 +145,32 @@ html.lenis-smooth {
   display: flex;
   align-items: center;
   gap: 10px;
+  /* Button reset — this is a navigation control, not a chapter cue, but it
+     must not look or feel like a conventional UI button. */
+  background: none;
+  border: none;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  /* Enlarges the click/touch target well past the visible 14px line
+     (padding) while an equal negative margin keeps the line's own resting
+     position from shifting — a bigger hit area without a bigger mark. */
+  padding: 14px 16px 14px 0;
+  margin-left: -16px;
+}
+
+.section-indicator__row--disabled {
+  /* Campaigns/Return: still hoverable/focusable (matches the other marks'
+     look), just not a real destination yet — no pointer cursor implying
+     otherwise. */
+  cursor: default;
+}
+
+.section-indicator__row:focus-visible {
+  outline: 1px solid rgba(255, 241, 220, 0.6);
+  outline-offset: 4px;
 }
 
 .section-indicator__line {
@@ -155,7 +183,8 @@ html.lenis-smooth {
   transition: width 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94), background-color 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
-.section-indicator__row--active .section-indicator__line {
+.section-indicator__row--active .section-indicator__line,
+.section-indicator__row:focus-visible .section-indicator__line {
   width: 38px;
   /* Matches lightingParams.spot.color's warm tone (volumetricLighting.js),
      the same active-state color already used by .scroll-lock-indicator. */
@@ -173,8 +202,24 @@ html.lenis-smooth {
   white-space: nowrap;
 }
 
-.section-indicator__row--active .section-indicator__label {
+.section-indicator__row--active .section-indicator__label,
+.section-indicator__row:focus-visible .section-indicator__label {
   opacity: 0.75;
+}
+
+/* `hover: hover` — restricts the hover reveal to devices that actually
+   have a precise pointer, so a tap on touch doesn't leave the mark stuck
+   in its expanded "hover" state (touch has no hover to later leave). Tap
+   still navigates via the button's click handler either way. */
+@media (hover: hover) {
+  .section-indicator__row:hover .section-indicator__line {
+    width: 38px;
+    background: rgba(255, 241, 220, 0.85);
+  }
+
+  .section-indicator__row:hover .section-indicator__label {
+    opacity: 0.75;
+  }
 }
 
 @media (max-width: 640px) {
@@ -187,8 +232,15 @@ html.lenis-smooth {
     width: 10px;
   }
 
-  .section-indicator__row--active .section-indicator__line {
+  .section-indicator__row--active .section-indicator__line,
+  .section-indicator__row:focus-visible .section-indicator__line {
     width: 26px;
+  }
+
+  @media (hover: hover) {
+    .section-indicator__row:hover .section-indicator__line {
+      width: 26px;
+    }
   }
 
   .section-indicator__label {

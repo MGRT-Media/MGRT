@@ -4,6 +4,7 @@ import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { createSmoothScroll } from './smoothScroll.js'
 import { setScrollLocked } from './scrollLockEvent.js'
+import { onNavigateRequest } from './sectionNavigationEvent.js'
 import {
   ESTABLISH_T,
   ESTABLISH_SNAP_CAPTURE_RADIUS,
@@ -18,9 +19,22 @@ import {
   INTRO_INTENT_DECAY_MS,
   LOCK_CATCH_DURATION_SECONDS,
   LOCK_CATCH_EASE,
+  SECTION_TARGETS,
+  JUMP_MIN_DURATION_SECONDS,
+  JUMP_MAX_DURATION_SECONDS,
 } from './filmActBeats.js'
 
 gsap.registerPlugin(ScrollTrigger)
+
+/**
+ * Ease curve for direct-navigation jumps (below) — the same
+ * ease-out-cubic shape `smoothScroll.js` already uses for Lenis's default
+ * glide-to-rest, reused here rather than a second curve, so a nav-triggered
+ * jump decelerates with the same weight as the rest of the experience.
+ */
+function easeSectionJump(t) {
+  return 1 - (1 - t) ** 3
+}
 
 /**
  * Shared mutable progress value (0–1), written by the GSAP/ScrollTrigger
@@ -192,6 +206,18 @@ export function ScrollSpacer() {
       else smoothScroll.lenis.start()
     }
 
+    // --- Direct navigation (side nav clicks) ---
+    // Set for the duration of a nav-triggered jump; suppresses the
+    // intro-zone driver and the Lens crossing-detection lock below so the
+    // camera can physically travel *through* an intermediate landmark
+    // without stopping or firing its presentation trigger, per explicit
+    // request ("the camera can physically travel through the environment,
+    // but it should not stop and trigger the Film or Digital presentation
+    // sequences on the way"). `jumpToken` guards a jump's own `onComplete`
+    // against firing after a newer click has superseded it.
+    let isDirectJumpActive = false
+    let jumpToken = 0
+
     // --- Intro (t: 0 -> INTRO_ZONE_END_T) — hard rate cap ---
     let introDriveActive = false
     let introIntentDirection = 0
@@ -230,7 +256,10 @@ export function ScrollSpacer() {
     window.addEventListener('touchmove', onIntroTouchMove, { capture: true, passive: false })
 
     const syncIntroZone = () => {
-      if (prefersReducedMotion) return
+      // A direct-navigation jump owns scrollProgress.value for its own
+      // duration (below) — letting this re-engage the rate-cap driver
+      // mid-transit would fight the jump's own Lenis tween.
+      if (prefersReducedMotion || isDirectJumpActive) return
       const inZone = scrollProgress.value < INTRO_ZONE_END_T && !lensHoldActive && !monitorLockActive
       if (inZone === introDriveActive) return
       introDriveActive = inZone
@@ -412,7 +441,7 @@ export function ScrollSpacer() {
           // a genuine crossing (FILM_FOCUS_T strictly between the last
           // tick's progress and this one) so it re-engages on every pass
           // through the point, forward or backward, not just the first.
-          if (!lensHoldActive) {
+          if (!lensHoldActive && !isDirectJumpActive) {
             const crossedForward = lastRawProgress < FILM_FOCUS_T && self.progress >= FILM_FOCUS_T
             const crossedBackward = lastRawProgress > FILM_FOCUS_T && self.progress <= FILM_FOCUS_T
             if (crossedForward || crossedBackward) {
@@ -460,7 +489,92 @@ export function ScrollSpacer() {
     // against final layout without waiting for a resize event to do it.
     const raf = requestAnimationFrame(() => ScrollTrigger.refresh())
 
+    // --- Direct navigation (side nav clicks) ---
+    // Tears down whichever driver/lock is currently active so a jump
+    // always starts from a clean slate, reusing each mechanism's own
+    // release function rather than duplicating its cleanup (listener
+    // removal, timers, etc). Monitor's lock is soft (never stops Lenis),
+    // so only Lens hold and the intro driver need an explicit
+    // syncScrollSuspension() afterwards.
+    const cancelActiveDriversAndLocks = () => {
+      if (lensHoldActive) releaseLensHold()
+      if (monitorLockActive) releaseMonitorLock()
+      if (introDriveActive) {
+        introDriveActive = false
+        introIntentDirection = 0
+        clearTimeout(introIntentDecayTimeoutId)
+      }
+      scrollLockWobble.value = 0
+      gsap.killTweensOf(scrollProgress)
+      syncScrollSuspension()
+    }
+
+    // Drives a smooth camera jump to `sectionKey`'s target (SECTION_TARGETS,
+    // filmActBeats.js) over the SAME physical camera track scroll already
+    // uses — reuses Lenis's own scrollTo tweening rather than a second
+    // tween system, so the jump reads as the same camera physically moving
+    // through the same environment, not a teleport. Campaigns/Return have
+    // no real landmark yet (see SECTION_TARGETS' own doc comment) and are
+    // silently a no-op here — SectionIndicator.jsx keeps their marks
+    // visually consistent but never calls this for them... except it does
+    // call requestNavigate unconditionally, so the guard lives here too as
+    // a second line of defense.
+    const navigateToSection = (sectionKey) => {
+      const targetT = SECTION_TARGETS[sectionKey]
+      if (targetT === undefined) return
+      const trigger = timeline.scrollTrigger
+      if (!trigger) return
+
+      // Bump the token before tearing anything down so a rapid second
+      // click cleanly supersedes the first — its onComplete below checks
+      // this and no-ops if it's since gone stale. Lenis's own scrollTo
+      // also interrupts any in-flight tween of its own when called again,
+      // so two rapid jumps never fight over the actual scroll position.
+      const token = ++jumpToken
+      cancelActiveDriversAndLocks()
+      isDirectJumpActive = true
+
+      const startT = scrollProgress.value
+      const distance = Math.abs(targetT - startT)
+      const duration = THREE.MathUtils.clamp(
+        JUMP_MIN_DURATION_SECONDS + distance * (JUMP_MAX_DURATION_SECONDS - JUMP_MIN_DURATION_SECONDS),
+        JUMP_MIN_DURATION_SECONDS,
+        JUMP_MAX_DURATION_SECONDS,
+      )
+      const scrollRange = trigger.end - trigger.start
+      const targetScroll = trigger.start + scrollRange * targetT
+
+      smoothScroll.lenis.scrollTo(targetScroll, {
+        // prefers-reduced-motion: jump straight there rather than tweening,
+        // consistent with introTick's own handling of the setting elsewhere
+        // in this file.
+        immediate: prefersReducedMotion,
+        duration,
+        easing: easeSectionJump,
+        // Lenis's own scrollTo is a no-op while stopped unless forced —
+        // cancelActiveDriversAndLocks() should already have released any
+        // stop via syncScrollSuspension(), but this is a safety net against
+        // a stale suspended state at the exact moment of the call.
+        force: true,
+        onComplete: () => {
+          if (token !== jumpToken) return // superseded by a newer click
+          isDirectJumpActive = false
+          // Matches releaseLensHold's own reset: pins the crossing-
+          // detection baseline to exactly the arrival point so the very
+          // next tick can't misread a stale gap as a fresh crossing.
+          lastRawProgress = targetT
+          scrollProgress.value = targetT
+          if (targetT === FILM_FOCUS_T) engageLensHold(trigger)
+          else if (targetT === MONITOR_SNAP_T) engageMonitorLock()
+          else syncIntroZone()
+        },
+      })
+    }
+
+    const unsubscribeNavigate = onNavigateRequest(navigateToSection)
+
     return () => {
+      unsubscribeNavigate()
       cancelAnimationFrame(raf)
       if (monitorLockTimeoutId) clearTimeout(monitorLockTimeoutId)
       if (lensHoldTimeoutId) clearTimeout(lensHoldTimeoutId)

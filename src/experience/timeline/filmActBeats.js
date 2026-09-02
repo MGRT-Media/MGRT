@@ -97,3 +97,30 @@ export const INTRO_INTENT_DECAY_MS = 150
  */
 export const LOCK_CATCH_DURATION_SECONDS = 0.75
 export const LOCK_CATCH_EASE = 'power4.out'
+
+/**
+ * Direct-navigation destinations for the side navigation
+ * (`SectionIndicator.jsx` / `sectionNavigationEvent.js`) — reuses the exact
+ * same landmark constants already driving the scroll-snap/lock logic above
+ * rather than inventing separate coordinates, per explicit request to
+ * integrate into the existing state engine instead of building a parallel
+ * one. Keyed to match the indicator's own section keys.
+ *
+ * `campaigns` and `return` are deliberately absent: neither has a real
+ * camera landmark yet (the Campaigns billboard reveal and the Return
+ * dive-back-in are both "NOT STARTED" per build-status.md's Phase Progress
+ * tracker) — there is no correct coordinate to jump to, so those marks stay
+ * visually present (hoverable, per the UI spec) but functionally inert
+ * rather than fabricating a placeholder position.
+ */
+export const SECTION_TARGETS = {
+  intro: 0,
+  film: FILM_FOCUS_T,
+  digital: MONITOR_SNAP_T,
+}
+
+// Direct-navigation jump duration range, in seconds — scaled by travel
+// distance between these bounds so a short Film<->Digital jump doesn't
+// linger and a full Intro<->Digital traverse doesn't feel rushed.
+export const JUMP_MIN_DURATION_SECONDS = 0.9
+export const JUMP_MAX_DURATION_SECONDS = 2.2
