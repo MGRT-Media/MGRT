@@ -499,7 +499,34 @@ A minimal fixed cinematic chapter marker, per explicit request — deliberately 
 FILM active with label at scroll 0%. Correctly transitions to DIGITAL past the Lens lock (FILM reverts to subdued), confirmed via screenshot. Reverses cleanly back to FILM on scroll-to-top. Mobile viewport (375×812) scales the indicator down appropriately via a dedicated breakpoint. No console errors. 16.52ms avg frame time, 0 frames >33ms. Production build succeeds.
 
 ### Required next step
-Once Phase 1E (Campaigns) and Phase 3 (Return) are built, `getActiveIndex` in `SectionIndicator.jsx` will need real boundaries for those two states — flagged in its own code comment. Otherwise open to visual-review adjustment (line spacing, label style, indicator position).
+*Superseded — see §4AU.* Once Phase 1E (Campaigns) and Phase 3 (Return) are built, `getActiveIndex` will need real boundaries for those two states.
+
+---
+
+## 4AU. Refinement — Five-State Chapter Indicator, Landmark-Triggered
+
+**Status:** IN PROGRESS (mechanism verified working; open to further visual-review adjustment)
+
+### Doc reference note
+The request asked to read `docs/creative-reference-v5.md` before making changes. That file does not exist in this repo — only `docs/creative-reference.md` (no version suffix). Read that instead; its Act 3/4 description (billboard reveal, dive back through the billboard surface) doesn't mention an intermediate "physical print" stage the request's own framing implied, for what that's worth. Flagged rather than silently substituted.
+
+### What changed
+Restructured `SectionIndicator.jsx` from 4 lines to 5 (Intro/Film/Digital/Campaigns/Return, matching `creative-reference.md` §7's Act structure), per explicit request, with two real behavioral fixes:
+
+1. **Intro is now its own state** — no marker active, all five lines small, no label — rather than being folded into an always-active "FILM" line from `t: 0`. Previously the whole Entrance/Establish/Approach span was labeled FILM; `getActiveIndex()` now returns `null` for that span instead of an index, so no line expands until the camera has actually reached a landmark.
+2. **FILM now activates only at `FILM_FOCUS_T`** (the real Cinema Lens hard-lock point, imported from `filmActBeats.js`, not re-derived) — not "anytime during the approach." **DIGITAL activates only at `MONITOR_SNAP_T`** (the real Digital Monitor hard-lock point). Both are the only two points in the current build where the camera has genuinely arrived somewhere rather than still being in transit.
+
+Intro and Return positions are visually real (reserve their slot in the five-line layout) but never show a label even if somehow active — represented by the *absence* of an active marker, not an active-but-empty one, per explicit request not to display INTRO/RETURN/HOME/START/END text.
+
+CSS: moved from 28px to 44px from the left edge (within the requested ~40-50px range), widened the active/inactive line contrast (14px → 38px, was 18→30) for a more "immediately understandable" difference per the request's own example, and swapped the transition easing to a `power2.out`-equivalent cubic-bezier per explicit suggestion.
+
+**Scope notes carried over from §4AT, restated here:** CAMPAIGNS (Phase 1E) and RETURN (Phase 3) have no real camera landmark yet since those acts are still NOT STARTED, so their markers stay permanently inactive rather than being driven by invented placeholder progress ranges — not a new gap, the same one already flagged and left unresolved since building those acts is explicitly out of scope for this UI-only refinement.
+
+### Verification
+Intro state confirmed via DOM class inspection (no row has `--active`) all the way through the Approach, right up to the instant `scrollProgress` reaches `FILM_FOCUS_T`, where FILM activates exactly on that landmark — confirmed both via class inspection and screenshot. DIGITAL activates exactly at `MONITOR_SNAP_T`, FILM correctly contracts. Fast, uninterrupted scrolling straight from Intro to Digital settles on DIGITAL, not stuck on FILM. Full reversibility, including the existing bidirectional lens hard-lock re-engaging correctly along the way. Mobile viewport scales down cleanly, clear of scene geometry. No console errors. 16.62ms avg frame time, 0 frames >33ms. Production build succeeds.
+
+### Required next step
+Once Phase 1E (Campaigns) and Phase 3 (Return) are built, `getActiveIndex` will need real boundaries for those two states — flagged in its own code comment. Otherwise open to visual-review adjustment.
 
 ---
 
