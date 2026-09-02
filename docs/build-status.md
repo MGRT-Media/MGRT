@@ -562,6 +562,45 @@ Campaigns (Phase 1E, billboard reveal) and Return (Phase 3, dive-back-in) still 
 
 ---
 
+## 4AW. Feature — Two-Stage Scroll Behaviour (Continuous Intro → Discrete Chapter Navigation)
+
+**Status:** DONE for the reachable states (Intro/Film/Digital); Campaigns/Return out of scope — see Scope note.
+
+### Scoping decision
+The request's success criteria require Digital→Campaigns and Campaigns→Return to work as real, testable chapter stops, but also explicitly forbids inventing arbitrary camera coordinates — Campaigns (Phase 1E) and Return (Phase 3) remain NOT STARTED per build-status.md's Phase Progress tracker, so those two requirements directly conflict against current project state. Asked the human to choose between building placeholder camera framings or scoping to Intro/Film/Digital only; they chose the latter (the same scope every round touching this indicator has landed on since §4AT). `CHAPTER_ORDER` in `ScrollTimelineProvider.jsx` is `['film', 'digital']` — adding Campaigns/Return once they have real camera states is a one-line addition to that array plus a `SECTION_TARGETS` entry, not a rearchitecture.
+
+Also flagged and resolved before writing code: the request's "do not introduce React, React Three Fiber... use the existing stack" instruction doesn't match this codebase, which already *is* React + R3F (every file in `src/experience/` is `.jsx`). Kept building in React+R3F+GSAP, unchanged — that's what "use the existing stack" means here, since Drei/Theatre.js/Framer Motion were never in use regardless.
+
+### What changed
+Two real modes, both living inside `ScrollTimelineProvider.jsx`'s existing single `useEffect`/state machine rather than a parallel system, per explicit request to "reuse existing camera transition functions wherever possible":
+
+1. **ACT 0 (Intro, continuous)** — unchanged. The existing hard-rate-capped, fully input-driven, bidirectionally-reversible scroll (`introDriveActive`/`introTick`, `t: 0 → FILM_FOCUS_T`) already satisfied every "Mode 1" requirement in the new brief; nothing needed touching here.
+2. **ACT 1+ (Film and beyond, discrete)** — new. `currentChapter` (`'intro' | 'film' | 'digital'`) is an explicit state variable, set only at the moment the camera actually arrives somewhere (inside `engageLensHold`/`engageMonitorLock`, and in `navigateToSection`'s `onComplete`) — never derived from a scroll pixel offset, per explicit request ("do not build the chapter system around fragile pixel offsets"). `chapterModeActive` is the literal ACT 0/ACT 1+ switch: false during the continuous intro, true from the instant the camera reaches Film onward (**"FILM IS THE MODE SWITCH"**, set at the same `engageLensHold` call site the existing Lens hard-lock already used, whether reached by continuous scroll crossing `FILM_FOCUS_T` or by a nav-click jump).
+
+**Chapter-mode input** — new capture-phase `wheel`/`touchstart`/`touchmove` listeners, gated on `chapterModeActive`, mirror the intro zone's own "fully intercept, drive state ourselves" pattern rather than letting native scroll move at all (`syncScrollSuspension`'s `shouldSuspend` now also includes `chapterModeActive`, keeping Lenis permanently stopped through chapter mode — the only scroll motion is this file's own `force: true` jumps). Wheel/touch delta accumulates (`chapterGestureAccum`) until it crosses `CHAPTER_GESTURE_THRESHOLD` (new constant, `filmActBeats.js`), decaying on a pause via the same `INTRO_INTENT_DECAY_MS` window the intro driver already uses (no new duplicate constant), then calls `goToNextChapter()`/`goToPreviousChapter()`.
+
+**The transition itself reuses `navigateToSection`** (built in §4AV for direct nav-clicks) unchanged — `goToChapterIndex` just calls it with the next/previous entry in `CHAPTER_ORDER`. This is what makes a chapter-hop "the same physical camera moving through the same environment, not a teleport": the exact same Lenis-driven, continuously-progress-tracked jump direct nav-clicks already used, which is also why lighting interpolates naturally through the transition with no bright/dark snap — `VolumetricLightingRig.jsx`'s ignite ramp is untouched and simply keeps reading the same continuously-updating `scrollProgress.value` it always has.
+
+**Anti-skip / `isTransitioning` lock** — reuses `isDirectJumpActive` (already set for a jump's full duration by `navigateToSection`) as the transition lock, plus `lensHoldActive`/`monitorLockActive` so a gesture can't register during a chapter's own arrival-pause window either (`isChapterTransitionLocked()`). No second lock flag introduced. A fast/repeated wheel burst can only ever produce ONE `goToNextChapter()` call: the instant the first threshold-crossing fires it, `isDirectJumpActive` flips true synchronously before the call returns, so every subsequent event in the same physical burst — processed one at a time, JS being single-threaded — short-circuits at the lock check before it can accumulate toward a second chapter hop.
+
+**Reverse through the mode boundary** — stepping backward from Film doesn't call `navigateToSection('intro')` (a discrete tween, which would read as a jump-cut back to `t: 0`). Instead `goToChapterIndex`'s `nextIndex < 0` case just hands off to the *existing* continuous intro driver (`chapterModeActive = false; syncScrollSuspension(); syncIntroZone()`), so reversing out of chapter mode reads as one continuous backward glide, matching "the intro should be able to move backwards smoothly."
+
+**Side-nav sync fix** — `navigateToSection`'s `onComplete` previously branched on the numeric target value (`targetT === FILM_FOCUS_T`); now branches on `sectionKey` directly, and its `'intro'` branch explicitly resets `currentChapter`/`chapterModeActive`. This was a real latent bug this round's testing would have hit immediately: without it, clicking the "Intro" side-nav mark while at Film/Digital would land the camera correctly but leave `currentChapter` stuck at its old value and Lenis permanently suspended (`chapterModeActive` never cleared) — exactly the "internal scroll state still thinks user is at FILM" failure mode the request explicitly calls out to avoid.
+
+**Duration tuning** — `JUMP_MAX_DURATION_SECONDS` (`filmActBeats.js`) lowered from 2.2s to 1.6s, per explicit "approximately 0.8–1.5s" target for a chapter hop: the Film↔Digital distance (0.55 of the full range) now lands at ~1.3s; the longest direct-nav-only jump (Intro→Digital, distance 1.0) still gets the full 1.6s.
+
+### Verification
+- Production build succeeds; no new console errors across all tests below (only a pre-existing stale `ERR_CONNECTION_REFUSED` buffer from before a dev-server restart, unrelated to this change).
+- **Intro**: unchanged, continuous, rate-capped, bidirectional — not touched this round, not re-broken.
+- **Film → Digital**: a single simulated wheel event (`deltaY: 100`, exceeding the threshold) after Film's own arrival-hold cleared advanced cleanly to Digital; native `scrollY` only moved as a result of the controlled jump, never in direct 1:1 response to the wheel delta.
+- **Anti-skip**: a burst of 50 wheel events fired in immediate succession from Film landed exactly once on Digital (not repeated/oscillating) — confirmed twice, including one run of 40 events in the reverse direction landing exactly once on Film. (One earlier, isolated test run showed no transition firing at all despite a large burst; not reproducible across three subsequent identical-shaped tests, and consistent with this session's previously-documented rAF/timer irregularities in this specific browser-automation harness — flagged rather than silently dismissed, but not treated as a confirmed app bug given it did not recur.)
+- **Reverse, full chain**: Digital → Film (burst; correctly ignored during Digital's own arrival-hold, then succeeded once the hold cleared) → continued reverse burst exiting Film back into the continuous intro span (`scrollY` measured moving smoothly downward afterward, not jumping) → indicator correctly shows no active chapter once back below `FILM_FOCUS_T`.
+- **Side navigation sync**: clicking "Go to Film" correctly set `currentChapter`/engaged the Lens hold exactly as continuous-scroll arrival does; the `sectionKey`-branching fix above was verified by the Film/Digital click tests all landing with the indicator's active-state and `chapterModeActive` in agreement afterward (no follow-up scroll behaved as if state were stale).
+- `useState` grep: only the two pre-existing documented exceptions.
+- **Not independently re-verified this round**: Safari (unavailable in this environment) and real (non-synthetic) trackpad/touch input — synthetic `WheelEvent`/touch dispatch was used throughout, consistent with this session's established testing approach for this harness.
+
+---
+
 ## 4A. Geometry Refinement — Entrance Pillars (cross-cutting, Phase 1A revision)
 
 **Status:** TECHNICALLY COMPLETE
