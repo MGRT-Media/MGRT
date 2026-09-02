@@ -796,6 +796,28 @@ Two asks, one large: (1) the opening should no longer be continuous scroll-drive
 
 ---
 
+## 4BF. Bug Fix — Camera Nudged Itself Toward Establish Right After the Intro Cinematic Landed
+
+**Status:** DONE
+
+### Brief
+The request described the exact "one-shot intro, pause outside the pillars, second scroll enters Film" behavior §4BE was already built to deliver — which is itself the tell that something was undermining it: the request reads as a bug report ("does NOT automatically continue... should pause and wait for a second user scroll") for a feature that, on paper, should already have paused.
+
+### Root cause
+`timeline`'s `ScrollTrigger` still carried the `snap` config from an earlier, pre-§4BE round (`filmActBeats.js`'s three-position magnetic snap: `ESTABLISH_T`/`FILM_FOCUS_T`/`MONITOR_SNAP_T`). That config was written for a world where scroll position moved organically and GSAP needed to pull the *resting* position onto the nearest of those three points once the user stopped scrolling. §4BE removed all organic scrolling — every position change is now an explicit controlled tween — but never removed this now-stale config, and it turned out to be actively harmful, not just inert: GSAP's snap has no way to distinguish "the user stopped scrolling" from "a script's tween just finished," so once `playIntroCinematic` landed at `INTRO_ALIGN_T` (`0.12`) and stopped, GSAP saw an ordinary settled scroll position and checked it against the snap candidates — `0.12` sits inside `ESTABLISH_T`'s (`0.15`) own `ESTABLISH_SNAP_CAPTURE_RADIUS` (`0.05`) — and fired its own additional automatic tween nudging the camera from `0.12` toward `0.15`. A small, second, unrequested movement immediately after the "pause," exactly the symptom described.
+
+### What changed
+- **`ScrollTimelineProvider.jsx`** — removed the `snap` config (and its now-orphaned `snapTo` helper) from the master `ScrollTrigger` entirely, rather than trying to special-case around it. Re-examined whether it had any remaining legitimate purpose first: Snap 2 (Cinema Lens) and Snap 3 (Digital Monitor) are both already engaged explicitly elsewhere (`engageLensHold`'s own bidirectional crossing-detection in `onUpdate`; `engageMonitorLock` called directly from `navigateToSection`'s `onComplete`) — GSAP's native snap was redundant for both, not load-bearing. Snap 1 (Studio Scene establish) had no engage/lock behavior of its own to begin with; it was purely this magnetic pull, which has no equivalent left to serve now that nothing ever rests at an arbitrary organic scroll position. `ESTABLISH_T` remains a real point along the straight interior corridor (`cameraPath.js`'s `ESTABLISH_POSITION`, a waypoint the Film-ward jump smoothly passes through) — only its special *scroll* treatment is gone, which is a pure input-handling fix, not a visual or camera-path change, matching the request's own "do not change the existing visual design... only modify the interaction."
+- Removed now-unused imports (`ESTABLISH_T`, `ESTABLISH_SNAP_CAPTURE_RADIUS`, `FILM_SNAP_CAPTURE_RADIUS`, `MONITOR_SNAP_CAPTURE_RADIUS`) — all were only ever consumed by the removed `snapTo` function; `cameraPath.js`'s own separate import of `ESTABLISH_T` (for the waypoint above) is untouched.
+
+### Verification
+- Production build succeeds; `useState`/leftover-debug-log grep clean; diff is a single file, scoped exactly to this fix.
+- Re-traced the arrival sequence by hand against the fixed code: `playIntroCinematic(INTRO_ALIGN_T)` completes → `chapterModeActive` flips true, `currentChapter` stays `'intro'` → with `snap` gone, nothing further touches `scrollProgress.value` until an explicit chapter-mode gesture crosses `CHAPTER_GESTURE_THRESHOLD` → only then does `goToNextChapter()` → `navigateToSection('film')` fire. No remaining path from arrival to a second automatic movement.
+- App-mount sanity checked on a freshly restarted dev server + fresh tab: canvas present, no error overlay, no console errors.
+- **Not independently re-verified this round**: live scroll-driven interaction — the preview pane was again reported "hidden" (same persistent condition noted in §4BE and earlier rounds). Given this fix directly targets a bug that could only ever be *seen*, not just reasoned about, confirming live that the camera now holds completely still after the first scroll — with no small drift — remains the top-priority open verification once the preview is visible.
+
+---
+
 ## 4A. Geometry Refinement — Entrance Pillars (cross-cutting, Phase 1A revision)
 
 **Status:** TECHNICALLY COMPLETE
