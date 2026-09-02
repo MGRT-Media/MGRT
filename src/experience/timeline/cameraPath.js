@@ -39,58 +39,59 @@ import { ESTABLISH_T, FILM_FOCUS_T } from './filmActBeats.js'
  */
 /**
  * Entrance: wide exterior half-circle, ending in perfect lens alignment,
- * then a genuinely straight interior approach — a fifth directorial pass
- * on the opening shot (refines §4BB/§4BA/§4AY's orbit; supersedes §4AX's
- * half-moon-through-open-air version). Two hard requirements this round:
- * push the exterior even further out and lower ("far back + low + wide"),
- * and — the more structurally significant change — guarantee that once
- * the camera passes through the pillar gap there is "only one movement:
- * straight forward... no additional curve... no second alignment."
+ * then a genuinely straight interior approach — a sixth directorial pass
+ * on the opening shot (§4BD: fixes a real alignment bug in §4BC's orbit;
+ * also refines §4BB/§4BA/§4AY; supersedes §4AX's half-moon-through-open-
+ * air version).
  *
- * **The gate is derived from the lens's own optical axis, not the Cinema
- * Camera's position** (unchanged from §4BB): a ray cast from
- * `CAMERA_ANCHOR.lensFrontFieldPosition` along `CAMERA_ANCHOR.lensForward`
- * — the exact same axis `APPROACH_POSITION`/`LENS_DIVE_POSITION` already
- * sit on — crosses the pillar ring at `GATE_POSITION`
- * (`rayCircleIntersection`), landing ~12.7° clear of the nearest pillar
- * (confirmed via a standalone script before trusting it in-app).
+ * **§4BD's fix: the orbit's own endpoint, not just the gate, must sit on
+ * the lens axis.** §4BC already derived `GATE_POSITION` from a ray cast
+ * along `CAMERA_ANCHOR.lensForward` through the pillar ring, and made
+ * `GATE_POSITION`/`APPROACH_POSITION`/`LENS_DIVE_POSITION` collinear — but
+ * it placed the exterior orbit's LAST point using a fixed angular step
+ * back from the INNER ring's own gate angle (`ENTRY_GATE_ANGLE +
+ * ORBIT_STEP_DEGREES`), assuming that step would land close enough to
+ * on-axis at the orbit's much larger radius. It doesn't: because the lens
+ * axis doesn't pass through `PILLAR_RING_CENTER`, the angle at which it
+ * crosses a circle is genuinely radius-dependent — computed and compared
+ * both angles with a standalone script before writing this fix, and found
+ * the orbit's true on-axis crossing (`ORBIT_ALIGN_ANGLE`, at
+ * `ORBIT_RADIUS`) sits ~33° away from where §4BC's fixed-step scheme put
+ * the last orbit point. That's the reported bug: a large, visible
+ * misalignment right where "the exterior endpoint... perfectly aligned
+ * with the Film lens" is the single hardest requirement. Fixed by casting
+ * the SAME ray at `ORBIT_RADIUS` instead of `PILLAR_RING_RADIUS`
+ * (`orbitAlignCrossing`) and using ITS angle as the orbit's own endpoint —
+ * alignment is now exact by construction at whatever radius the orbit
+ * actually uses, not an approximation that quietly degrades as the radius
+ * grows.
  *
- * **The orbit is the antipodal half-circle from that gate**, at
- * `ORBIT_RADIUS` — pushed further out again, from §4BB's 6.8 to 6.9, per
- * explicit "move much further away... substantial space... this is
- * important." A standalone check confirmed the spline through evenly-
- * spaced circle points doesn't overshoot the nominal radius, so 6.9 is
- * genuinely close to the hard ceiling this room's ±7 walls impose on any
- * concentric circle here (see `ORBIT_RADIUS`'s own comment). Height
- * (`ORBIT_START_Y`/`GATE_Y`) is lowered again too, per explicit "lower
- * the camera further... grounded... pillars should feel tall and
- * imposing... do not make it excessively low."
+ * **The orbit is the antipodal half-circle from that same alignment
+ * point**, at `ORBIT_RADIUS` — pushed further out again, from §4BC's 6.8
+ * to 6.9, per explicit "much further away... substantial space... this is
+ * important" — genuinely close to the hard ceiling this room's ±7 walls
+ * impose on any concentric circle here (see `ORBIT_RADIUS`'s own
+ * comment). Height (`ORBIT_START_Y`/`GATE_Y`) is lowered again too, per
+ * explicit "lower the camera further... grounded... pillars should feel
+ * tall and imposing... do not make it excessively low."
  *
- * **The interior approach is now a genuine straight line, not just
- * collinear control points.** §4BB already made `GATE_POSITION`,
- * `APPROACH_POSITION`, and `LENS_DIVE_POSITION` mathematically collinear
- * (all on the lens axis), but that alone doesn't guarantee the SAMPLED
- * path stays straight: `ESTABLISH_POSITION` used to sit off-axis (a
- * two-shot centered on `BEAM_CENTER`, framing both stands), and even
- * after moving it onto the axis this round, a Catmull-Rom point's tangent
- * is influenced by its neighbors — the gate's "before" neighbor is the
- * last (off-axis) orbit point, which would still pull a small real curve
- * into the gate -> establish segment. `sampleCameraPath` below now
- * detects when both keyframes of a segment fall inside
- * `STRAIGHT_ZONE_START_INDEX..STRAIGHT_ZONE_END_INDEX` (gate through
- * lens-dive) and uses plain linear interpolation there instead of the
- * spline — a structural guarantee of "no additional curve after entering
- * the pillars," not a tuning target. `ESTABLISH_POSITION` itself moved
- * onto this same axis (see its own comment below) specifically so it
- * could be folded into this straight run rather than being a lingering
- * detour that would force a second alignment.
+ * **The interior approach is a genuine straight line, not just collinear
+ * control points** (unchanged mechanism from §4BC, now starting one
+ * keyframe earlier): `sampleCameraPath` below detects when both keyframes
+ * of a segment fall inside `STRAIGHT_ZONE_START_INDEX..STRAIGHT_ZONE_END_INDEX`
+ * — now the LAST ORBIT POINT through `LENS_DIVE_POSITION`, since that
+ * orbit point is itself exactly on-axis this round — and uses plain
+ * linear interpolation there instead of the spline. This isn't a style
+ * choice: a Catmull-Rom point's tangent is influenced by its neighbors,
+ * so even fully collinear control points don't guarantee a straight
+ * SAMPLED path without this override.
  *
  * Look-at: `ORBIT_ENTRANCE_LOOKAT` (the ring's own center, used once at
  * the start) hands off to `ORBIT_ENSEMBLE_LOOKAT` (near both the Cinema
  * Camera and Monitor, held through the middle orbit beats) which hands
- * off to `LENS_LOOKAT` — starting from the LAST orbit point, not the
- * gate — so orientation, like position, is already fully settled before
- * the camera ever reaches the gap. Every keyframe from there through
+ * off to `LENS_LOOKAT` — starting from the LAST orbit point — so
+ * orientation, like position, is already fully settled before the camera
+ * ever reaches the gap. Every keyframe from there through
  * `LENS_DIVE_POSITION` holds that same `LENS_LOOKAT`: a pure dolly, zero
  * reframes, for the entire straight run.
  */
@@ -135,23 +136,39 @@ const [lensFwdX, , lensFwdZ] = CAMERA_ANCHOR.lensForward
 // why this (not the Cinema Camera stand's own angular position) is the
 // correct way to find "the gap aligned with the lens."
 const gateCrossing = rayCircleIntersection(lensFrontX, lensFrontZ, lensFwdX, lensFwdZ, PILLAR_RING_RADIUS)
-const ENTRY_GATE_ANGLE = angleOnRing(gateCrossing)
 
-// Pushed out again from §4BB's 6.8, per explicit "much further away...
+// Pushed out again from §4BC's 6.8, per explicit "much further away...
 // substantial space... this is important." A standalone check confirmed
 // the CatmullRom spline through evenly-spaced points on a true circle
 // tracks the circle almost exactly (no meaningful overshoot beyond the
 // nominal radius), so the only real ceiling is the hall's own ±7 side
 // walls (`HALL_WIDTH` 14, unchanged/untouched — this is a camera-path
-// round only): any half-circle from `ENTRY_GATE_ANGLE`'s antipodal point
-// necessarily passes through one of the ring's two ±X extremes (θ: 90°/
-// 270°, where |x| equals this radius exactly, since `PILLAR_RING_CENTER`'s
-// x is 0) regardless of which arc is chosen. 6.9 is very close to that
-// ceiling — a real but narrow 0.1 margin — which is as far as a single
-// concentric circle can go in this room without touching the wall.
+// round only): any half-circle around this ring necessarily passes
+// through one of its two ±X extremes (θ: 90°/270°, where |x| equals this
+// radius exactly, since `PILLAR_RING_CENTER`'s x is 0). 6.9 is very close
+// to that ceiling — a real but narrow 0.1 margin — which is as far as a
+// single concentric circle can go in this room without touching the wall.
 const ORBIT_RADIUS = 6.9
 
-// Lowered again from §4BB (3.0 -> 2.2 start, 1.7 -> 1.0 at the gate) per
+// §4BD fix — the exterior alignment angle: the SAME lens-axis ray crossed
+// at `ORBIT_RADIUS` instead of `PILLAR_RING_RADIUS`. §4BC swept the orbit
+// down to a fixed step short of the INNER ring's own gate angle
+// (`gateCrossing`'s angle), on the assumption that a small fixed step
+// would land close enough to on-axis at the orbit's much larger radius —
+// it doesn't: because the lens axis doesn't pass through
+// `PILLAR_RING_CENTER`, its crossing angle is genuinely radius-dependent.
+// Computed and compared both angles with a standalone script before
+// writing this fix: at `ORBIT_RADIUS` the true crossing was ~33° away
+// from where §4BC's fixed-step scheme placed the last orbit point — a
+// large, plainly visible misalignment right where the request says there
+// must be none. Using this ray's own crossing as the orbit's endpoint
+// makes alignment exact by construction, at whatever radius the orbit
+// actually uses, instead of an approximation that quietly gets worse as
+// the radius grows.
+const orbitAlignCrossing = rayCircleIntersection(lensFrontX, lensFrontZ, lensFwdX, lensFwdZ, ORBIT_RADIUS)
+const ORBIT_ALIGN_ANGLE = angleOnRing(orbitAlignCrossing)
+
+// Lowered again from §4BC (3.0 -> 2.2 start, 1.7 -> 1.0 at the gate) per
 // explicit "lower the camera further... grounded... pillars should feel
 // tall and imposing... do not make it excessively low." 2.2 sits just
 // above human eye height — grounded without reading as a worm's-eye/
@@ -165,14 +182,18 @@ const GATE_Y = 1.0
 
 const ORBIT_POINT_COUNT = 6
 const HALF_CIRCLE_DEGREES = 180
-const ORBIT_STEP_DEGREES = HALF_CIRCLE_DEGREES / ORBIT_POINT_COUNT
+// (count - 1) intervals across `count` points, since the LAST point now
+// lands exactly ON `ORBIT_ALIGN_ANGLE` — not one interval short of it,
+// per the fix above — so there are only 5 gaps between 6 points.
+const ORBIT_STEP_DEGREES = HALF_CIRCLE_DEGREES / (ORBIT_POINT_COUNT - 1)
 
-// Diametrically opposite the gate on the orbit's own circle — the start
-// position is therefore a direct consequence of where the lens points,
-// not an independently chosen coordinate. Stepping DOWN from here by
-// `ORBIT_STEP_DEGREES` per point (same direction of travel established in
-// §4AY/§4BA) sweeps through the room's deeper, darker side first.
-const ORBIT_START_ANGLE = ENTRY_GATE_ANGLE + HALF_CIRCLE_DEGREES
+// Diametrically opposite the exterior alignment point on the orbit's own
+// circle — the start position is therefore a direct consequence of where
+// the lens points, not an independently chosen coordinate. Stepping DOWN
+// from here by `ORBIT_STEP_DEGREES` per point (same direction of travel
+// established in §4AY/§4BA) sweeps through the room's deeper, darker side
+// first, landing exactly at `ORBIT_ALIGN_ANGLE` on the final point.
+const ORBIT_START_ANGLE = ORBIT_ALIGN_ANGLE + HALF_CIRCLE_DEGREES
 
 function heightAtOrbitFraction(f) {
   return THREE.MathUtils.lerp(ORBIT_START_Y, GATE_Y, f)
@@ -180,7 +201,7 @@ function heightAtOrbitFraction(f) {
 
 const orbitPositions = Array.from({ length: ORBIT_POINT_COUNT }, (_, i) => {
   const angle = ORBIT_START_ANGLE - i * ORBIT_STEP_DEGREES
-  const f = i / ORBIT_POINT_COUNT // < 1 even for the last point — it's one step short of the gate, not at it
+  const f = i / (ORBIT_POINT_COUNT - 1) // reaches 1 exactly at the last point, which now IS the alignment point
   return pointOnRing(angle, ORBIT_RADIUS, heightAtOrbitFraction(f))
 })
 const GATE_POSITION = new THREE.Vector3(gateCrossing.x, GATE_Y, gateCrossing.z)
@@ -286,36 +307,39 @@ const MONITOR_ALIGNED_LOOKAT = new THREE.Vector3(screenX, screenY, screenZ)
 // the time the gate itself is reached, matching the position alignment.
 const ORBIT_BODY_T_END = 0.12
 const orbitKeyframes = orbitPositions.map((position, i) => ({
-  t: (ORBIT_BODY_T_END * i) / ORBIT_POINT_COUNT,
+  t: (ORBIT_BODY_T_END * i) / (ORBIT_POINT_COUNT - 1),
   position,
   lookAt: i === 0 ? ORBIT_ENTRANCE_LOOKAT : i === ORBIT_POINT_COUNT - 1 ? LENS_LOOKAT : ORBIT_ENSEMBLE_LOOKAT,
 }))
 
 const KEYFRAMES = [
-  ...orbitKeyframes, // Antipodal start (t: 0) through the last pure-orbit point, one step short of the gate — already looking at the lens
-  { t: 0.135, position: GATE_POSITION, lookAt: LENS_LOOKAT }, // Through the gate — radius pulls in from the orbit to the ring itself; look direction unchanged from the last orbit point
-  { t: ESTABLISH_T, position: ESTABLISH_POSITION, lookAt: LENS_LOOKAT }, // Snap 1 — Studio Scene, now a waypoint on the same straight corridor
+  ...orbitKeyframes, // Antipodal start (t: 0) through the exterior alignment point (t: 0.12) — already on-axis and looking at the lens
+  { t: 0.135, position: GATE_POSITION, lookAt: LENS_LOOKAT }, // Through the gate — radius pulls in from the orbit to the ring itself, same axis, same look direction
+  { t: ESTABLISH_T, position: ESTABLISH_POSITION, lookAt: LENS_LOOKAT }, // Snap 1 — Studio Scene, a waypoint on the same straight corridor
   { t: APPROACH_T, position: APPROACH_POSITION, lookAt: LENS_LOOKAT }, // Approach
   { t: FILM_FOCUS_T, position: LENS_DIVE_POSITION, lookAt: LENS_LOOKAT }, // Snap 2 — Cinema Lens
   { t: 1, position: MONITOR_ALIGNED_POSITION, lookAt: MONITOR_ALIGNED_LOOKAT }, // Snap 3 — Digital Monitor
 ]
 
-// Index of GATE_POSITION within KEYFRAMES — everything from here through
-// LENS_DIVE_POSITION (gate, establish, approach, lens-dive) sits on the
-// same straight lens-axis line by construction (see the module doc
-// above), so those three segments are sampled below with plain linear
-// interpolation instead of the spline. This isn't a style choice: a
-// Catmull-Rom point's tangent is influenced by ITS OWN neighbors, and the
-// gate's "before" neighbor is the last (off-axis) orbit point — without
-// this override, that would pull a small but real curve into the
-// gate -> establish segment right where the request most explicitly
-// prohibits one ("once the camera passes through the pillar gap... ONLY
-// straight forward... no additional curve"). Every segment strictly
-// after this straight run (lens-dive -> monitor) still uses the spline —
-// that IS a genuine reframe toward a different destination, not a case
-// the "no correction after entering" rule was ever about.
-const STRAIGHT_ZONE_START_INDEX = ORBIT_POINT_COUNT // GATE_POSITION's index
-const STRAIGHT_ZONE_END_INDEX = STRAIGHT_ZONE_START_INDEX + 3 // LENS_DIVE_POSITION's index
+// Index of the LAST ORBIT POINT within KEYFRAMES — since §4BD's fix makes
+// that point itself land exactly on the lens axis (not just the gate that
+// follows it), the straight-line guarantee now starts one keyframe
+// earlier than in §4BC: this segment (last orbit point -> gate) and
+// everything through LENS_DIVE_POSITION (gate, establish, approach,
+// lens-dive) all sit on the same straight lens-axis line by construction
+// (see the module doc above), so those four segments are sampled below
+// with plain linear interpolation instead of the spline. This isn't a
+// style choice: a Catmull-Rom point's tangent is influenced by ITS OWN
+// neighbors, and without this override the curved orbit's own approach
+// direction would still pull a small but real curve into the segments
+// right after it — exactly where the request most explicitly prohibits
+// one ("once the camera passes through the pillar gap... ONLY straight
+// forward... no additional curve"). Every segment strictly before this
+// zone (the curved orbit itself) and after it (lens-dive -> monitor)
+// still uses the spline — those ARE genuine directional changes, not a
+// case the "no correction after entering" rule was ever about.
+const STRAIGHT_ZONE_START_INDEX = ORBIT_POINT_COUNT - 1 // last orbit point's index
+const STRAIGHT_ZONE_END_INDEX = STRAIGHT_ZONE_START_INDEX + 4 // LENS_DIVE_POSITION's index
 
 /**
  * The camera's spatial trajectory as one continuous spline threading
