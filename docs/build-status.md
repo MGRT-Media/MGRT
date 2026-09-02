@@ -723,6 +723,28 @@ Drop the clock-face vocabulary entirely. Derive the whole exterior entrance from
 
 ---
 
+## 4BC. Refinement — Genuinely Straight Interior Approach + Farther/Lower Exterior (final pass)
+
+**Status:** DONE (geometry independently verified via standalone script + production build; live in-browser re-check still blocked by the same environment issue as §4BB)
+
+### Brief
+Two asks: push the exterior orbit further out and lower again ("far back + low + wide"), and — the structurally significant one — guarantee that once the camera passes through the pillar gap there is "only one movement: straight forward... no additional curve... no second alignment... no correction after entering."
+
+### What changed
+- **`cameraPath.js`** — `ORBIT_RADIUS` raised from §4BB's `6.8` to `6.9`. A standalone check (`THREE.CatmullRomCurve3` sampled at 1000 points across just the six orbit control points) confirmed the spline tracks a true circle almost exactly with no meaningful overshoot beyond the nominal radius, so `6.9` — leaving only `0.1` real margin from the hall's `±7` walls — is genuinely close to the hard ceiling a single concentric circle can reach in this room. `ORBIT_START_Y`/`GATE_Y` lowered again (`3.0 → 2.2` / `1.7 → 1.0`), landing just above human eye height at the start — grounded without tipping into a worm's-eye shot (no roll is ever applied anywhere in this file, so there's no risk of an accidental Dutch angle).
+- **The bigger change: the interior approach is now a genuinely straight sampled path, not just collinear control points.** §4BB already made `GATE_POSITION`/`APPROACH_POSITION`/`LENS_DIVE_POSITION` mathematically collinear on the lens axis, but two gaps remained:
+  1. `ESTABLISH_POSITION` (the Snap 1 pause) was still the old off-axis two-shot centered on `BEAM_CENTER` — a real detour the camera would have to reach and leave, which is exactly the "second alignment movement" the request rules out. Moved onto the same lens axis this round, at `ESTABLISH_DISTANCE: 2.2` (between the gate's own `~3.7` and `APPROACH_POSITION`'s `1.0`), with height continuing the same gentle, already-small descent (`1.0` at the gate → `0.97` here → `~0.94` at Approach). The `ESTABLISH_T` scroll-snap pause mechanic itself (`filmActBeats.js`) is untouched — only where the camera physically sits when it fires moved.
+  2. Even with every control point on-axis, `sampleCameraPath`'s Catmull-Rom spline still wasn't guaranteed to render a straight line: a spline point's tangent is influenced by its own neighbors, and the gate's "before" neighbor is the last (necessarily off-axis) orbit point — that alone would pull a small real curve into the gate→establish segment, precisely where the request is most explicit about there being none. Fixed structurally, not by tuning: `sampleCameraPath` now checks whether a segment falls entirely inside the new `STRAIGHT_ZONE_START_INDEX..STRAIGHT_ZONE_END_INDEX` range (gate through lens-dive) and uses plain linear interpolation there instead of the spline — a genuine straight line by construction for that whole run, independent of any neighboring point's influence. Every segment before and after this zone (the whole orbit, and lens-dive → monitor) is untouched and still spline-based, since those are real directional changes, not a case this rule was ever about.
+  - **Orientation, not just position, is now settled before entry too**: the reframe from `ORBIT_ENSEMBLE_LOOKAT` to `LENS_LOOKAT` now happens over the *last orbit segment* (still exterior) rather than at the gate itself — so by the time the camera reaches the gap, both where it's pointed and where it's headed are already final. Every keyframe from that last orbit point through `LENS_DIVE_POSITION` holds the identical `LENS_LOOKAT` — a pure dolly with zero reframes for the entire straight run.
+
+### Verification
+- Production build succeeds; `useState`/leftover-debug-log grep clean.
+- A standalone Node script (using the real `three` package, mirroring `CinemaCamera.jsx`'s exact geometry) independently confirmed: the gate/lens-axis math is unchanged and correct (`gateAngle: 137.3°`); all six new orbit points and the swept range's wall clearance (`max |x| = 6.900` against the `6.9` radius and `7.0` wall — exactly at the radius, as expected, with the intended `0.1` margin); and, critically, genuine collinearity of the four interior waypoints — the gate→establish, establish→approach, and approach→lens-dive direction vectors all reduce to the identical ratio (`≈1.2798`) within floating-point precision, confirming they sit on one real straight line, not an approximation.
+- App-mount sanity checked on a freshly restarted dev server + fresh tab: canvas present, no error overlay, no console errors.
+- **Not independently re-verified this round**: live scroll-driven playback in the browser preview — the pane was again reported "hidden" by the host UI for this entire round (`requestAnimationFrame` measured firing zero times over 1.5 real seconds while hidden, same test as §4BB), a persistent host-UI/environment condition across the last two rounds, not a code issue. The geometry is verified correct via the independent script above, but the actual FEEL of "far back, low, wide, then a clean straight entry with zero perceptible curve" has not been watched live since before this and the previous round's changes — strongly recommend a live pass through the full opening once the preview is visible, given how much this round specifically turns on a subtle visual property (curve vs. no curve) that math alone can prove but a screenshot-free session can't fully confirm reads correctly.
+
+---
+
 ## 4A. Geometry Refinement — Entrance Pillars (cross-cutting, Phase 1A revision)
 
 **Status:** TECHNICALLY COMPLETE
