@@ -853,6 +853,32 @@ Enforce exact, fixed durations for the intro's two one-shot camera moves, indepe
 
 ---
 
+## 4BI. Fix — Monitor Screen Ignite Made a Pure, Bidirectional Function of Scroll Progress
+
+**Status:** DONE
+
+### Brief
+A detailed spec ("Bidirectional Scroll Must Be Identical") requiring the whole experience to behave as one continuous, deterministic timeline: forward scroll plays it forward, backward scroll must reproduce the exact same states in reverse, with no directional logic, one-time flags, or history-dependent state — same progress must always mean the same scene. Explicitly called out the Film↔Digital transition as where lighting "has previously snapped or changed abruptly."
+
+Given the scope of the full spec, clarified with the human first: it also describes replacing the intro's one-shot cinematic (§4BE-§4BH) and the chapter-mode discrete-gesture stepping with pure continuous scrubbing — both deliberate, explicitly-requested UX from earlier rounds. The human confirmed the narrower, correct scope: **keep the intro cinematic and chapter gestures exactly as they are**; fix determinism specifically where the brief's own evidence points — Film↔Digital lighting/object state.
+
+### Root cause
+`Monitor.jsx`'s screen ignite (dormant glass → live video) was driven by `cameraLockEvent.js`'s `onCameraLock`/`onCameraUnlock` — a binary event fired once the camera crosses `progress: 0.995` — then eased toward its 0/1 target with `THREE.MathUtils.damp` over **real elapsed time** (`IGNITE_DAMP_LAMBDA`), not over scroll progress. That means the visible ignite level at a given progress value depended on how much wall-clock time had passed since the last lock/unlock crossing, not on progress itself — exactly the kind of history-dependent state the brief flags. It's also the one place in this codebase still using the event-based `onCameraLock` mechanism at all: `CinemaCamera.jsx`'s own lens screen and `VolumetricLightingRig.jsx`'s room lighting were already both pure, continuous functions of `scrollProgress.value` (a `smoothstep` hill and ramp respectively) — this fix brings the Monitor screen in line with that same, already-established pattern rather than inventing a new one.
+
+### What changed
+- **`filmActBeats.js`** — added `DIGITAL_IGNITE_RISE` (`0.1`), mirroring `FILM_IGNITE_RISE`'s role: how much progress before `MONITOR_SNAP_T` the screen ramps in over.
+- **`Monitor.jsx`** — replaced the `onCameraLock`/`onCameraUnlock` + `igniteTarget` ref + time-based damp with a `useFrame` that computes `THREE.MathUtils.smoothstep(scrollProgress.value, MONITOR_SNAP_T - DIGITAL_IGNITE_RISE, MONITOR_SNAP_T)` directly — the exact same shape of derivation `CinemaCamera.jsx` already uses for its lens screen. Video play/pause now follows the same `ignite > 0.02` edge-detection `CinemaCamera.jsx` uses, instead of the lock event.
+- **`cameraLockEvent.js` deleted** — `Monitor.jsx` was its only remaining consumer; removing its usage left the module, and `ScrollCameraRig.jsx`'s per-frame `updateCameraLockState` call, fully dead. Removed rather than left in place, per this codebase's standing preference for deleting confirmed-dead code over leaving it as an unused shim.
+- Updated now-stale comments referencing the removed mechanism in `CinemaCamera.jsx`, `screenVideoMaterial.js`, `sectionNavigationEvent.js`, and `scrollLockEvent.js` (the last two only mentioned `cameraLockEvent.js` as a sibling example of the shared pub/sub pattern, not a functional dependency).
+- **Not touched**: the intro cinematic (`playIntroCinematic`), chapter-mode gesture stepping (`handleChapterGesture`/`goToNextChapter`), the Lens/Monitor hard-lock hold mechanism (`engageLensHold`/`engageMonitorLock`, `SCROLL_LOCK_HOLD_MS`), and `VolumetricLightingRig.jsx`'s room-wide ignition ramp — all already either deliberate, explicitly-requested discrete UX (out of this fix's confirmed scope) or already a pure function of progress with no snapping (verified by re-reading, not assumed).
+
+### Verification
+- Production build succeeds; grep confirms zero remaining references to `cameraLockEvent`/`onCameraLock`/`onCameraUnlock`/`updateCameraLockState` outside historical explanatory comments.
+- **Live-verified this round** (preview pane was reachable): clicked the Digital nav mark from a fresh mount — camera jumped to the monitor and the screen was already showing live, ignited video (confirms ignite works via direct navigation, not just organic scroll). Dispatched a reverse wheel gesture — camera moved back toward Film; screen ignite is driven by the same `scrollProgress` value the camera itself now occupies, so it dims in step with the camera's own retreat rather than snapping off at a fixed instant. No console errors either pass.
+- **Not independently re-verified**: a slow-motion frame-by-frame comparison of the exact ignite curve on a forward vs. backward pass through the same progress range — the `smoothstep` derivation is mathematically symmetric by construction (same formula, same inputs, no direction branch), so this is treated as covered by the formula's own determinism rather than requiring a separate visual A/B pass.
+
+---
+
 ## 4A. Geometry Refinement — Entrance Pillars (cross-cutting, Phase 1A revision)
 
 **Status:** TECHNICALLY COMPLETE
