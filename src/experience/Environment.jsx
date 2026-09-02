@@ -21,40 +21,47 @@ const SURFACE_TONE = {
 }
 
 /**
- * Half-moon pillar arc framing the monitor, replacing the previous straight
- * two-sided colonnade. Semicircle opens toward the camera (+Z) so the
- * pillars read as layers of depth/parallax while scrolling forward along
- * -Z, with the monitor (at the spot-target x: 0.6, z: -3.5) sitting inside
- * the arc's "mouth." Center is placed just behind the monitor so the arc's
- * apex (the pillar furthest back) frames it from behind without any pillar
- * overlapping the monitor itself or the entrance pillars near the hero
- * start (z: 4, well outside the arc's z range).
+ * Full circular pillar ring — replaces the previous half-moon arc PLUS a
+ * separate foreground "entrance pillar" pair, per explicit request: "the
+ * room should contain one complete circular ring of pillars... there
+ * should not be a separate pair of pillars specifically placed behind the
+ * user's starting position... the circle itself is the architecture."
+ *
+ * `PILLAR_RING_CENTER`/`PILLAR_RING_RADIUS` are exported so
+ * `cameraPath.js`'s new exterior-orbit entrance can derive its own path
+ * (and the exact gap it enters through) from this ring's real geometry
+ * rather than a second, independently guessed set of numbers — the same
+ * "use the project's actual positions" principle already applied to the
+ * Cinema Camera/Monitor anchors.
+ *
+ * Radius (6.5 in the previous arc) is reduced to 4.6 here for a reason the
+ * old semicircle never had to deal with: a FULL ring needs an exterior
+ * orbit path outside it that still fits inside this hall's own walls
+ * (`HALL_WIDTH` 14, so ±7 from center) — 6.5 already left almost no
+ * margin for the pillars themselves, let alone a camera path around the
+ * outside of them. 4.6 leaves the ring itself comfortable clearance from
+ * the walls AND leaves real room (`cameraPath.js`'s `ORBIT_RADIUS`, 6.2)
+ * for the camera to circle outside it before entering, without brushing
+ * the side walls at the orbit's widest points (θ: 90°/270°).
+ *
+ * 12 pillars at exactly 30° apart (unchanged spacing philosophy from the
+ * previous arc's ~26.7°) is also a deliberate number: it happens to place
+ * a natural gap almost exactly opposite the Cinema Camera's own real
+ * angular position around this ring's center (see `cameraPath.js`'s
+ * `ENTRY_GATE_ANGLE` derivation) — the "gate" the entrance path enters
+ * through is a genuine gap this arrangement already has, not an invented
+ * doorway cut into the ring.
  */
-const ARC_PILLAR_COUNT = 7
-const ARC_CENTER = [0, -4]
-const ARC_RADIUS = 6.5
-const ARC_SPAN_DEGREES = 160 // from -80° to +80°, symmetric around the back apex (0°)
+export const PILLAR_RING_CENTER = [0, -4]
+export const PILLAR_RING_RADIUS = 4.6
+export const PILLAR_COUNT = 12
 
-const arcPillarPositions = Array.from({ length: ARC_PILLAR_COUNT }, (_, i) => {
-  const t = ARC_PILLAR_COUNT === 1 ? 0 : i / (ARC_PILLAR_COUNT - 1)
-  const angle = THREE.MathUtils.degToRad(-ARC_SPAN_DEGREES / 2 + t * ARC_SPAN_DEGREES)
-  const x = ARC_CENTER[0] + ARC_RADIUS * Math.sin(angle)
-  const z = ARC_CENTER[1] - ARC_RADIUS * Math.cos(angle)
+const pillarPositions = Array.from({ length: PILLAR_COUNT }, (_, i) => {
+  const angle = THREE.MathUtils.degToRad((360 / PILLAR_COUNT) * i)
+  const x = PILLAR_RING_CENTER[0] + PILLAR_RING_RADIUS * Math.sin(angle)
+  const z = PILLAR_RING_CENTER[1] - PILLAR_RING_RADIUS * Math.cos(angle)
   return [x, z]
 })
-
-/**
- * Entrance pillars — a foreground pair flanking the camera's hero start
- * ([0, 1.6, 9]) and the first leg of its path (which stays at x: 0 through
- * z: 9 → 5, per cameraPath.js). Placed close to center (unlike the arc
- * pillars, which stay well behind z: -4) so they read as a near-camera
- * "gateway" the eye — and the camera — passes through before reaching the
- * arc, distinct in role and scale from it.
- */
-const entrancePillarPositions = [
-  [-2.2, 4],
-  [2.2, 4],
-]
 
 /**
  * Organic breach in the right side wall (x = +HALL_WIDTH/2) — replaces the
@@ -211,8 +218,9 @@ const rightBackZ = {
  * `volumetricLighting.js`'s repositioned spot) a fractured wall opening.
  *
  * Core room dimensions and overall layout are the approved Phase 1A
- * foundation. Column *layout* (the half-moon arc) and wall *material*
- * (procedural old stone) are deliberate revisions of that foundation —
+ * foundation. Column *layout* (now a full ring — see `pillarPositions`
+ * above) and wall *material* (procedural old stone) are deliberate
+ * revisions of that foundation —
  * see the Phase 1A entry in build-status.md §5. Lighting comes from the
  * Phase 1B system (`VolumetricLightingRig`). The stone material's `color`
  * tint still carries the existing three-tier tonality from
@@ -297,16 +305,9 @@ export default function Environment() {
       </mesh>
       <Breach material={breachMaterial} />
 
-      {/* Half-moon pillar arc — lightest tier, frames the monitor */}
-      {arcPillarPositions.map(([x, z], i) => (
-        <mesh key={`arc-${i}`} position={[x, 0, z]} geometry={columnGeometry} castShadow receiveShadow>
-          <meshStandardMaterial color={SURFACE_TONE.column} roughness={0.8} metalness={0.1} />
-        </mesh>
-      ))}
-
-      {/* Entrance pillars — lightest tier, matches the side colonnade */}
-      {entrancePillarPositions.map(([x, z], i) => (
-        <mesh key={`entrance-${i}`} position={[x, 0, z]} geometry={columnGeometry} castShadow receiveShadow>
+      {/* Full pillar ring — lightest tier, surrounds the production space */}
+      {pillarPositions.map(([x, z], i) => (
+        <mesh key={`pillar-${i}`} position={[x, 0, z]} geometry={columnGeometry} castShadow receiveShadow>
           <meshStandardMaterial color={SURFACE_TONE.column} roughness={0.8} metalness={0.1} />
         </mesh>
       ))}
