@@ -941,6 +941,33 @@ The literal generic version of #2 (`IntersectionObserver` + CSS `transform: scal
 
 ---
 
+## 4BM. Fix + Feature — Camera-Seed Drift Bug, Full-Screen Toggle for Film/Digital
+
+**Status:** DONE
+
+### Brief
+Four requests, again phrased generically but implemented against the real architecture:
+1. Scroll reset on refresh — already covered by §4BL, unchanged this round.
+2. "Camera/viewport jumps or readjusts after loading, before the page renders" — a genuine bug, found and fixed (below).
+3. Auto-zoom on Film — already covered by §4BL's `LENS_DIVE_FILL_FRACTION` increase, unchanged this round.
+4. Full-screen toggle buttons for Film and Digital, with cross-browser `requestFullscreen()`/`exitFullscreen()` — new feature, built this round.
+
+### Bug found: `ScrollCameraRig.jsx`'s own seed had drifted stale
+Investigating the reported camera jump surfaced a real, previously-unnoticed bug: `CinematicExperience.jsx`'s `<Canvas camera position={SEED_POSITION}>` already correctly seeds the *mounted* Three.js camera object from `sampleCameraPath(0).position` (fixed in an earlier round specifically to prevent this class of bug — see that file's own comment). But `ScrollCameraRig.jsx` maintains a **second, separate** position — `dampedPosition`, the ref its damping math actually starts from every frame — and that ref was still seeded from a hardcoded literal, `new THREE.Vector3(-1.0, 1.6, 8)`, written before several later rounds (§4BE's room/orbit enlargement, §4BK's sweep-angle change) moved the real progress-0 position significantly. Every mount therefore started the damped position at the stale value and visibly glided from there to the correct one over the first ~1-2 seconds — exactly the reported "jump/readjustment after loading."
+- **`ScrollCameraRig.jsx`** — `dampedPosition`'s initial value changed from the hardcoded literal to `sampleCameraPath(0).position`, the same live function `CinematicExperience.jsx` already uses for its own seed, so the two can no longer drift apart again.
+
+### Feature: full-screen toggle (Film + Digital)
+The generic brief (`IntersectionObserver`, per-section DOM elements) doesn't apply here for the same reason noted in §4BL: there is no separate Film/Digital DOM subtree, just one persistent WebGL canvas (`.experience-canvas`) and a `scrollProgress` value. A single reusable button is therefore correct for both chapters — fullscreening the one canvas shows whatever the camera is currently framing.
+- **New `src/experience/ui/FullscreenButton.jsx`** — follows `SectionIndicator.jsx`'s established pattern exactly: a rAF loop reads `scrollProgress.value` directly (never React state for the continuous value), `useState` only for the rare, discrete visible/fullscreen booleans. Visible from `FILM_FOCUS_T` onward (covers both Film and Digital, since there's no upper bound needed — Digital is simply further along the same range). Click handler requests/exits fullscreen on `.experience-canvas` with cross-browser fallbacks (`webkitRequestFullscreen`/`msRequestFullscreen` and their exit counterparts), listens to both `fullscreenchange` and `webkitfullscreenchange` to keep its own icon in sync, and defensively exits fullscreen if the button's own visibility condition becomes false (scrolling back out of Film/Digital) so a fullscreen session never dangles pointed at nothing new.
+- **`App.jsx`** — mounted alongside the other passive UI overlays (`SectionIndicator`, `ScrollLockIndicator`).
+- **`global.css`** — `.fullscreen-toggle`: a small circular icon button, bottom-right (clear of the left-side section indicator and bottom-center scroll-lock cue), using this project's one established accent color (`rgba(255, 241, 220, ...)`, matching `lightingParams.spot.color`) and the same `cubic-bezier(0.25, 0.46, 0.45, 0.94)` transition timing already used elsewhere. Always mounted, faded via a `--visible` class (not conditionally rendered) so the CSS transition actually plays, matching `.scroll-lock-indicator`'s own established pattern — `pointer-events` toggles with it so the invisible button can't be tabbed to or clicked while hidden.
+
+### Verification
+- Production build succeeds; no console errors observed across this round's testing.
+- **Partially live-verified, with an explicit gap this round**: the preview pane was reachable long enough to confirm the button mounts correctly (`aria-hidden="true"`, correct icon markup, hidden at `t: 0`) and, in one direct DOM check while `scrollProgress` happened to already be at `FILM_FOCUS_T`, that the button correctly flips to its visible class and swaps icon — proving the component's own reactivity to progress is correct. However, sustained live scroll-driven verification (dispatching a scroll and watching the animation actually carry progress forward in real time) was blocked for most of this round by the same persistent "preview pane hidden" condition flagged in many earlier rounds — confirmed directly this time via `document.visibilityState === 'hidden'`, which fully halts `requestAnimationFrame` (and therefore GSAP's ticker, which Lenis's scroll tweens depend on) per standard browser background-tab throttling, independent of anything in this codebase. Two secondary artifacts were also diagnosed and ruled out as real bugs before landing on this explanation: (1) a `window.innerHeight: 0` state briefly collapsed the scroll spacer to zero height, making every scroll tween a zero-distance no-op that completed instantly — a viewport-emulation quirk, not app code; (2) repeated Vite HMR fast-refresh churn from this round's own file edits, interleaved with browser interactions in the same tab. Neither is present in a real user's browser. The `ScrollCameraRig.jsx` fix itself is low-risk by inspection (a one-line change mirroring an already-proven-correct pattern elsewhere in the same file's sibling), and the full round-trip scroll-driven camera/button behavior remains the top item to re-confirm once the preview is reliably visible.
+
+---
+
 ## 4A. Geometry Refinement — Entrance Pillars (cross-cutting, Phase 1A revision)
 
 **Status:** TECHNICALLY COMPLETE
