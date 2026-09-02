@@ -879,6 +879,27 @@ Given the scope of the full spec, clarified with the human first: it also descri
 
 ---
 
+## 4BJ. Bug Fix — Backward Scroll from Film Skipped the Exterior Pause
+
+**Status:** DONE
+
+### Brief
+Direct bug report: scrolling backward from Film went straight into the full reverse orbit instead of first pausing at the exterior alignment point outside the pillars (facing the lens) — the same pause the forward journey stops at between its two scrolls.
+
+### Root cause
+The forward journey is two distinct legs with a real pause between them: scroll 1 (Intro → exterior alignment point, `playIntroCinematic`) stops and waits, then scroll 2 (alignment point → Film, `navigateToSection('film')`) covers the rest. But `goToChapterIndex`'s reverse path only knew about ONE backward case (`nextIndex < 0`), which called `playIntroCinematic(0)` — the reverse of leg 1 — directly from Film. That silently collapsed leg 2's own reverse into leg 1's, skipping the pause entirely on the way back.
+
+### What changed
+- **`ScrollTimelineProvider.jsx`** — added `returnToAlignedPause()`, the reverse of leg 2 only: a jump from wherever the camera is back to `INTRO_ALIGN_T`, using the same `INTRO_TO_FILM_DURATION_SECONDS` (1.5s) for symmetry with the forward leg, landing in the exact same state the forward pause itself produces (`currentChapter: 'intro'`, `chapterModeActive` left untouched/true — NOT the full `'intro'`-exit path `navigateToSection`'s own `onComplete` uses for landing at the literal `t: 0`).
+- `goToChapterIndex` now distinguishes two backward cases by exact index rather than treating all negative values the same: `nextIndex === -1` (stepping back from Film) calls `returnToAlignedPause()`; `nextIndex < -1` (stepping back again, now already at the pause — `CHAPTER_ORDER.indexOf('intro')` is `-1`, so this is `-2`) calls `playIntroCinematic(0)`, the full reverse orbit. This exactly mirrors the forward structure: two separate scrolls, one real pause in between, in both directions.
+- No changes needed to the forward path, the pause's own gesture handling, or `playIntroCinematic` itself — landing at the pause via `returnToAlignedPause` produces state indistinguishable from landing there via the forward orbit, so the existing forward-gesture (`isIntroToFilm` fast-duration jump to Film) and further-backward-gesture (reverse orbit) logic both pick it up automatically.
+
+### Verification
+- Production build succeeds.
+- **Live-verified this round** (preview pane was reachable): dispatched scroll 1 (intro orbit), waited, dispatched scroll 2 (to Film — confirmed arrival, FILM marker active) — then dispatched one backward scroll: camera returned to and **held** at the exterior alignment frame (screenshotted twice, ~2s apart, confirming it wasn't still moving) rather than continuing into the reverse orbit. A second backward scroll from that held pause then correctly resumed the reverse orbit, room dimming back down. Full round trip confirmed working as intended.
+
+---
+
 ## 4A. Geometry Refinement — Entrance Pillars (cross-cutting, Phase 1A revision)
 
 **Status:** TECHNICALLY COMPLETE
