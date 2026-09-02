@@ -628,6 +628,36 @@ Explicit direction to approach the intro camera path as a filmmaker/director rat
 
 ---
 
+## 4AY. Creative Refinement — Full Pillar Ring + Exterior Orbit Entrance (supersedes §4AX)
+
+**Status:** DONE
+
+### Brief
+A second, more ambitious directorial pass on the opening shot, superseding §4AX's half-moon-through-open-floor version entirely: replace the semicircle + separate foreground pillar pair with one complete circular pillar ring, start the camera outside/behind it, orbit counter-clockwise around the exterior so the audience discovers the Cinema Camera and Monitor only through the gaps as they pass, then — at approximately 15° from the Cinema Camera's own position — break from the orbit and pass physically between two real pillars into the interior, arriving at the (unchanged) Establish shot already at the right height. Explicitly: no teleport through the pillars, no invented doorway (use a real gap), no perfect mechanical `cos/sin` video-game orbit.
+
+**Note:** this obsoletes §4A's entrance-pillar-pair geometry (`entrancePillarPositions`, `[-2.2, 4]`/`[2.2, 4]`) — those two pillars are removed entirely, not repositioned; §4A's own entry is left as historical record rather than rewritten.
+
+### What changed
+- **`Environment.jsx`** — `arcPillarPositions` (7 pillars, 160° semicircle) and `entrancePillarPositions` (the separate foreground pair) are both replaced by a single `pillarPositions`: 12 pillars, evenly spaced every 30°, forming one complete ring. Radius reduced from the old arc's 6.5 to 4.6 — the old radius left almost no margin between the pillars and the hall's own ±7 side walls, which becomes a hard blocker once an EXTERIOR orbit path (outside the ring) also needs to fit inside those same walls; 4.6 leaves real clearance for both the ring and a 6.2-radius orbit around it. `PILLAR_RING_CENTER`, `PILLAR_RING_RADIUS`, and `PILLAR_COUNT` are now exported so `cameraPath.js` can derive its own path from the ring's real geometry instead of a second, independently-guessed set of numbers.
+- **`cameraPath.js`** — the entrance is now two phases, both still inside the existing `t: 0 -> ESTABLISH_T` window (see Scope note):
+  - **Phase 1 (orbit)**: four keyframes (`ORBIT_START`, `ORBIT_A`, `ORBIT_B`, `CHECKPOINT`) sit on a real circle (`ORBIT_RADIUS: 6.2`, concentric with the pillar ring) at evenly-spaced angular steps — not a hand-wandered path. Height glides continuously from a high `4.4` crane vantage down to `1.9` across these four points, so by the checkpoint the camera is already near Film-approach height.
+  - **Phase 2 (gate)**: a `GATE` keyframe pulls the radius in from `6.2` to exactly `PILLAR_RING_RADIUS` (4.6) at `ENTRY_GATE_ANGLE` — the real gap between two actual pillars, not an invented opening.
+  - **`ENTRY_GATE_ANGLE` is derived, not hand-picked**: the module re-runs the same yaw/local-offset math `CinemaCamera.jsx` uses internally for its own stand position (not previously exported, since nothing else needed it) to compute the Cinema Camera's true angular position around the ring's center, then snaps to the nearest real inter-pillar gap (`nearestGapAngle`). Computed value: `195°`, with the two flanking pillars at `180°`/`210°` — independently cross-checked outside the app via a standalone script replicating the same math, confirming the derivation before trusting the in-app result.
+  - **The "~15° from the camera" moment is literal**: `CHECKPOINT` sits at exactly `ENTRY_GATE_ANGLE + 15°`, still on the full orbit radius — the last pure-orbit beat before the path pulls inward through the gate.
+  - **Not a mechanical orbit**: unlike a fixed-radius `cos/sin` sweep with a locked-on target, this path changes radius at the gate, changes height continuously throughout, eases every segment (existing `smoothstep`-per-segment machinery, untouched), and only holds its look-target fixed for 3 of the 5 new keyframes (not all of them) — the combination of a wide-swinging camera position against a fixed look target is what produces continuously evolving framing without a second moving target.
+  - **Look targets**: `ORBIT_ENTRANCE_LOOKAT` (the ring's own center, used once at the very start — "read the circle before the destination") → `ORBIT_ENSEMBLE_LOOKAT` (the production ensemble, held across the three subsequent orbit beats, satisfying "camera/lens and monitor remain the primary visual subjects") → the existing `ESTABLISH_LOOKAT` (held from the gate through Establish, unchanged).
+  - **Untouched, deliberately**: everything from `ESTABLISH_POSITION` onward (Approach, Snap 2 lens-dive, Snap 3 monitor-fill) — byte-for-byte identical to before this round.
+- **Scope note**: the request's illustrative scroll percentages (§20 of the brief) describe the whole circle-then-enter shot spanning 0% to 100% of the way to Film, but explicitly call these "conceptual rather than exact implementation requirements... the key is the sequence, not the exact percentage." Compressed the full orbit-and-gate sequence into the existing `t: 0 -> ESTABLISH_T` (0.15) window rather than restructuring the whole intro zone up to `FILM_FOCUS_T` (0.45) — keeps this a camera-path change, not a scroll-timeline/snap-point change (`ESTABLISH_T`'s Snap 1 pause and the Approach/Snap 2 mechanics it protects are exactly the "interior Film approach" the brief's own Phase 2 describes, reused unchanged rather than re-litigated).
+
+### Verification
+- Production build succeeds; no new console errors.
+- `ENTRY_GATE_ANGLE`'s derivation independently cross-checked via a standalone Node script replicating the exact rotation/angle math outside the app: confirms `195°` (flanking pillars at `180°`/`210°`) before trusting the in-app value.
+- Screenshots through the sequence confirm the intended beats land: opening frame with pillars reading as a rhythmic foreground/midground repetition; mid-orbit frame showing the Cinema Camera and Monitor visible together through the gaps between multiple pillars at once; a gate-passage frame with a large lit pillar filling the near-foreground as the Monitor comes into close view just beyond it; the Establish frame landing exactly as intended (Camera and Monitor clearly separated, dust and pillars visible in the background).
+- Film (lens-dive) arrival re-checked via direct nav-click after this change: matches its established look exactly, confirming the untouched downstream keyframes are unaffected.
+- **Not independently re-verified this round**: full-speed real-time playback (only discrete sampled frames captured via screenshots, same limitation as §4AX); reverse (backward) playback of the new orbit — reversibility is structurally guaranteed (still a pure function of `progress`, same spline machinery), not re-verified frame-by-frame; Safari/real trackpad (unavailable in this environment, per the prior round's own flagged gap).
+
+---
+
 ## 4A. Geometry Refinement — Entrance Pillars (cross-cutting, Phase 1A revision)
 
 **Status:** TECHNICALLY COMPLETE
