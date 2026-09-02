@@ -58,7 +58,36 @@ export const lightingParams = {
     // This is a real absolute AmbientLight intensity in this project's
     // established scale (not a 0-1 normalized value), verified visually
     // rather than assumed to read as "near darkness" at this magnitude.
-    darkIntensity: 0.03,
+    //
+    // Raised substantially, 0.03 -> 1.5, per explicit follow-up direction
+    // that the opening must be "dark, but NOT pure black" — specifically
+    // legible enough for the pillar/camera/monitor silhouettes to read as
+    // shapes ("what am I looking at?"), not just an undifferentiated dark
+    // frame. This scene's (R3F default) ACES tonemapping crushes shadows
+    // far harder than the raw numbers suggest: 0.05, 0.12, and 0.4 were
+    // all tried first and every one still rendered as flat black once
+    // tonemapped against these materials' moderate roughness/albedo —
+    // confirmed visually via screenshot, not assumed from the number,
+    // before landing on 1.5, which reads correctly as dim-but-legible
+    // silhouettes without looking "lit." Despite being 60% of the room's
+    // full 2.5 established intensity as a raw number, the tonemapped
+    // *result* still reads clearly darker/moodier than the established
+    // room, not close to it — the perceptual gap the brief cares about is
+    // preserved even though the linear-intensity gap looks smaller than
+    // the earlier, still-invisible attempts.
+    //
+    // Caveat: this is measured against the camera positions the early
+    // journey actually passes through shortly after progress 0 — the
+    // exact progress-0 frame itself sits at §4AY's ORBIT_START_POSITION,
+    // a wide, distant establishing view where the pillars subtend a small
+    // angle; even at this intensity that specific frame still reads as
+    // very close to black in a screenshot (a framing/distance effect, not
+    // a lighting bug — verified darkIntensity actually is being applied
+    // by confirming clearly-visible silhouettes at the very next camera
+    // position along the same path). Flagged rather than silently
+    // adjusting the camera's own starting position, which is out of this
+    // round's "lighting only" scope.
+    darkIntensity: 1.5,
   },
   shadow: {
     mapSize: 2048,

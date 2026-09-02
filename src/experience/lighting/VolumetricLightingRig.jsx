@@ -9,21 +9,26 @@ import { scrollProgress } from '../timeline/ScrollTimelineProvider.jsx'
 // of what this round asks for). The room starts near-total darkness at
 // progress 0 and ramps to full established brightness, then holds there
 // through the rest of the sequence — this only ever touches light/opacity
-// values, never camera position or orientation.
+// values, never camera position or orientation. One single continuous
+// curve, keyed to `scrollProgress.value` the exact same way the camera
+// path itself is — there is no separate "Intro lighting" vs. "Film
+// lighting" state to desync from the camera; it's one physical light
+// source the whole way through, by construction.
 //
-// IGNITE_END lowered from 0.4 per explicit follow-up ("light enters the
-// room too late... by the time the camera approaches the monitor, the
-// room should already be filled with light"). 0.4 in *progress* terms was
-// already an early fraction of the full 0-1 timeline, but the Intro's own
-// hard rate cap (filmActBeats.js's INTRO_MAX_RATE_PER_SECOND) means
-// progress itself now advances much more slowly in *wall-clock* time
-// through the early part of the scroll than it used to — so a ramp that
-// completed at progress 0.4 was taking noticeably longer in real seconds
-// to finish than it looks like on paper. 0.25 keeps the same "immediate
-// start, thoroughly lit by the approach" shape while actually completing
-// sooner in practice.
+// IGNITE_END lowered again, from 0.25 to 0.05, per explicit direction
+// tying the reveal to the new exterior-orbit entrance's own clock-position
+// vocabulary (cameraPath.js's §4AY orbit/gate keyframes): the room should
+// be "fully visible, main bright beam clearly established" by roughly
+// "5:30" on that clock face — which lands at `cameraPath.js`'s
+// `ORBIT_A_POSITION` keyframe (t: 0.045, the first beat after the orbit
+// start) — then hold flat at full brightness through the rest of the
+// orbit, the gate, Establish, Approach, and into Film, per explicit "do
+// NOT brighten significantly further... lighting remains stable... no
+// lighting reset." `smoothstep`'s own S-shape (slow-fast-slow) already
+// gives the early "6:00: pillars separating from darkness, not yet fully
+// visible" partial-reveal beat for free, without a second curve segment.
 const IGNITE_START = 0
-const IGNITE_END = 0.25
+const IGNITE_END = 0.05
 
 /**
  * Thin R3F adapter around the framework-agnostic lighting controller.

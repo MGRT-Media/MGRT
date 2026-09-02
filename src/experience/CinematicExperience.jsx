@@ -4,6 +4,15 @@ import Monitor from './digital/Monitor.jsx'
 import CinemaCamera from './film/CinemaCamera.jsx'
 import { lightingParams } from './lighting/volumetricLighting.js'
 import ScrollCameraRig from './timeline/ScrollCameraRig.jsx'
+import { sampleCameraPath } from './timeline/cameraPath.js'
+
+// Derived directly from the path's own progress-0 sample, rather than a
+// hand-copied literal — §4AY changed cameraPath.js's opening position (the
+// exterior-orbit entrance) without this seed being updated to match, which
+// is exactly the "visible jump once ScrollCameraRig takes over" the
+// original comment below warns against. Importing the real function
+// instead of a copied number makes that class of drift impossible.
+const SEED_POSITION = sampleCameraPath(0).position
 
 /**
  * Persistent Three.js scene: the architectural shell (Phase 1A, approved),
@@ -25,7 +34,7 @@ export default function CinematicExperience() {
       dpr={[1, 2]}
       gl={{ antialias: true }}
       camera={{
-        position: [-1.0, 1.6, 8],
+        position: SEED_POSITION,
         fov: 45,
         // Lowered from 0.1: the entrance pillars now bring foreground
         // geometry closer to the camera than before, so a tighter near
