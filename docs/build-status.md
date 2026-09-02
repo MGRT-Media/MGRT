@@ -968,6 +968,28 @@ The generic brief (`IntersectionObserver`, per-section DOM elements) doesn't app
 
 ---
 
+## 4BN. Refinement + Feature — Button Position Swap, Modal Video CTA Replaces Native Fullscreen
+
+**Status:** DONE
+
+### Brief
+Two requests: (1) swap the positions of the full-screen button and the "countdown button"; (2) change the full-screen button's behavior from native `requestFullscreen()` to a custom full-viewport modal pop-up playing the video directly, dismissible via a close button, backdrop click, or Escape.
+
+The "countdown button" didn't exist anywhere in this codebase — confirmed via a repo-wide grep before asking rather than guessing. Clarified with the human (`AskUserQuestion`): it refers to `ScrollLockIndicator.jsx`'s passive bottom-center ring (fills over the ~1.75s scroll-lock hold), which visually reads as a countdown even though it has no click handler.
+
+### What changed
+- **`global.css`** — swapped `.scroll-lock-indicator` (bottom-center → bottom-right, `right: 24px; bottom: 24px`, dropped its now-unneeded `translateX(-50%)`) and `.fullscreen-toggle` (bottom-right → bottom-center, `left: 50%; bottom: 48px`). The toggle's hidden/visible fade already used `transform` for a lift animation, so its centering now shares that same `transform` (`translate(-50%, 6px)` → `translate(-50%, 0)`) rather than a second, conflicting transform declaration.
+- **New `src/experience/ui/FullscreenVideoModal.jsx`** — a full-viewport (`100vw`/`100vh`) overlay with its own dedicated `<video>` element (`autoPlay loop controls playsInline`, `object-fit: contain` so the file shows uncropped rather than stretched/cropped), completely separate from the off-DOM video elements `CinemaCamera.jsx`/`Monitor.jsx` already use for their own WebGL texture playback — no interference either direction. Closes via three paths funneling into one `onClose`: the close button, a backdrop click (checked via `event.target === dialogRef.current`, so clicks on the video/close button itself don't count), or `Escape`. Focus moves to the close button on open, per basic accessibility practice for a modal with interactive content behind it.
+- **`FullscreenButton.jsx`** — rewritten to open/close this modal instead of calling `requestFullscreen()`/`exitFullscreen()`; the browser-fullscreen cross-browser helpers and `fullscreenchange` listeners from §4BM are gone, no longer needed. Picks which file to play — `FILM_MEDIA_SRC` or `DIGITAL_MEDIA_SRC` — from `scrollProgress.value` against `MONITOR_SNAP_T`, the exact same Film/Digital split `SectionIndicator.jsx`'s own `getActiveIndex` already uses.
+- **`CinemaCamera.jsx`/`Monitor.jsx`** — each file's video path (previously an inline string / a non-exported local const) is now an exported constant (`FILM_MEDIA_SRC`, `DIGITAL_MEDIA_SRC`) so `FullscreenButton.jsx` can reuse the real path instead of hardcoding it a third time.
+
+### Verification
+- Production build succeeds.
+- **Live-verified this round**, working around the still-present pane-hidden/`requestAnimationFrame`-starved condition (§4BM) by testing everything that doesn't depend on the WebGL animation loop directly: forced a real `1280×800` viewport, then confirmed via computed styles that `.scroll-lock-indicator` now sits at `right: 24px; bottom: 24px` and `.fullscreen-toggle` at `left: 640px` (viewport-center)/`bottom: 48px` — the swap is real, not just source-level. Called `.click()` on the toggle directly (valid regardless of the button's own CSS-driven visibility, since `pointer-events: none` only blocks real cursor hit-testing, not programmatic dispatch) and confirmed: the modal mounts with `aria-modal="true"` and the correct video `src` (`/media/film/film-01-hero.mp4`, matching the Film progress range), focus lands on the close button, and all three dismissal paths (`Escape` keydown, a backdrop click via `MouseEvent` dispatch, and the close button's own click) each correctly unmount it. Screenshotted the open modal — full-viewport video, letterboxed cleanly via `object-fit: contain`, close button visible top-right.
+- **Not verified this round**: the Digital-file branch (`DIGITAL_MEDIA_SRC`) of the same source-selection logic — blocked by the same rAF-starvation issue preventing the camera from actually reaching Digital in this session. The branch is a one-line ternary reusing the identical, already-verified `MONITOR_SNAP_T` comparison `SectionIndicator.jsx` uses elsewhere, so risk is judged low, but this is the natural next thing to confirm once the preview is reliably visible.
+
+---
+
 ## 4A. Geometry Refinement — Entrance Pillars (cross-cutting, Phase 1A revision)
 
 **Status:** TECHNICALLY COMPLETE
