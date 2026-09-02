@@ -745,6 +745,29 @@ Two asks: push the exterior orbit further out and lower again ("far back + low +
 
 ---
 
+## 4BD. Bug Fix — Exterior Orbit Wasn't Actually Aligned With the Lens (§4BC's fixed-step assumption was wrong)
+
+**Status:** DONE (root cause found and fixed; independently verified via standalone script + production build; live in-browser confirmation still blocked by the same environment issue as §4BB/§4BC)
+
+### Brief
+Reported bug: the exterior half-circle reaches its end but isn't actually aligned with the Film lens — no straight axis from camera through the gap to the lens, contradicting §4BC's own stated goal.
+
+### Root cause
+§4BC computed `GATE_POSITION` correctly (a ray cast along the lens's real forward direction, crossed with the pillar ring), but placed the exterior orbit's *own* endpoint using a fixed 30°-angular step back from the **inner ring's** gate angle (`ENTRY_GATE_ANGLE + ORBIT_STEP_DEGREES`) — an assumption that this fixed step would land "close enough" to on-axis at the orbit's much larger radius (6.9 vs. the ring's 4.6). It doesn't, and the reason is structural, not a rounding error: the lens axis does **not** pass through `PILLAR_RING_CENTER` (the lens sits off-center and is tilted an extra 32° beyond its stand's own yaw), so the angle at which that axis crosses a circle is genuinely radius-dependent — the angle it crosses the inner ring at is not the angle it crosses the orbit at. Computed both angles with a standalone script before writing the fix: the ring crossing is at `137.3°`; the orbit-radius crossing is at `134.2°`; §4BC's fixed-step scheme placed the last orbit point at `167.3°` — roughly **33° away from where the axis actually crosses at that radius**. That's a large, plainly visible sideways offset right at the one moment the request is most explicit about there being none, and it's exactly what was reported.
+
+### What changed
+- **`cameraPath.js`** — cast the *same* lens-axis ray a second time, now at `ORBIT_RADIUS` instead of `PILLAR_RING_RADIUS` (`orbitAlignCrossing`/`ORBIT_ALIGN_ANGLE`), and use that angle — not a fixed step from the ring's gate angle — as the exterior orbit's own endpoint. The orbit's start (`ORBIT_START_ANGLE`) is now `ORBIT_ALIGN_ANGLE + 180°`, and the six orbit points step down in `180° / 5 = 36°` increments (five gaps across six points, since the *last* point now lands exactly on the alignment angle rather than one step short of it) — this makes the alignment exact by construction, at whatever radius the orbit actually ends up using, instead of an approximation that quietly gets worse as the radius grows (which is precisely what happened between §4BA's `6.6` and §4BC's `6.9` — the same fixed-step bug, just increasingly wrong as the radius increased round over round).
+- The straight-line-only interior guarantee (§4BC's `sampleCameraPath` linear-interpolation override) now starts one keyframe earlier — from the **last orbit point** itself, not just the gate — since that point is now genuinely on-axis too. `STRAIGHT_ZONE_START_INDEX` moved from the gate's index to the last orbit point's index; four segments (last-orbit→gate, gate→establish, establish→approach, approach→lens-dive) are now covered instead of three.
+- No other change: `ORBIT_RADIUS` (6.9), heights, look-at scheme, and `ESTABLISH_POSITION`'s on-axis placement are all unchanged from §4BC — this is a targeted fix to the one broken angle, not a re-litigation of the rest of that round.
+
+### Verification
+- Production build succeeds; `useState`/leftover-debug-log grep clean.
+- A standalone Node script (using the real `three` package, mirroring `CinemaCamera.jsx`'s exact geometry) independently confirmed the fix: `ORBIT_ALIGN_ANGLE = 134.2021°`, and the actual last-orbit-point angle produced by the file's own formula matches it to 4 decimal places (`134.2021°` both). Reconstructing that point via `pointOnRing` at that angle exactly matches the raw ray-circle intersection point (`(4.9465, 0.8106)` both ways). Most importantly, the direction vector from the last orbit point to the gate now has the exact same XZ ratio as `lensForward` itself (`1.279942` both) — direct confirmation of true collinearity, not just "close." Wall clearance re-checked across the new sweep range (`134.2°` to `314.2°`): `max |x| = 6.9000`, unchanged from §4BC's own `0.1` margin.
+- App-mount sanity checked on a freshly restarted dev server + fresh tab: canvas present, no error overlay, no console errors.
+- **Not independently re-verified this round**: live scroll-driven playback — the preview pane was again reported "hidden" by the host UI throughout (`requestAnimationFrame` firing zero times over the test window), the same condition blocking live verification for the last three rounds. Given this fix directly addresses a bug that was only ever caught by actually *looking* at the result, a live pass through the opening — specifically watching the moment the exterior orbit hands off into the pillar gap — is the highest-priority verification still outstanding once the preview is visible again.
+
+---
+
 ## 4A. Geometry Refinement — Entrance Pillars (cross-cutting, Phase 1A revision)
 
 **Status:** TECHNICALLY COMPLETE
