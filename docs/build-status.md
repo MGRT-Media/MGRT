@@ -530,6 +530,38 @@ Once Phase 1E (Campaigns) and Phase 3 (Return) are built, `getActiveIndex` will 
 
 ---
 
+## 4AV. Feature — Side Navigation: Click-to-Navigate Chapter Indicator
+
+**Status:** DONE for the three reachable states (Intro/Film/Digital); Campaigns/Return blocked on the same unbuilt-act gap noted in §4AT/§4AU.
+
+### What changed
+`SectionIndicator.jsx`'s five lines went from a passive chapter cue to a real interactive control, per explicit request ("every bar must be clickable... direct navigation must still feel cinematic, not teleport"). Integrated directly into the existing scroll/camera state machine rather than building a parallel one:
+
+1. **`sectionNavigationEvent.js`** (new) — a tiny pub/sub matching the established `cameraLockEvent.js`/`scrollLockEvent.js` pattern. `SectionIndicator.jsx` calls `requestNavigate(sectionKey)`; `ScrollTimelineProvider.jsx` is the sole subscriber.
+2. **`SECTION_TARGETS`** (new, `filmActBeats.js`) — maps `intro`/`film`/`digital` to the exact same `0`/`FILM_FOCUS_T`/`MONITOR_SNAP_T` constants already driving the scroll-snap/lock logic. `campaigns`/`return` have no entry — see Scope note below.
+3. **`navigateToSection` in `ScrollTimelineProvider.jsx`** — reuses the exact same Lenis → ScrollTrigger → `scrollProgress` → `ScrollCameraRig` pipeline scroll already drives, via `smoothScroll.lenis.scrollTo(targetScroll, { duration, easing, force: true, onComplete })`. This is what makes it "the same physical camera travelling," not a teleport: the camera samples `cameraPath.js`'s spline at every intermediate progress value exactly as it does during manual scroll.
+4. **Intermediate-skip logic** — a module-scoped `isDirectJumpActive` flag, set for the jump's duration, suppresses the Lens hard-lock's crossing-detection (`onUpdate`) and the intro rate-cap driver (`syncIntroZone`) so the camera can physically pass through Film's coordinate space en route to Digital without stopping or firing Film's presentation lock. `scrollProgress.value` itself is *not* suppressed — it keeps tracking live scroll the whole time, which is what makes the transit visually continuous rather than a hidden jump-cut.
+5. **Arrival re-engagement** — on the jump's `onComplete`, if the destination is Film or Digital, the exact same `engageLensHold`/`engageMonitorLock` functions scroll already uses are called directly, so landing on a nav target triggers the correct hold/lock exactly as arriving there by scroll would.
+6. **Concurrency** — a `jumpToken` counter guards `onComplete` against firing after a newer click has superseded it; `cancelActiveDriversAndLocks()` tears down whatever driver/lock was active before starting a new jump (reusing each mechanism's own release function, not duplicated cleanup). Lenis's own `scrollTo` also cancels any in-flight tween of itself when called again (confirmed against the installed package source — `animate.fromTo` reuses a single `Animate` instance), so two rapid clicks never fight over the real scroll position.
+7. **UI** — rows became real `<button>` elements inside a `<nav>`, each with an `aria-label` (`aria-disabled` for Campaigns/Return); enlarged padding gives a bigger click/touch target without widening the visible 14px line. Hover/focus-visible reveal (label + line-width expand) is pure CSS (`:hover`/`:focus-visible`, the same `power2.out`-equivalent transition already used for the active state) — no GSAP, per explicit request. `@media (hover: hover)` scopes the hover rule so a tap on touch doesn't leave a mark stuck in its expanded state.
+
+### Scope note (third time flagged, same underlying gap as §4AT/§4AU)
+Campaigns (Phase 1E, billboard reveal) and Return (Phase 3, dive-back-in) still have no real camera landmark in the codebase — both phases remain NOT STARTED. `SECTION_TARGETS` has no entry for either key, so their marks render fully consistent with Film/Digital (hoverable, focusable, label-revealing) but clicking them is a guarded no-op in both `SectionIndicator.jsx` and `ScrollTimelineProvider.jsx`. Fabricating a placeholder coordinate for either was explicitly ruled out rather than silently done. The QA checklist's Intro→Campaigns, Film→Campaigns, and Campaigns→Digital cases cannot be validated as written until those acts exist; Digital→Film, Intro→Digital (through Film), and rapid-click stress-testing were all validated in full (see below).
+
+### Verification
+- **Production build**: succeeds, no new warnings beyond the pre-existing chunk-size notice.
+- **Console**: zero errors/warnings across every test below.
+- **Direct navigation matrix** (all combinations among Intro/Film/Digital): confirmed via DOM class + `scrollProgress`-driven active-state inspection and `window.scrollY` landing exactly on the target's true scroll position (re-derived per check against the live viewport, since the pane's viewport size changed between some checks — not an app issue).
+- **Intermediate-skip, Intro→Digital**: sampled scroll position and `.scroll-lock-indicator`'s visibility every 200ms through the full jump — confirmed continuous, monotonic scroll progress through the Film coordinate range with the lock indicator staying hidden the entire transit, then correctly appearing only once at the Digital landmark (the Monitor lock engaging on arrival, not Film's).
+- **Arrival re-engagement, Digital→Film**: clicking Film from Digital correctly re-engaged the Lens hard-lock (`.scroll-lock-indicator--visible` became true on arrival) and released it automatically after its normal hold duration — not stuck.
+- **Rapid-click stress test**: clicking Film then Digital ~200ms apart resolved cleanly to Digital's exact final position with no blended/intermediate resting state.
+- **Campaigns/Return**: hover confirmed via computed styles (`opacity: 0.75`, line `width: 38px`, matching the active-state treatment); click confirmed as a no-op (`scrollY` and active-index both unchanged).
+- **Mobile viewport (375×812)**: all five buttons present with correct labels/ARIA; direct-navigation click (dispatched programmatically after the harness's synthetic touch-tap events proved unreliable — a known harness limitation flagged in earlier rounds, not an app issue) landed correctly.
+- **`useState` grep**: only the two pre-existing documented exceptions (`ScrollLockIndicator.jsx`, `SectionIndicator.jsx` itself) — no new React state introduced for scroll-driven values.
+- Not independently re-verified this round: Safari-specific behavior (no Safari available in this environment) and true OS-level mouse `:hover` end-to-end (verified instead via `element.matches(':hover')` + computed styles after the automation tool's hover action, which is an equivalent check of the same CSS mechanism).
+
+---
+
 ## 4A. Geometry Refinement — Entrance Pillars (cross-cutting, Phase 1A revision)
 
 **Status:** TECHNICALLY COMPLETE
