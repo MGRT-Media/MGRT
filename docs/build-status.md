@@ -920,6 +920,27 @@ Duration was never a function of real-world angular distance in this architectur
 
 ---
 
+## 4BL. Feature — Scroll Reset on Refresh + Deeper Film Lens Zoom
+
+**Status:** DONE
+
+### Brief
+Two requests, phrased generically ("vanilla JS or modern framework" boilerplate) but implemented against this project's real architecture rather than as literal generic snippets:
+1. Reset scroll to the top on every page load/refresh (`history.scrollRestoration = 'manual'` + forced `window.scrollTo(0, 0)`).
+2. An "auto-zoom on Film" effect: the active video scales up to take over almost the full viewport as the visitor reaches Film, smoothly reversible.
+
+The literal generic version of #2 (`IntersectionObserver` + CSS `transform: scale()` on a DOM `<video>`) doesn't apply here: there is no DOM video element or scrollable section for Film — the clip is a texture on a 3D lens mesh inside one full-page canvas, and "reaching Film" is a `scrollProgress` value, not a viewport intersection. Clarified with the human first (`AskUserQuestion`): confirmed the intent is best served by enhancing the *existing* camera dive-in mechanism (`CinemaCamera.jsx`/`cameraPath.js`, already a smooth, bidirectional, scrollProgress-driven "zoom") rather than bolting on a second, parallel DOM/CSS zoom system alongside it.
+
+### What changed
+- **`main.jsx`** — added `history.scrollRestoration = 'manual'` and `window.scrollTo(0, 0)` at the top of the module, before React mounts and before `ScrollTimelineProvider.jsx` constructs Lenis. Ordering matters here specifically: Lenis reads the real window scroll position at construction time as its own internal truth, and every subsequent frame it re-asserts that position (confirmed live — a manual `window.scrollTo` issued after mount was reverted to 0 by Lenis's own raf loop within one frame) — so the fix has to land before Lenis exists, not just "on load" generically, or a browser-restored offset could get baked in as Lenis's own starting state.
+- **`cameraPath.js`** — `LENS_DIVE_FILL_FRACTION` raised `0.95 → 0.99` (the lens disc now subtends ~99% of the vertical half-frame at Film, vs. the previous ~95%), still ~3.4x clear of the near clip plane (verified with a standalone script before raising it, since fill fraction and near-clip safety move in opposite directions). No new mechanism: this is the same `sampleCameraPath`-driven dolly every other camera movement uses, so it stays bidirectional and progress-deterministic by construction — reversing away from Film smoothly zooms back out, exactly like every other camera transition in this project.
+
+### Verification
+- Production build succeeds.
+- **Live-verified this round** (preview pane was reachable): confirmed `window.scrollY` is `0` immediately after a fresh load; confirmed Lenis actively fights and reverts a manual post-mount `scrollTo` (validating the fix's ordering rationale, not just its presence). Played the intro cinematic through to Film and screenshotted the lens-dive frame — the video now fills nearly the entire viewport with only a thin barrel rim visible, no near-clip artifacts.
+
+---
+
 ## 4A. Geometry Refinement — Entrance Pillars (cross-cutting, Phase 1A revision)
 
 **Status:** TECHNICALLY COMPLETE
