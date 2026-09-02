@@ -900,6 +900,26 @@ The forward journey is two distinct legs with a real pause between them: scroll 
 
 ---
 
+## 4BK. Refinement — Shortened Exterior Orbit from 180° to 100°
+
+**Status:** DONE
+
+### Brief
+Shorten the exterior orbit's angular sweep from ~180° to ~100°, keeping the exact same animation duration — the shorter arc should therefore read as slower and more deliberate, not faster or shorter in time.
+
+### What changed
+- **`cameraPath.js`** — renamed `HALF_CIRCLE_DEGREES` (`180`) to `ORBIT_SWEEP_DEGREES` (`100`), used identically everywhere it was: `ORBIT_STEP_DEGREES` (the six orbit points' spacing) and `ORBIT_START_ANGLE`. `ORBIT_ALIGN_ANGLE` — the sweep's END point, exactly on the Film lens's optical axis — is the fixed, protected value here (per every prior alignment round, §4BC/§4BD); shortening the sweep moves the START point closer to it instead, leaving the endpoint, the gate, and the entire straight interior approach completely untouched, per the brief's own "do not change... Film camera position."
+- No other file touched. `ORBIT_RADIUS`, `ORBIT_START_Y`/`GATE_Y` (camera distance/height), the easing (`smoothstep` per segment, `easeIntroCinematic` for the tween itself), and the lighting ignition ramp are all independent of the sweep angle and were left exactly as they were.
+
+### Why duration needed no code change
+Duration was never a function of real-world angular distance in this architecture: `ScrollTimelineProvider.jsx`'s `playIntroCinematic` computes its tween duration purely from progress-space distance (`INTRO_ALIGN_T`, a normalized 0-1 value, unaffected by this change), and `cameraPath.js`'s six orbit keyframes are always evenly spaced across `t: 0 -> INTRO_ALIGN_T` regardless of how many real degrees separate them. Shortening the sweep from 180° to 100° therefore automatically keeps the exact same 2.5s duration while covering less angular distance — slower, more deliberate angular movement, precisely the requested effect, without touching the duration constants from §4BH.
+
+### Verification
+- Production build succeeds.
+- **Live-verified this round** (preview pane was reachable): dispatched the first scroll on a fresh mount, screenshotted at ~1.2s in (partway through the shorter sweep, pillars and monitor already substantially revealed) and again after the full duration — camera arrived at and held the identical aligned-pause frame outside the pillars (same endpoint, same composition, same ~2.5s timing as the pre-change verification in §4BH), confirming only the sweep's start point moved, not its destination or timing.
+
+---
+
 ## 4A. Geometry Refinement — Entrance Pillars (cross-cutting, Phase 1A revision)
 
 **Status:** TECHNICALLY COMPLETE
