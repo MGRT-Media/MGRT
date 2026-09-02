@@ -282,10 +282,19 @@ const ESTABLISH_POSITION = new THREE.Vector3(
 // approach the lens closely enough that it becomes a dark circular
 // visual field" taken further, toward "almost the entire screen").
 // Distance is derived from the lens's own radius and this camera's fov
-// (45°) so the lens disc subtends ~95% of the vertical half-frame —
-// close/immersive while still keeping a comfortable margin past the near
-// clip plane (near: 0.05, roughly a 2.7x safety margin at this distance).
-const LENS_DIVE_FILL_FRACTION = 0.95
+// (45°) so the lens disc subtends ~99% of the vertical half-frame — the
+// video reads as taking over almost the full viewport, per explicit
+// follow-up request for a more dramatic "auto-zoom" on Film, still
+// keeping a comfortable ~3.4x margin past the near clip plane (near:
+// 0.05) — verified with a standalone script before raising this, since
+// fill fraction and near-clip safety move in opposite directions as this
+// number increases. Raised from 0.95, not replaced with a separate
+// DOM/CSS zoom system: this dive is already exactly what that request
+// describes — a smooth scale-up as the camera nears Film, bidirectional
+// by construction since it's driven by the same scrollProgress-based
+// sampleCameraPath every other camera movement uses — so the existing
+// mechanism was tuned rather than duplicated.
+const LENS_DIVE_FILL_FRACTION = 0.99
 const LENS_DIVE_HALF_FOV_RADIANS = THREE.MathUtils.degToRad(45 / 2) * LENS_DIVE_FILL_FRACTION
 const LENS_DIVE_DISTANCE = CAMERA_ANCHOR.lensRadius / Math.tan(LENS_DIVE_HALF_FOV_RADIANS)
 const LENS_DIVE_POSITION = new THREE.Vector3(
