@@ -990,6 +990,31 @@ The "countdown button" didn't exist anywhere in this codebase — confirmed via 
 
 ---
 
+## 4BO. Fix + Feature — Flush Lens Video Fit, Film→Digital Pull-Back/Push-In Transition
+
+**Status:** DONE
+
+### Brief
+1. Eliminate the visible gap between the Film lens's video screen and the barrel/lip framing it, so the video touches the lip's inner edge seamlessly. Also requested rounded corners "matching the lens curvature" — already satisfied by construction (the screen has always been a `circleGeometry`, not a rectangle with corners to round; see below).
+2. A specific two-part camera beat for the Film→Digital hop: a quick pull-back away from the lens, then a forward dolly onto the monitor — replacing the single continuous dolly-out this hop used before.
+
+### Bug found: the lens video's "0.94x" fix from an earlier round was measured against the wrong z-position
+Investigating the reported gap found the root cause: the video screen mesh sat 0.02 units recessed inside the tapered lens barrel (`frontRadius: 0.07 -> rearRadius: 0.09` over its length), but its radius (`LENS.frontRadius * 0.94`) was only ever sized against the barrel's radius at the very FRONT opening — not at the screen's own, measurably wider, recessed position. A standalone script confirmed the actual barrel radius at that recessed depth is `~0.0715` vs. the video's `~0.0658`, a real, visible ring gap — not a rendering artifact.
+- **`CinemaCamera.jsx`** — the screen mesh moved flush to the same z the lip sits at (`lensFrontZ - 0.001`, the `0.001` purely to avoid z-fighting with the lip's own geometry) and resized to `GLASS_RADIUS` — the exact radius the glass dome in front of it already uses, itself already derived to nestle just inside the lip's inner edge. Reusing that existing constant instead of tuning a new fraction means the video now touches precisely the same boundary the glass already touches, verified numerically (`GLASS_RADIUS: 0.0644` vs. lip inner radius `0.0637` — the video now slightly exceeds the lip's inner edge, guaranteeing no gap, while `0.0644` still safely fits inside the barrel tube's cross-section at that depth, `~0.0701`).
+- **Rounded corners**: not applicable to this element — the screen has always been circular (`<circleGeometry>`), matching the lens's own curvature exactly by construction, not a rectangular video with corners needing clipping. Flagged rather than adding pointless code for a case that was already correct.
+
+### Feature: Film → Digital pull-back / push-in beat
+- **`cameraPath.js`** — inserted one new keyframe, `HANDOFF_PULLBACK_T` (15% of the way through the Film->Digital span, `t: 0.5325`), between the existing `FILM_FOCUS_T` (lens-dive) and `t: 1` (monitor) keyframes. Its position (`HANDOFF_PULLBACK_POSITION`) retreats along the same lens-forward axis `APPROACH_POSITION`/`LENS_DIVE_POSITION` already sit on, to a new, independently-defined distance (`1.6`, between `APPROACH_DISTANCE`'s `1.0` and `ESTABLISH_DISTANCE`'s `2.2` — deliberately NOT a literal reuse of `APPROACH_POSITION`'s exact coordinate, since revisiting an identical point elsewhere in the same continuous Catmull-Rom spline risks an unpredictable tangent/curvature right where a clean retreat matters most). Its look-at reuses `ORBIT_ENSEMBLE_LOOKAT` (the same point that already frames both the Cinema Camera and Monitor together during the opening orbit), so the retreat reads as "revealing the next destination" rather than just backing away.
+- Because `sampleCameraPath` already gives every segment zero velocity at both its start and end (per-segment `smoothstep` easing, unchanged), the camera naturally decelerates into a brief stop at the peak of the pull-back before accelerating into the much longer forward push — no explicit pause/hold needed for the "quick pull-back... followed by forward motion" beat the brief describes. The 15% placement keeps the retreat itself quick relative to the whole hop's duration (~85% of the tween is spent on the forward push into the monitor).
+- `STRAIGHT_ZONE_END_INDEX` (governing the unrelated Intro->Film straight-line guarantee) is computed arithmetically from `ORBIT_POINT_COUNT`, not a literal index — appending the new keyframe strictly AFTER `LENS_DIVE_POSITION` left it, and that guarantee, completely untouched; confirmed by inspection, not just assumption.
+
+### Verification
+- Production build succeeds.
+- Lens flush-fit verified numerically via a standalone script (see above) — exact radii compared, not eyeballed.
+- **Not live-verified this round**: the preview pane remained hidden for this entire round (`document.hidden === true`, re-confirmed at the start of testing) — unlike §4BN's UI changes, this round's changes are deep-scroll 3D geometry with no DOM-level proxy to inspect while `requestAnimationFrame` is starved, so no workaround was available this time. Both changes are judged low-risk by construction (the flush-fit reuses an already-correct, already-verified constant; the new keyframe reuses the existing, already-correct segment/spline/easing machinery unchanged), but actually seeing the Film lens edge and the Film→Digital pull-back/push-in beat remains the top item to confirm once the preview is reliably visible again.
+
+---
+
 ## 4A. Geometry Refinement — Entrance Pillars (cross-cutting, Phase 1A revision)
 
 **Status:** TECHNICALLY COMPLETE
