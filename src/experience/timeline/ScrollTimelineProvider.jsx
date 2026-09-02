@@ -13,6 +13,7 @@ import {
   INTRO_ALIGN_T,
   INTRO_CINEMATIC_MIN_DURATION_SECONDS,
   INTRO_CINEMATIC_MAX_DURATION_SECONDS,
+  INTRO_TO_FILM_DURATION_SECONDS,
   INTRO_INTENT_DECAY_MS,
   LOCK_CATCH_DURATION_SECONDS,
   LOCK_CATCH_EASE,
@@ -474,6 +475,15 @@ export function ScrollSpacer() {
       const trigger = timeline.scrollTrigger
       if (!trigger) return
 
+      // The "second scroll" leg — Film, reached directly from the exterior
+      // alignment point the intro cinematic just landed at — gets its own
+      // fixed, slower duration rather than the general distance-scaled
+      // formula below, per explicit follow-up to slow this specific
+      // straight-to-the-lens move down without also slowing the unrelated
+      // Film<->Digital chapter hop that formula also governs. Checked
+      // before any state below mutates `currentChapter`.
+      const isIntroToFilm = sectionKey === 'film' && currentChapter === 'intro'
+
       // Bump the token before tearing anything down so a rapid second
       // click cleanly supersedes the first — its onComplete below checks
       // this and no-ops if it's since gone stale. Lenis's own scrollTo
@@ -485,11 +495,13 @@ export function ScrollSpacer() {
 
       const startT = scrollProgress.value
       const distance = Math.abs(targetT - startT)
-      const duration = THREE.MathUtils.clamp(
-        JUMP_MIN_DURATION_SECONDS + distance * (JUMP_MAX_DURATION_SECONDS - JUMP_MIN_DURATION_SECONDS),
-        JUMP_MIN_DURATION_SECONDS,
-        JUMP_MAX_DURATION_SECONDS,
-      )
+      const duration = isIntroToFilm
+        ? INTRO_TO_FILM_DURATION_SECONDS
+        : THREE.MathUtils.clamp(
+            JUMP_MIN_DURATION_SECONDS + distance * (JUMP_MAX_DURATION_SECONDS - JUMP_MIN_DURATION_SECONDS),
+            JUMP_MIN_DURATION_SECONDS,
+            JUMP_MAX_DURATION_SECONDS,
+          )
       const scrollRange = trigger.end - trigger.start
       const targetScroll = trigger.start + scrollRange * targetT
 
