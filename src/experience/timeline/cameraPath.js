@@ -38,7 +38,8 @@ import { ESTABLISH_T, FILM_FOCUS_T, INTRO_ALIGN_T } from './filmActBeats.js'
  * and neither replaces the other.
  */
 /**
- * Entrance: wide exterior half-circle, ending in perfect lens alignment,
+ * Entrance: wide exterior orbit (~100° sweep, shortened from a full
+ * half-circle per explicit request), ending in perfect lens alignment,
  * then a genuinely straight interior approach — a sixth directorial pass
  * on the opening shot (§4BD: fixes a real alignment bug in §4BC's orbit;
  * also refines §4BB/§4BA/§4AY; supersedes §4AX's half-moon-through-open-
@@ -66,7 +67,7 @@ import { ESTABLISH_T, FILM_FOCUS_T, INTRO_ALIGN_T } from './filmActBeats.js'
  * actually uses, not an approximation that quietly degrades as the radius
  * grows.
  *
- * **The orbit is the antipodal half-circle from that same alignment
+ * **The orbit sweeps `ORBIT_SWEEP_DEGREES` back from that same alignment
  * point**, at `ORBIT_RADIUS` — pushed further out again, from §4BC's 6.8
  * to 6.9, per explicit "much further away... substantial space... this is
  * important" — genuinely close to the hard ceiling this room's ±7 walls
@@ -182,19 +183,34 @@ const ORBIT_START_Y = 1.8
 const GATE_Y = 1.3
 
 const ORBIT_POINT_COUNT = 6
-const HALF_CIRCLE_DEGREES = 180
+// Shortened from a full 180° half-circle to ~100°, per explicit request —
+// duration is untouched by this on its own: `ScrollTimelineProvider.jsx`'s
+// `playIntroCinematic` duration formula only ever depends on progress-space
+// distance (`INTRO_ALIGN_T`, unaffected by this constant), not real-world
+// angular distance, so the same t: 0 -> INTRO_ALIGN_T sweep now covers a
+// shorter arc over the exact same wall-clock time — slower, more
+// deliberate angular movement, exactly the requested effect, with zero
+// duration-side code changes required. `ORBIT_ALIGN_ANGLE` (the end of the
+// sweep, where the camera lands exactly on the lens axis) is the fixed,
+// protected point here, not the start — per explicit "do not change...
+// Film camera position" and every prior round's alignment guarantee, so
+// shortening the sweep moves the START point closer to the endpoint,
+// leaving the endpoint itself, and everything downstream of it (the gate,
+// the straight interior approach), completely untouched.
+const ORBIT_SWEEP_DEGREES = 100
 // (count - 1) intervals across `count` points, since the LAST point now
 // lands exactly ON `ORBIT_ALIGN_ANGLE` — not one interval short of it,
 // per the fix above — so there are only 5 gaps between 6 points.
-const ORBIT_STEP_DEGREES = HALF_CIRCLE_DEGREES / (ORBIT_POINT_COUNT - 1)
+const ORBIT_STEP_DEGREES = ORBIT_SWEEP_DEGREES / (ORBIT_POINT_COUNT - 1)
 
-// Diametrically opposite the exterior alignment point on the orbit's own
-// circle — the start position is therefore a direct consequence of where
-// the lens points, not an independently chosen coordinate. Stepping DOWN
-// from here by `ORBIT_STEP_DEGREES` per point (same direction of travel
-// established in §4AY/§4BA) sweeps through the room's deeper, darker side
-// first, landing exactly at `ORBIT_ALIGN_ANGLE` on the final point.
-const ORBIT_START_ANGLE = ORBIT_ALIGN_ANGLE + HALF_CIRCLE_DEGREES
+// `ORBIT_SWEEP_DEGREES` back from the exterior alignment point on the
+// orbit's own circle — the start position is therefore a direct
+// consequence of where the lens points, not an independently chosen
+// coordinate. Stepping DOWN from here by `ORBIT_STEP_DEGREES` per point
+// (same direction of travel established in §4AY/§4BA) sweeps through the
+// room's deeper, darker side first, landing exactly at `ORBIT_ALIGN_ANGLE`
+// on the final point.
+const ORBIT_START_ANGLE = ORBIT_ALIGN_ANGLE + ORBIT_SWEEP_DEGREES
 
 function heightAtOrbitFraction(f) {
   return THREE.MathUtils.lerp(ORBIT_START_Y, GATE_Y, f)

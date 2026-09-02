@@ -71,7 +71,7 @@ export const SCROLL_LOCK_HOLD_MS = 1750
 export const SCROLL_LOCK_OVERRIDE_DRIFT = 0.05
 
 /**
- * Intro cinematic (Entrance -> exterior half-circle, `t: 0` through
+ * Intro cinematic (Entrance -> exterior orbit, `t: 0` through
  * `INTRO_ALIGN_T`) — superseded the previous continuous, input-driven
  * hard-rate-cap mechanism entirely, per explicit request: "the initial
  * camera movement should no longer be continuous scroll-driven... ONE
