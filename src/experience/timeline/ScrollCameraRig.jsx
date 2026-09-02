@@ -3,7 +3,6 @@ import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import { scrollProgress, scrollLockWobble } from './ScrollTimelineProvider.jsx'
 import { sampleCameraPath } from './cameraPath.js'
-import { updateCameraLockState } from './cameraLockEvent.js'
 
 // Lowered from 3.5 (both were previously equal) per explicit request to
 // give the camera more perceived "weight and inertia" as it settles, and
@@ -101,12 +100,6 @@ export default function ScrollCameraRig() {
     } else {
       camera.position.copy(pos)
     }
-
-    // Fires cameraLockEvent.js's onCameraLock/onCameraUnlock listeners on
-    // the raw scroll progress (not the damped position) — the "lock" is a
-    // scroll-state concept (has the visitor scrolled all the way there),
-    // not a "has the camera's glide physically finished settling" one.
-    updateCameraLockState(scrollProgress.value)
   })
 
   return null

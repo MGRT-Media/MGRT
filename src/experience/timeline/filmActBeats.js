@@ -33,6 +33,22 @@ export const FILM_IGNITE_RISE = 0.12
 export const MONITOR_SNAP_T = 1
 export const MONITOR_SNAP_CAPTURE_RADIUS = 0.08
 
+// How much scroll progress before MONITOR_SNAP_T the monitor screen's
+// ignite ramps in over — mirrors FILM_IGNITE_RISE's role for the Cinema
+// Lens screen, so both screens derive their glow the same way: a pure
+// smoothstep of scrollProgress, not an onCameraLock event + real-time
+// damp (the previous mechanism, replaced per explicit request that
+// Film<->Digital lighting/object state be "a pure function of cinematic
+// progress" with no snapping in either scroll direction — the old
+// event+damp approach meant the visible ignite level at a given progress
+// depended on how much real time had passed since crossing the lock
+// threshold, not on progress itself, which could desync forward vs.
+// backward passes at different scroll speeds). No symmetric "fall" half
+// like Film's hill: MONITOR_SNAP_T is the timeline's own end, so the
+// screen only ever ramps up to it and back down when reversing away —
+// there's no "past the peak" side to fall down into.
+export const DIGITAL_IGNITE_RISE = 0.1
+
 /**
  * Force-Stop / Timed Release — Snap 2 and Snap 3 only, per explicit
  * request (Snap 1's establish shot stays a soft magnetic snap; nothing
@@ -88,8 +104,8 @@ export const INTRO_ALIGN_T = 0.12
 // proportionally scaled and capped rather than also pinned to a single
 // fixed value, since forcing a full reverse traverse into the same 2.5s
 // the much shorter forward entrance gets would read as rushed.
-export const INTRO_CINEMATIC_MIN_DURATION_SECONDS = 2.5
-export const INTRO_CINEMATIC_MAX_DURATION_SECONDS = 5
+export const INTRO_CINEMATIC_MIN_DURATION_SECONDS = 3
+export const INTRO_CINEMATIC_MAX_DURATION_SECONDS = 3
 
 // Exactly 1.5s for the "second scroll" leg — the exterior alignment point
 // (`INTRO_ALIGN_T`) to Film — per the same explicit fixed-duration

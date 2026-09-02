@@ -5,21 +5,14 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import { createScreenVideoMaterial } from './screenVideoMaterial.js'
 import { createStoneWallMaterial } from '../materials/stoneWallMaterial.js'
 import { buildRockGeometry } from './buildRockGeometry.js'
-import { onCameraLock, onCameraUnlock } from '../timeline/cameraLockEvent.js'
+import { scrollProgress } from '../timeline/ScrollTimelineProvider.jsx'
+import { MONITOR_SNAP_T, DIGITAL_IGNITE_RISE } from '../timeline/filmActBeats.js'
 import { BEAM_CENTER, YAW_DEGREES, MONITOR_PLINTH } from './plinthAnchor.js'
 
 // Phase 2: curated Digital work, per experience-design.md §8 ("approximately
 // 2-4 selected Digital projects"). One clip for now — extending to a
 // scroll-mapped sequence of several is future work, not part of this swap.
 const DIGITAL_MEDIA_SRC = '/media/digital/digital-01-website.mp4'
-
-// How quickly the screen's uIgnite uniform eases toward its 0/1 target
-// once the camera locks/unlocks — a brief, tasteful fade for the raw
-// on/off hook itself (THREE.MathUtils.damp, same frame-rate-independent
-// approach used throughout this project's scroll/camera work), NOT a
-// full power-on sequence — that's future work, per the request's explicit
-// "do not populate full screen content... yet" scope.
-const IGNITE_DAMP_LAMBDA = 4
 
 /**
  * Phase 2 Digital console — a retro/mid-century industrial reference-
@@ -112,42 +105,38 @@ export default function Monitor() {
     return () => video.removeEventListener('loadedmetadata', onLoadedMetadata)
   }, [video, screenMaterial])
 
-  // Target for the screen's ignite state — a plain ref (not React state),
-  // flipped by the onCameraLock/onCameraUnlock event mechanism below and
-  // read every frame to damp the material's actual uIgnite uniform toward
-  // it. Reversible by design: unlocking (scrolling back out) resets the
-  // target to 0, so the screen goes dormant again rather than staying lit
-  // forever after the first visit — consistent with this scene's scroll
-  // being fully reversible everywhere else.
-  const igniteTarget = useRef(0)
-
   // Media playback follows technical-architecture.md §11: prepared/played
   // only once the camera actually reaches the monitor, paused and reset
   // once it leaves — not tied to raw DOM visibility, and not left playing
   // for the whole experience. `.play()` is wrapped since it returns a
   // promise that can reject (e.g. a not-yet-ready decode); a failed
   // playback attempt must not break the cinematic timeline (§11 "Media
-  // fallback").
-  useEffect(() => {
-    const offLock = onCameraLock(() => {
-      igniteTarget.current = 1
+  // fallback"). `wasPlaying` is a plain ref, not React state, purely to
+  // detect the play/pause edge each frame.
+  const wasPlaying = useRef(false)
+
+  useEffect(() => () => video.pause(), [video])
+
+  // Ignite is a pure function of scrollProgress — a smoothstep ramp into
+  // MONITOR_SNAP_T, the same mechanism CinemaCamera.jsx already uses for
+  // its own lens screen, rather than an onCameraLock event damped over
+  // real time (the previous approach here). This is what makes the
+  // Film<->Digital transition genuinely reversible: the exact same ignite
+  // level shows at a given progress value regardless of how fast, or in
+  // which direction, the visitor scrolled to reach it.
+  useFrame(() => {
+    const p = scrollProgress.value
+    const ignite = THREE.MathUtils.smoothstep(p, MONITOR_SNAP_T - DIGITAL_IGNITE_RISE, MONITOR_SNAP_T)
+    screenMaterial.uniforms.uIgnite.value = ignite
+
+    const shouldPlay = ignite > 0.02
+    if (shouldPlay && !wasPlaying.current) {
       video.currentTime = 0
       video.play().catch(() => {})
-    })
-    const offUnlock = onCameraUnlock(() => {
-      igniteTarget.current = 0
-      video.pause()
-    })
-    return () => {
-      offLock()
-      offUnlock()
+    } else if (!shouldPlay && wasPlaying.current) {
       video.pause()
     }
-  }, [video])
-
-  useFrame((_, delta) => {
-    const uniform = screenMaterial.uniforms.uIgnite
-    uniform.value = THREE.MathUtils.damp(uniform.value, igniteTarget.current, IGNITE_DAMP_LAMBDA, delta)
+    wasPlaying.current = shouldPlay
   })
 
   const plinthGeometry = useMemo(
@@ -219,8 +208,8 @@ export default function Monitor() {
         {/*
           Screen surface — live video texture (Phase 2 Digital media), still
           gated behind `uIgnite` (see the material module and the
-          onCameraLock wiring above): dark/dormant until the camera reaches
-          the monitor lock. `screenVideoMaterial` is a raw unlit
+          scrollProgress-driven ignite ramp above): dark/dormant until the
+          camera nears the monitor lock. `screenVideoMaterial` is a raw unlit
           ShaderMaterial (no PBR lighting model), so roughness/metalness
           don't apply to it — its "emission" is just its fragment-shader
           output read directly, `toneMapped: false`. Explicitly excluded

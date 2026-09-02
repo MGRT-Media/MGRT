@@ -5,8 +5,8 @@ import * as THREE from 'three'
  * instead of the Phase 1D procedural test pattern, but keeps the exact
  * same dormant/ignite behavior: an unlit `ShaderMaterial` (`toneMapped:
  * false`) blending between a near-black dormant glass look and the live
- * video frame via `uIgnite`, driven by each caller's own onCameraLock/
- * scroll-progress ignite wiring — untouched by this module.
+ * video frame via `uIgnite`, driven by each caller's own
+ * scrollProgress-based ignite wiring — untouched by this module.
  *
  * `uVideoAspect`/`uTargetAspect` drive a standard "cover" UV remap (crop
  * to fill, never stretch) — added per explicit request to eliminate

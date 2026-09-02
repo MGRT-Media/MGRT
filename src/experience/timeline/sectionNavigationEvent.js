@@ -1,8 +1,8 @@
 /**
  * A small, reusable pub/sub for "the visitor clicked a side-navigation mark
  * and wants the camera to jump to that cinematic state" — matching this
- * codebase's established pattern (`cameraLockEvent.js`, `scrollLockEvent.js`)
- * of plain mutable module state rather than a parallel React state manager.
+ * codebase's established pattern (`scrollLockEvent.js`) of
+ * plain mutable module state rather than a parallel React state manager.
  *
  * `SectionIndicator.jsx` is the only writer (`requestNavigate`).
  * `ScrollTimelineProvider.jsx` is the only reader — it already owns the

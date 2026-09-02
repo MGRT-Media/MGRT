@@ -152,12 +152,13 @@ export default function CinemaCamera() {
     [],
   )
   // Lens screen — Act 1's Film media (film-01-hero.mp4), sharing the same
-  // dormant/ignite unlit material as the monitor screen. Ignition here is
-  // NOT the onCameraLock binary event `Monitor.jsx` uses (that fires once
-  // at the very end of the scroll); it's a smooth "hill" centered on
-  // FILM_FOCUS_T — the scroll progress reads continuously in this
-  // object's own useFrame, matching how VolumetricLightingRig derives its
-  // own ignition directly from scrollProgress rather than an event.
+  // dormant/ignite unlit material as the monitor screen. Ignition is a
+  // smooth "hill" centered on FILM_FOCUS_T, a pure function of
+  // scrollProgress read continuously in this object's own useFrame —
+  // matching how VolumetricLightingRig and Monitor.jsx both derive their
+  // own ignition directly from scrollProgress rather than an event, so
+  // the same progress value always produces the same ignite level
+  // regardless of scroll direction or speed.
   const video = useMemo(() => {
     const el = document.createElement('video')
     el.src = '/media/film/film-01-hero.mp4'

@@ -1,16 +1,16 @@
 /**
  * A small, reusable pub/sub for "the scroll has been force-stopped at a
  * snap point" (and its release) — framework-agnostic, matching this
- * codebase's established pattern (see `cameraLockEvent.js`) of plain
+ * codebase's established pattern of plain
  * mutable module state rather than React state for scroll-driven values
  * (technical-architecture.md §7).
  *
  * `ScrollTimelineProvider.jsx` is the only writer (`setScrollLocked`,
- * called from its GSAP snap `onComplete`/drift-override logic). The only
+ * called from its lock/drift-override logic). The only
  * reader in this codebase today is `ScrollLockIndicator.jsx` (a DOM
  * overlay, not a 3D object), which is why this one keeps `useState`
- * inside its own subscribing component instead of the ref-based
- * `useFrame` pattern `cameraLockEvent.js`'s WebGL consumers use — an
+ * inside its own subscribing component instead of a ref-based
+ * `useFrame` pattern — an
  * occasional discrete UI-visibility toggle is a reasonable exception to
  * "no React state for scroll-driven values," which targets per-frame
  * values, not rare boolean flips.
