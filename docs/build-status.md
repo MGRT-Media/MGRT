@@ -678,6 +678,27 @@ Refine only the opening lighting progression's timing and starting floor — exp
 
 ---
 
+## 4BA. Refinement — Wide Exterior Orbit (§4AY's orbit was too tight; real clock-face anchoring)
+
+**Status:** DONE
+
+### Brief
+A further pass on the exterior-orbit entrance: the single most important requirement is distance — the camera must stay far enough outside the pillar ring for the audience to read the full circle as one architectural structure, not a tight loop that feels like it's weaving between columns. Named six explicit clock stops (8:00, 7:00, 6:00, 5:00, 4:00, 3:15) instead of the previous round's approximate framing, and re-stated that the Cinema Camera and Monitor must stay visible somewhere in frame throughout.
+
+### What changed
+- **`cameraPath.js`** — `ORBIT_RADIUS` raised from §4AY's `6.2` to `6.6`. This is close to the practical ceiling: the hall's own side walls are untouched (`HALL_WIDTH: 14`, ±7 from center) and the 8:00→3:15 sweep passes through θ: 270° (where `|x|` equals the radius exactly, since the ring center's `x` is 0), so `6.6` leaves a real but narrow `0.4` margin. The genuinely bigger change is *anchoring*, not just the number: the orbit body is now six real points matching the request's own named clock stops exactly (`ORBIT_CLOCK_STOPS`), computed via a new `clockToRingAngle` helper that maps standard clock-face degrees (each hour = 30°) onto this ring's real coordinate system through the one point that's tied to actual geometry — "3:15" is still `ENTRY_GATE_ANGLE + 15°` (unchanged from §4AY, still re-derived from the Cinema Camera's true angular position, not picked by eye) — so "8:00" is a genuine ~142.5° around the ring's own center ("roughly a half-circle" per explicit request, using real clock-face math: 3:15 lands 97.5° into its hour), not an independently-guessed angle. §4AY's `ORBIT_SWEEP_DEGREES` constant (an arbitrary total-sweep number) is gone entirely, replaced by this geometric derivation.
+- The gate mechanism (Phase 2: pull the radius from `ORBIT_RADIUS` to `PILLAR_RING_RADIUS` over the final 15° at the real inter-pillar gap) is unchanged from §4AY — this round only touches Phase 1's shape and distance.
+- Height/look-at structure is unchanged in kind (continuous descent across all orbit points, no final drop; `ORBIT_ENTRANCE_LOOKAT` once at 8:00 then `ORBIT_ENSEMBLE_LOOKAT` held across the five remaining orbit beats through the 3:15 checkpoint) — only re-spread across six points instead of four.
+- **`VolumetricLightingRig.jsx`** — `IGNITE_END` re-derived from `0.05` to `0.063` to keep the "room fully visible by 5:30" lighting milestone tracking the new orbit's real timing: solved `clockToRingAngle`'s inverse for "5:30" against the new six-point structure, landing at ~52.6% of the way from 8:00 to the 3:15 checkpoint. Nothing else about the lighting mechanism changed — still one continuous curve, still holds flat after this point.
+
+### Verification
+- Production build succeeds; `useState`/leftover-debug-log grep clean.
+- Live-verified in the browser this round (the preview pane was visible, unlike §4AZ): opening frame (8:00) shows the Cinema Camera and Monitor clearly through a gap with a foreground pillar establishing scale, at the newly-legible §4AZ darkness level. A few ticks in, multiple pillars (5+ visible at once) read as a genuine architectural rhythm with both objects still visible together. Continuing further shows the volumetric beam and dust fully established with no snap, matching the "5:30" milestone. The gate/Establish handoff lands cleanly (Camera and Monitor close-framed, as before). Film arrival re-checked via direct nav-click: unaffected, matching its established look exactly.
+- A standalone Node script replicating the exact `clockToRingAngle`/`pointOnRing` math was run before trusting the in-app result, confirming: `ENTRY_GATE_ANGLE: 195°` (unchanged from §4AY), sweep span `142.5°`, and all six orbit-stop world positions land within the hall's walls (max `|x|` among the six sampled stops: `6.54`, under the `6.6` ceiling and the `7` wall).
+- **Not independently re-verified this round**: Safari/real trackpad (unavailable in this environment, a gap flagged in every round touching this path); full-speed real-time playback feel (verified via discrete sampled screenshots along the scroll, not a recorded video of the live motion).
+
+---
+
 ## 4A. Geometry Refinement — Entrance Pillars (cross-cutting, Phase 1A revision)
 
 **Status:** TECHNICALLY COMPLETE
