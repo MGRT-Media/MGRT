@@ -6,12 +6,8 @@ import { createSmoothScroll } from './smoothScroll.js'
 import { setScrollLocked } from './scrollLockEvent.js'
 import { onNavigateRequest } from './sectionNavigationEvent.js'
 import {
-  ESTABLISH_T,
-  ESTABLISH_SNAP_CAPTURE_RADIUS,
   FILM_FOCUS_T,
-  FILM_SNAP_CAPTURE_RADIUS,
   MONITOR_SNAP_T,
-  MONITOR_SNAP_CAPTURE_RADIUS,
   SCROLL_LOCK_HOLD_MS,
   SCROLL_LOCK_OVERRIDE_DRIFT,
   INTRO_ALIGN_T,
@@ -92,17 +88,21 @@ const SCROLL_LENGTH_MULTIPLIER = 3
  * Monitor now, since the intro zone bypasses scrub entirely via its own
  * hard-capped driver (below).
  *
- * `scrollTrigger.snap` (below) is a deliberate, localized supersession of
- * this file's prior "no section-snapping" note, per explicit request for
- * "3 distinct, locked snap/pause positions": Snap 1 (Studio Scene
- * establish, `ESTABLISH_T`), Snap 2 (Cinema Lens, `FILM_FOCUS_T`), and
- * Snap 3 (Digital Monitor, `MONITOR_SNAP_T`, the end of the timeline). It
- * is NOT full-timeline sectioning — the snap function only pulls the
- * resting scroll position onto one of those three points when the user
- * stops scrolling within its own small capture radius; everywhere else
- * remains freely continuous. Still fully reversible: all three capture
- * radii are symmetric, so approaching from either scroll direction
- * settles at the same point.
+ * "3 distinct, locked snap/pause positions" from an earlier round: Snap 1
+ * (Studio Scene establish, `ESTABLISH_T`, `filmActBeats.js`), Snap 2
+ * (Cinema Lens, `FILM_FOCUS_T`), Snap 3 (Digital Monitor, `MONITOR_SNAP_T`).
+ * GSAP's own `scrollTrigger.snap` config used to implement these by pulling
+ * the resting scroll position onto whichever point the user stopped
+ * scrolling near — removed this round (see the `timeline` ScrollTrigger's
+ * own comment below for why it became actively harmful once every scroll
+ * change became a controlled tween rather than organic scrolling). Snap 2
+ * and 3 are unaffected: both are still real, reversible locks, just
+ * engaged explicitly (`engageLensHold`'s crossing-detection in `onUpdate`,
+ * `engageMonitorLock` from `navigateToSection`'s own `onComplete`) instead
+ * of via GSAP's native mechanism. Snap 1 has no engage/lock behavior of
+ * its own — it was purely GSAP's snap magnetically pulling the resting
+ * position toward it, which no longer has any equivalent now that no
+ * scroll ever "rests" at an arbitrary organic position in the first place.
  *
  * Snap 3 (Digital Monitor) keeps the softer "freeze scrollProgress.value,
  * let real scroll keep moving underneath" lock from the previous round —
@@ -251,18 +251,6 @@ export function ScrollSpacer() {
     let introCinematicActive = false
     let introCinematicPlayed = false
 
-    // Pulls the resting scroll position onto whichever snap point (if
-    // any) the user stopped within its own capture radius of. Outside
-    // all three radii the raw stopped position is returned unchanged —
-    // no snap, free scroll — so this only affects the three "click"
-    // beats, not the rest of the timeline.
-    const snapTo = (value) => {
-      if (Math.abs(value - ESTABLISH_T) < ESTABLISH_SNAP_CAPTURE_RADIUS) return ESTABLISH_T
-      if (Math.abs(value - FILM_FOCUS_T) < FILM_SNAP_CAPTURE_RADIUS) return FILM_FOCUS_T
-      if (Math.abs(value - MONITOR_SNAP_T) < MONITOR_SNAP_CAPTURE_RADIUS) return MONITOR_SNAP_T
-      return value
-    }
-
     // --- Snap 3 (Digital Monitor) — soft lock, unchanged from before ---
     let monitorLockActive = false
     let monitorLockTimeoutId = null
@@ -382,21 +370,24 @@ export function ScrollSpacer() {
         scroller: window,
         start: 'top top',
         end: 'bottom bottom',
-        // Raised from 1 per explicit follow-up ("scroll speed... still
-        // too fast") — only meaningfully affects the free-scroll segment
-        // between the Lens and Monitor (the intro zone bypasses scrub
-        // entirely via its own hard-capped driver above), giving that
-        // pull-back-and-pan a touch more of its own catch-up lag/weight.
+        // Scrub smoothing, unchanged. `snap` was removed this round: every
+        // scroll-position change now comes from an explicit controlled
+        // tween (`playIntroCinematic`/`navigateToSection`/lock catch-
+        // tweens), never organic user scrolling, so GSAP's native "pull
+        // the resting position onto the nearest snap point once scrolling
+        // stops" behaviour had no legitimate remaining case to serve — and
+        // was actively harmful: it doesn't distinguish "the user stopped
+        // scrolling" from "a script's tween just finished," so once
+        // `playIntroCinematic` settled at `INTRO_ALIGN_T` (0.12), which
+        // sits inside `ESTABLISH_T`'s own `ESTABLISH_SNAP_CAPTURE_RADIUS`
+        // (0.15 ± 0.05), this fired a SECOND, unrequested automatic nudge
+        // toward 0.15 — a real, if small, violation of "the camera should
+        // pause and wait for a second user scroll," per explicit report.
+        // The `MONITOR_SNAP_T` `onComplete` hook this config also carried
+        // is likewise redundant: `navigateToSection`'s own `onComplete`
+        // already calls `engageMonitorLock()` explicitly on every path
+        // that can reach Digital.
         scrub: 1.5,
-        snap: {
-          snapTo,
-          duration: { min: 0.2, max: 0.5 },
-          ease: 'power2.out',
-          delay: 0.05,
-          onComplete: (self) => {
-            if (Math.abs(self.progress - MONITOR_SNAP_T) < 0.001) engageMonitorLock()
-          },
-        },
         onUpdate: (self) => {
           // Snap 2: checked every tick (not just on scroll-stop) so a
           // fast, continuous scroll still gets caught exactly at
