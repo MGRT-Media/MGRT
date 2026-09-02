@@ -662,16 +662,67 @@ export function ScrollSpacer() {
       clearTimeout(chapterGestureDecayTimeoutId)
     }
 
-    // nextIndex < 0 (stepping back from Film) replays the intro cinematic
-    // in reverse — Film all the way back to t: 0, one continuous shot —
-    // rather than a discrete jump-cut, since there is no longer a
-    // continuous intro driver to hand off to (this round replaced it
-    // entirely with the one-shot `playIntroCinematic`, which is
-    // bidirectional by construction: it's driven by the exact same
-    // `sampleCameraPath`, a pure function of progress).
+    // Stepping back from Film (nextIndex === -1, since
+    // CHAPTER_ORDER.indexOf('film') is 0) must land at the exterior
+    // alignment point first — the same pause the FORWARD journey stops
+    // at outside the pillars — rather than skipping straight past it into
+    // the full reverse orbit, per explicit bug report: the forward
+    // journey is Intro -> [scroll] -> pause -> [scroll] -> Film, two
+    // distinct legs with a real pause between them, but the reverse only
+    // ever reversed the SECOND leg's destination (Film) directly into the
+    // FIRST leg's reverse (the full orbit back to t: 0), silently
+    // collapsing the pause that exists on the way there. `returnToAlignedPause`
+    // (below) is the reverse of that second leg only, landing back in the
+    // same chapter-mode-active, currentChapter: 'intro' state the forward
+    // pause itself produces — so a FURTHER backward step from there
+    // naturally falls into the `nextIndex < -1` case just below and plays
+    // the reverse orbit, exactly mirroring the forward two-scroll structure.
+    const returnToAlignedPause = () => {
+      if (introCinematicActive) return
+      const trigger = timeline.scrollTrigger
+      if (!trigger) return
+
+      const token = ++jumpToken
+      cancelActiveDriversAndLocks()
+      isDirectJumpActive = true
+
+      const scrollRange = trigger.end - trigger.start
+      const targetScroll = trigger.start + scrollRange * INTRO_ALIGN_T
+
+      smoothScroll.lenis.scrollTo(targetScroll, {
+        immediate: prefersReducedMotion,
+        duration: INTRO_TO_FILM_DURATION_SECONDS,
+        easing: easeSectionJump,
+        force: true,
+        onComplete: () => {
+          if (token !== jumpToken) return // superseded by a newer jump
+          isDirectJumpActive = false
+          lastRawProgress = INTRO_ALIGN_T
+          scrollProgress.value = INTRO_ALIGN_T
+          // Deliberately NOT the 'intro' exit path navigateToSection's own
+          // onComplete uses (that resets introCinematicPlayed/chapterModeActive
+          // for landing at the literal t: 0 start) — this pause is mid-chapter-mode,
+          // identical in every way to the pause the forward orbit itself produces.
+          currentChapter = 'intro'
+        },
+      })
+    }
+
+    // nextIndex < -1 means the camera is already paused at the exterior
+    // alignment point (having either arrived there via the forward orbit,
+    // or via `returnToAlignedPause` above) — a further backward step from
+    // there replays the intro cinematic in reverse, Film-aligned-pause all
+    // the way back to t: 0, one continuous shot, rather than a discrete
+    // jump-cut: `playIntroCinematic` is bidirectional by construction,
+    // driven by the exact same `sampleCameraPath`, a pure function of
+    // progress.
     const goToChapterIndex = (nextIndex) => {
-      if (nextIndex < 0) {
+      if (nextIndex < -1) {
         playIntroCinematic(0)
+        return
+      }
+      if (nextIndex === -1) {
+        returnToAlignedPause()
         return
       }
       if (nextIndex >= CHAPTER_ORDER.length) return // Digital is the last reachable chapter for now
