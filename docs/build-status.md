@@ -601,6 +601,33 @@ Two real modes, both living inside `ScrollTimelineProvider.jsx`'s existing singl
 
 ---
 
+## 4AX. Creative Refinement — Directorial Entrance Arc (Half-Moon Opening Shot)
+
+**Status:** DONE
+
+### Brief
+Explicit direction to approach the intro camera path as a filmmaker/director rather than an A-to-B interpolation problem: open high, reveal the room before the destination, sweep through one broad half-moon arc (not an orbit, not a straight line, not a series of point-to-point moves), descend continuously so there's no "final drop," and arrive at Film "as if it has found its natural shooting position." Also asked for real physical separation between the Cinema Camera and Monitor stands ("two worlds" within one production space) so the later Film → Digital chapter transition means something spatially.
+
+### What changed
+- **`cameraPath.js`** — the previous entrance was a near-straight, flat-height push down the room's Z axis: `START_POSITION` and `ESTABLISH_POSITION` shared the exact same `y: 1.6`, with only a ~1.6-unit sideways drift between them. Technically smooth (per §4AQ's spline work), but not a shot anyone would direct.
+  - `START_POSITION` moved from `(-1.0, 1.6, 8)` to `(-1.6, 4.4, 9.0)` — high (roughly half the hall's own 9-unit height, a real crane vantage), still centered between the existing entrance pillars (`Environment.jsx`'s gateway framing at `x: ±2.2` is untouched and still reads correctly), and a touch further back for more runway.
+  - New `ARC_APEX_POSITION` `(2.6, 2.4, 3.2)` at `t: 0.07` — a new spline control point (not a snap/lock point, no new scroll-lock added) that bulges the path out toward the room's lit (+X, breach/beam) side before curving back to the unchanged `ESTABLISH_POSITION`. Three points (start, apex, establish) read as one crescent; a second apex was considered and rejected as an S-curve, which is explicitly the wrong shape for "half-moon."
+  - Height now descends continuously across all three points (4.4 → 2.4 → 1.6) instead of being flat, so by the time the camera reaches Establish it has already arrived at shooting height — no separate "drop" beat. The existing Approach/Snap 2 segment already kept its own height close to Film's shooting height, so this closes the gap for the whole journey, not just the final leg.
+  - New `ENTRANCE_LOOKAT` `(0, 1.8, -2)` replaces the previous opening frame's look target (which was `ESTABLISH_LOOKAT`, i.e. the plinth ensemble, from `t: 0`) — the opening shot now looks generally into the room's space rather than fixating on the destination immediately, per "we don't want to immediately reveal everything." The reframe onto the plinth ensemble happens over the Entrance → Apex segment; from the apex through Establish the camera holds on `ESTABLISH_LOOKAT` for a clean glide to rest, unchanged from before.
+  - **Untouched, deliberately**: `ESTABLISH_POSITION`/`ESTABLISH_LOOKAT`, `APPROACH_POSITION`, `LENS_DIVE_POSITION`, `MONITOR_ALIGNED_POSITION` — everything from Snap 1 onward, including the Film lens-dive and Digital monitor-fill framing math, is byte-for-byte unchanged. The brief's "arrives at Film almost as if it has found its natural shooting position" was already true of the existing Approach → Snap 2 handoff; the redesign only needed to fix the *entrance*, not re-litigate the arrival.
+- **`plinthAnchor.js`** — `MONITOR_PLINTH.offsetX` and `CAMERA_STAND.offsetX` widened from `±0.55` to `±0.85` (both stands stay symmetric around the shared `BEAM_CENTER`/yaw), per "give them enough physical separation that the room has a genuine sense of geography." Every downstream position (`CAMERA_ANCHOR`, `MONITOR_ANCHOR`, and everything `cameraPath.js` derives from them — the Establish two-shot, the Approach, the Lens-dive, the Monitor-fill) is computed from these anchors, so the wider gap propagated automatically rather than needing separate hand-tuned coordinates anywhere else.
+
+### Verification
+- Production build succeeds; no new console errors.
+- Opening frame (t: 0) confirmed via screenshot to be a genuinely higher, more oblique vantage than before (pillars read as converging verticals from height, not a flat eye-level view) — the crane-shot read is real, not just a coordinate change.
+- Mid-arc frame (~t: 0.03-0.05, sampled via a short wheel burst) shows the camera partway through its descent with both the Cinema Camera and Monitor beginning to enter frame from a still-elevated, still-turning angle — confirms the arc/descent are actually shaping the path, not just present in code.
+- Establish frame (t: 0.15) confirmed via screenshot: the Cinema Camera and Monitor now read as two clearly separated objects with real floor and light pool visible between them, not two adjacent props — the wider `plinthAnchor.js` offset reads correctly at this framing distance, `ESTABLISH_DISTANCE` did not need adjusting.
+- Film (lens-dive) and Digital (monitor-fill) framing re-checked via direct nav-click after the offset change: both screenshots match their established look exactly (lens fully dominates frame with the barrel lip border; monitor screen fills frame edge-to-edge) — confirms the fill-fraction math correctly re-derived itself from the moved anchors with no visible regression.
+- Reversibility is structurally guaranteed (both changes are pure data — `sampleCameraPath` remains a pure function of `progress` only) rather than re-verified frame-by-frame this round.
+- **Not independently re-verified this round**: full-speed real-time playback of the arc's motion feel (only discrete sampled frames were captured via screenshots) — the shape and timing were verified against the keyframe math and the file's own doc comments, not against a recorded video of the live motion. Recommend a human pass watching the actual scroll-driven motion before treating the "does it feel expensive" creative bar as fully met.
+
+---
+
 ## 4A. Geometry Refinement — Entrance Pillars (cross-cutting, Phase 1A revision)
 
 **Status:** TECHNICALLY COMPLETE
