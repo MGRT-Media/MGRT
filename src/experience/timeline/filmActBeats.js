@@ -121,6 +121,31 @@ export const SECTION_TARGETS = {
 
 // Direct-navigation jump duration range, in seconds — scaled by travel
 // distance between these bounds so a short Film<->Digital jump doesn't
-// linger and a full Intro<->Digital traverse doesn't feel rushed.
+// linger and a full Intro<->Digital traverse doesn't feel rushed. Also
+// reused, unchanged, as the chapter-mode transition duration (below) —
+// same underlying jump mechanism, so one range covers both. Max lowered
+// from 2.2 to 1.6 (was tuned before chapter mode existed) per explicit
+// request for "approximately 0.8-1.5s" on a chapter hop: the Film<->Digital
+// distance (0.55 of the full 0-1 range) now lands at ~1.3s, while the full
+// Intro<->Digital traverse (distance 1.0, direct-nav only) still gets the
+// longest end of the range at 1.6s.
 export const JUMP_MIN_DURATION_SECONDS = 0.9
-export const JUMP_MAX_DURATION_SECONDS = 2.2
+export const JUMP_MAX_DURATION_SECONDS = 1.6
+
+/**
+ * Chapter mode (Film and beyond) — per explicit request, once the camera
+ * reaches Film the mouse wheel/trackpad/touch stops driving continuous
+ * scroll progress and instead becomes a discrete "advance one chapter"
+ * gesture input. `CHAPTER_GESTURE_THRESHOLD` is the accumulated wheel
+ * `deltaY` (summed across events, decaying back to 0 after
+ * `INTRO_INTENT_DECAY_MS` of no input — the same decay window the intro
+ * driver already uses, reused rather than adding a near-duplicate
+ * constant) needed to register as one deliberate gesture. A single
+ * ordinary mouse-wheel notch (~100) or one light trackpad swipe clears
+ * this comfortably; the real defense against "fast scroll skips two
+ * chapters" is `ScrollTimelineProvider.jsx`'s own transition lock
+ * (reusing `isDirectJumpActive`, already set for a jump's full duration),
+ * which makes every event during an in-flight transition a no-op rather
+ * than something this threshold has to filter out on its own.
+ */
+export const CHAPTER_GESTURE_THRESHOLD = 50

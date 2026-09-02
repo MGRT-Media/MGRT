@@ -22,6 +22,7 @@ import {
   SECTION_TARGETS,
   JUMP_MIN_DURATION_SECONDS,
   JUMP_MAX_DURATION_SECONDS,
+  CHAPTER_GESTURE_THRESHOLD,
 } from './filmActBeats.js'
 
 gsap.registerPlugin(ScrollTrigger)
@@ -199,12 +200,31 @@ export function ScrollSpacer() {
     // out-of-order call.
     let lenisSuspended = false
     const syncScrollSuspension = () => {
-      const shouldSuspend = introDriveActive || lensHoldActive
+      // chapterModeActive keeps Lenis suspended for the entire Film-and-
+      // beyond span, per explicit request that scroll input become a
+      // navigation trigger rather than something that moves physical
+      // scroll position — the only scroll motion once in chapter mode
+      // comes from this file's own forced (`force: true`) jumps.
+      const shouldSuspend = introDriveActive || lensHoldActive || chapterModeActive
       if (shouldSuspend === lenisSuspended) return
       lenisSuspended = shouldSuspend
       if (shouldSuspend) smoothScroll.lenis.stop()
       else smoothScroll.lenis.start()
     }
+
+    // --- Chapter mode (Film and beyond) ---
+    // `currentChapter` is the explicit, state-driven "which chapter is the
+    // visitor viewing" the request asks for, rather than deriving it from
+    // scroll pixel offsets — set at the moment the camera actually arrives
+    // at a chapter (in engageLensHold/engageMonitorLock below and in
+    // navigateToSection's onComplete), not from scrollProgress directly.
+    // `chapterModeActive` is the ACT 0 vs. ACT 1+ mode switch itself: false
+    // for the continuous intro, true from the instant the camera reaches
+    // Film onward. Campaigns/Return are intentionally absent from
+    // CHAPTER_ORDER — see SECTION_TARGETS' own doc comment for why.
+    let currentChapter = 'intro'
+    let chapterModeActive = false
+    const CHAPTER_ORDER = ['film', 'digital']
 
     // --- Direct navigation (side nav clicks) ---
     // Set for the duration of a nav-triggered jump; suppresses the
@@ -322,6 +342,11 @@ export function ScrollSpacer() {
     const engageMonitorLock = () => {
       if (monitorLockActive || lensHoldActive) return
       monitorLockActive = true
+      // Arriving at Digital — already true once Film was reached, but set
+      // again here so this also covers a hypothetical future direct arrival
+      // that skips Film's own engage path.
+      currentChapter = 'digital'
+      chapterModeActive = true
       setScrollLocked(true)
       gsap.to(scrollProgress, {
         value: MONITOR_SNAP_T,
@@ -382,6 +407,14 @@ export function ScrollSpacer() {
     const engageLensHold = (trigger) => {
       if (lensHoldActive) return
       lensHoldActive = true
+      // FILM IS THE MODE SWITCH — the instant the camera reaches Film,
+      // whether by continuous intro scroll crossing FILM_FOCUS_T or by a
+      // direct nav-click jump, the experience permanently leaves ACT 0's
+      // continuous scroll and enters chapter mode (see CHAPTER_ORDER and
+      // the gesture handlers below). Reversed only by the chapter-gesture
+      // handler's own backward-exit-from-Film case, or by clicking Intro.
+      currentChapter = 'film'
+      chapterModeActive = true
       introDriveActive = false // the intro rate cap hands off to the hold, not both at once
       clearTimeout(introIntentDecayTimeoutId)
       introIntentDirection = 0
@@ -564,12 +597,111 @@ export function ScrollSpacer() {
           // next tick can't misread a stale gap as a fresh crossing.
           lastRawProgress = targetT
           scrollProgress.value = targetT
-          if (targetT === FILM_FOCUS_T) engageLensHold(trigger)
-          else if (targetT === MONITOR_SNAP_T) engageMonitorLock()
-          else syncIntroZone()
+          if (sectionKey === 'film') engageLensHold(trigger)
+          else if (sectionKey === 'digital') engageMonitorLock()
+          else {
+            // 'intro' — also exits chapter mode if the visitor was in it
+            // (e.g. clicking the Intro mark while at Film/Digital), so
+            // `currentChapter`/scroll-suspension stay synchronized with
+            // where the camera actually landed rather than leaking the
+            // Film/Digital chapter state into what is now the continuous
+            // intro span again.
+            currentChapter = 'intro'
+            chapterModeActive = false
+            syncScrollSuspension()
+            syncIntroZone()
+          }
         },
       })
     }
+
+    // --- Chapter mode input (Film and beyond) ---
+    // Mirrors the intro zone's own "fully intercept input, drive state
+    // ourselves" pattern (always-attached capture-phase listeners,
+    // `preventDefault` on every event) rather than letting native/Lenis
+    // scroll move at all once in chapter mode — the wheel/trackpad/touch
+    // becomes a pure "advance one chapter" trigger, not something that
+    // moves a scroll position, per explicit request.
+    //
+    // `isChapterTransitionLocked` IS this file's `isTransitioning` guard:
+    // it reuses `isDirectJumpActive` (already set for a jump's full
+    // duration by navigateToSection, whether the jump came from a gesture
+    // or a nav click) rather than a second, parallel lock flag, plus the
+    // Lens/Monitor locks' own arrival-pause windows (`lensHoldActive`/
+    // `monitorLockActive`) so a gesture can't fire while the camera is
+    // still settling into a chapter it just reached. A fast/repeated
+    // wheel burst can only ever accumulate into ONE `goToNextChapter()`
+    // call: the very first crossing of `CHAPTER_GESTURE_THRESHOLD` calls
+    // `navigateToSection`, which sets `isDirectJumpActive` synchronously
+    // before returning — so by the time the burst's next event arrives
+    // (JS is single-threaded; events are processed one at a time), the
+    // lock check above already short-circuits it. This is what prevents
+    // "Film -> Campaigns" when the intended gesture was "Film -> Digital".
+    let chapterGestureAccum = 0
+    let chapterGestureDecayTimeoutId = null
+    let chapterTouchLastY = null
+
+    const isChapterTransitionLocked = () => isDirectJumpActive || lensHoldActive || monitorLockActive
+
+    const resetChapterGesture = () => {
+      chapterGestureAccum = 0
+      clearTimeout(chapterGestureDecayTimeoutId)
+    }
+
+    // nextIndex < 0 (stepping back from Film) hands off to the EXISTING
+    // continuous intro driver instead of a discrete jump — reversing
+    // through the Film mode-switch boundary should read as one continuous
+    // backward glide, not a jump-cut to t: 0, per "the intro should be
+    // able to move backwards smoothly."
+    const goToChapterIndex = (nextIndex) => {
+      if (nextIndex < 0) {
+        currentChapter = 'intro'
+        chapterModeActive = false
+        syncScrollSuspension()
+        syncIntroZone()
+        return
+      }
+      if (nextIndex >= CHAPTER_ORDER.length) return // Digital is the last reachable chapter for now
+      navigateToSection(CHAPTER_ORDER[nextIndex])
+    }
+
+    const goToNextChapter = () => goToChapterIndex(CHAPTER_ORDER.indexOf(currentChapter) + 1)
+    const goToPreviousChapter = () => goToChapterIndex(CHAPTER_ORDER.indexOf(currentChapter) - 1)
+
+    const handleChapterGesture = (deltaY) => {
+      if (isChapterTransitionLocked()) return
+      chapterGestureAccum += deltaY
+      clearTimeout(chapterGestureDecayTimeoutId)
+      chapterGestureDecayTimeoutId = setTimeout(resetChapterGesture, INTRO_INTENT_DECAY_MS)
+      if (chapterGestureAccum > CHAPTER_GESTURE_THRESHOLD) {
+        resetChapterGesture()
+        goToNextChapter()
+      } else if (chapterGestureAccum < -CHAPTER_GESTURE_THRESHOLD) {
+        resetChapterGesture()
+        goToPreviousChapter()
+      }
+    }
+
+    const onChapterWheel = (event) => {
+      if (!chapterModeActive) return
+      event.preventDefault()
+      handleChapterGesture(event.deltaY)
+    }
+    const onChapterTouchStart = (event) => {
+      if (!chapterModeActive) return
+      chapterTouchLastY = event.touches[0]?.clientY ?? null
+    }
+    const onChapterTouchMove = (event) => {
+      if (!chapterModeActive || chapterTouchLastY === null) return
+      event.preventDefault()
+      const currentY = event.touches[0]?.clientY ?? chapterTouchLastY
+      handleChapterGesture(chapterTouchLastY - currentY)
+      chapterTouchLastY = currentY
+    }
+
+    window.addEventListener('wheel', onChapterWheel, { capture: true, passive: false })
+    window.addEventListener('touchstart', onChapterTouchStart, { capture: true, passive: true })
+    window.addEventListener('touchmove', onChapterTouchMove, { capture: true, passive: false })
 
     const unsubscribeNavigate = onNavigateRequest(navigateToSection)
 
@@ -579,6 +711,7 @@ export function ScrollSpacer() {
       if (monitorLockTimeoutId) clearTimeout(monitorLockTimeoutId)
       if (lensHoldTimeoutId) clearTimeout(lensHoldTimeoutId)
       if (introIntentDecayTimeoutId) clearTimeout(introIntentDecayTimeoutId)
+      if (chapterGestureDecayTimeoutId) clearTimeout(chapterGestureDecayTimeoutId)
       gsap.killTweensOf(scrollProgress)
       gsap.ticker.remove(introTick)
       window.removeEventListener('wheel', onLensHoldWheel, { capture: true })
@@ -586,6 +719,9 @@ export function ScrollSpacer() {
       window.removeEventListener('wheel', onIntroWheel, { capture: true })
       window.removeEventListener('touchstart', onIntroTouchStart, { capture: true })
       window.removeEventListener('touchmove', onIntroTouchMove, { capture: true })
+      window.removeEventListener('wheel', onChapterWheel, { capture: true })
+      window.removeEventListener('touchstart', onChapterTouchStart, { capture: true })
+      window.removeEventListener('touchmove', onChapterTouchMove, { capture: true })
       timeline.scrollTrigger?.kill()
       timeline.kill()
       smoothScroll.dispose()
