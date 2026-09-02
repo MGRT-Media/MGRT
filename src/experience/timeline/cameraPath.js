@@ -335,22 +335,39 @@ const MONITOR_ALIGNED_LOOKAT = new THREE.Vector3(screenX, screenY, screenZ)
 // second time: revisiting an identical point elsewhere in the same
 // continuous Catmull-Rom spline risks an unpredictable tangent/curvature
 // right where a clean, easily-reasoned-about retreat matters most.
-// `HANDOFF_PULLBACK_T` sits close to `FILM_FOCUS_T` (15% of the
-// Film->Digital span) so the retreat itself is quick — `sampleCameraPath`
-// already gives every segment zero velocity at both ends (per-segment
-// `smoothstep` easing), so the camera naturally settles to a brief stop
-// at the peak of the pull-back before accelerating into the much longer
-// forward push toward the monitor, without needing an explicit pause.
-// Looks toward `ORBIT_ENSEMBLE_LOOKAT` (reused, not duplicated — the same
-// point that already frames both the Cinema Camera and Monitor together
-// during the opening orbit) rather than staying on `LENS_LOOKAT`, so the
-// retreat itself reads as "revealing the next destination," not just
-// backing away from the last one.
-const HANDOFF_PULLBACK_T = FILM_FOCUS_T + (1 - FILM_FOCUS_T) * 0.15
+// `HANDOFF_PULLBACK_T` sits close to `FILM_FOCUS_T` (`HANDOFF_PULLBACK_T_FRACTION`
+// of the way through the Film->Digital span) so the retreat itself is
+// quick — `sampleCameraPath` already gives every segment zero velocity at
+// both ends (per-segment `smoothstep` easing), so the camera naturally
+// settles to a brief stop at the peak of the pull-back before
+// accelerating into the much longer forward push toward the monitor,
+// without needing an explicit pause. Looks toward `ORBIT_ENSEMBLE_LOOKAT`
+// (reused, not duplicated — the same point that already frames both the
+// Cinema Camera and Monitor together during the opening orbit) rather
+// than staying on `LENS_LOOKAT`, so the retreat itself reads as
+// "revealing the next destination," not just backing away from the last
+// one.
+//
+// Vertical rise: the lens (`lensY`) sits noticeably lower than the
+// monitor screen (`screenY`, ~0.36 units higher — the Monitor's own
+// plinth+housing stack simply stands taller than the Cinema Camera's low
+// quadrupod) — per explicit follow-up, this climb needs to read as one
+// smooth, continuous rise across the WHOLE hand-off arc, not a flat
+// pull-back followed by a late vertical "lift" concentrated into the
+// final push. `HANDOFF_PULLBACK_POSITION`'s own Y is therefore lerped
+// between `lensY` and `screenY` at the SAME fraction (`HANDOFF_PULLBACK_T_FRACTION`)
+// the pull-back keyframe itself sits at in time — so the vertical ascent
+// rate stays proportional to elapsed time across both segments instead of
+// being back-loaded into the second one, and (since Y is just one
+// component of the same 3D position the spline/per-segment-smoothstep
+// easing already carries) the rise shares that exact same easing: no
+// separate vertical-only animation, no linear stops, by construction.
+const HANDOFF_PULLBACK_T_FRACTION = 0.15
+const HANDOFF_PULLBACK_T = FILM_FOCUS_T + (1 - FILM_FOCUS_T) * HANDOFF_PULLBACK_T_FRACTION
 const HANDOFF_PULLBACK_DISTANCE = 1.6
 const HANDOFF_PULLBACK_POSITION = new THREE.Vector3(
   lensX + fwdX * HANDOFF_PULLBACK_DISTANCE,
-  CAMERA_ANCHOR.bodyCenterHeight + 0.1,
+  THREE.MathUtils.lerp(lensY, screenY, HANDOFF_PULLBACK_T_FRACTION),
   lensZ + fwdZ * HANDOFF_PULLBACK_DISTANCE,
 )
 
