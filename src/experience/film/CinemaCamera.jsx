@@ -20,6 +20,10 @@ const TILT_TOWARD_MONITOR_DEGREES = 32
 // file directly, instead of hardcoding this path a second time.
 export const FILM_MEDIA_SRC = '/media/film/film-01-hero.mp4'
 
+// How far before the true end of the clip playback seeks back to the
+// start — see the seamless-loop comment in the useFrame below for why.
+const LOOP_EARLY_SECONDS = 0.1
+
 const BODY = { width: 0.42, height: 0.28, depth: 0.5, cornerRadius: 0.035 }
 const LENS = { frontRadius: 0.07, rearRadius: 0.09, length: 0.26 }
 const VIEWFINDER = { width: 0.1, height: 0.08, depth: 0.12 }
@@ -221,6 +225,24 @@ export default function CinemaCamera() {
       video.pause()
     }
     wasPlaying.current = shouldPlay
+
+    // Seamless loop: per explicit report of a black flash on the native
+    // `loop` restart — browsers commonly show a brief empty/black frame
+    // right at end-of-stream while the decoder resets for the jump back
+    // to the start, since that reset is a real decode boundary, not
+    // just a UI transition. Checked every rendered frame (far finer-
+    // grained than the browser's own throttled `timeupdate` event, which
+    // can fire as infrequently as ~4x/second — too coarse to reliably
+    // land inside a sub-200ms window), so the seek back to `0` happens
+    // shortly BEFORE the true end, and playback never actually reaches
+    // end-of-stream in the first place. Seeking to `0` itself is cheap
+    // and clean (encoders start files on a keyframe, so there's no
+    // forward-decode needed), unlike the wrap-around the native `loop`
+    // attribute performs. `el.loop = true` is left in place as a harmless
+    // fallback in case this early seek is ever missed on a slow frame.
+    if (shouldPlay && video.duration && video.currentTime >= video.duration - LOOP_EARLY_SECONDS) {
+      video.currentTime = 0
+    }
   })
 
   // Body/stand: dark, moderately metallic — a rubberized-metal cinema
