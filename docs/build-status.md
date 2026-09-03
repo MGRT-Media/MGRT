@@ -1056,6 +1056,26 @@ Direct follow-up superseding §4BP's own vertical-rise refinement, one round lat
 
 ---
 
+## 4BR. Fix — Film→Digital Hand-off Now Rises Level to the Monitor's Correct Height
+
+**Status:** DONE
+
+### Brief
+Direct follow-up to §4BQ: that fix correctly removed the pitch shift, but over-corrected by holding the ENTIRE hand-off at Film's lower `lensY`, so the camera arrived too low and the monitor no longer sat centered in frame. This round's explicit ask: keep the same zero-tilt guarantee, but let the camera's elevation itself rise to the monitor's correct height — "the correction should come from adjusting the camera's position/elevation, not by tilting."
+
+### What changed
+§4BQ conflated two different things under one fix: "pitch stays constant" (the real requirement) and "absolute height stays constant" (an unintended, overly strict side effect of how that fix was implemented). This round separates them correctly.
+- **`cameraPath.js`** — `MONITOR_ALIGNED_POSITION.y`/`MONITOR_ALIGNED_LOOKAT.y` restored from `lensY` back to `screenY` (the monitor's own real screen height — the physically correct height for a centered, on-axis shot, exactly as they were before §4BQ). `HANDOFF_PULLBACK_POSITION.y` and the new `HANDOFF_PULLBACK_LOOKAT.y` now share one computed value, `HANDOFF_PULLBACK_Y = lerp(lensY, screenY, HANDOFF_PULLBACK_T_FRACTION)` — an intermediate height, proportional to how far through the hand-off that keyframe sits, used for BOTH position and look-at (the critical fix vs. an earlier, since-superseded round that let them diverge, which is what caused a real pitch shift back then).
+- The zero-pitch guarantee holds not because Y is frozen, but because at every keyframe, position-Y and look-at-Y are set to the exact same value, and `VERTICAL_LOCK_ZONE_START/END_INDEX` (kept from §4BQ, comments updated) forces BOTH through identical plain linear interpolation across these two segments — making `position.y(t)` and `lookAt.y(t)` the same function of segment progress everywhere, not just at keyframes. The result: `eye.y - target.y` is exactly `0` at every sampled point across the whole hand-off, while the shared absolute height climbs smoothly from `lensY` to `screenY` — a level crane/pedestal rise, not a tilt.
+- Horizontal path (X/Z), timing (`HANDOFF_PULLBACK_T`, `HANDOFF_PULLBACK_DISTANCE`), lighting, environment, and monitor position are all untouched — this round only changes the shared vertical value at each keyframe.
+
+### Verification
+- Production build succeeds.
+- **Verified by construction**: at all three keyframes in this span, `eye.y - lookAt.y` computed as exactly `0` (`0.84 - 0.84`, `0.8932 - 0.8932`, `1.195 - 1.195`) — and since both curves are forced through identical linear interpolation with matching per-segment endpoints, this equality holds at every sampled point in between too, not just at the three keyframes.
+- **Not live-verified this round**: the preview pane remained hidden (`document.hidden === true`, checked again) — same persistent condition as the last several rounds. Actually watching the camera rise smoothly and land centered on the monitor remains the top item queued for whenever the preview is next reliably visible.
+
+---
+
 ## 4A. Geometry Refinement — Entrance Pillars (cross-cutting, Phase 1A revision)
 
 **Status:** TECHNICALLY COMPLETE
