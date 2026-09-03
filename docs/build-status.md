@@ -1110,6 +1110,26 @@ The human confirmed the round's other work is good; one follow-up on §4BS's new
 
 ---
 
+## 4BU. Fix — Seamless Video Loop (No Black Flash) for Film and Digital
+
+**Status:** DONE
+
+### Brief
+Both the Film lens and Digital monitor videos flash black when they loop, per direct report.
+
+### Root cause
+Both `video` elements relied on the native `loop` attribute alone. Browsers commonly show a brief empty/black frame right at end-of-stream while the decoder resets to jump back to the start — that reset is a real decode boundary (the tail of one GOP finishing, a fresh one beginning at the front), not a UI transition, so nothing about this project's scroll/ignite logic was ever what caused it.
+
+### What changed
+- **`CinemaCamera.jsx`** and **`Monitor.jsx`** — each file's existing per-frame `useFrame` (already checking scroll-driven ignite state every rendered frame) now also seeks back to `currentTime: 0` shortly BEFORE the clip's true end (`LOOP_EARLY_SECONDS = 0.1`), so playback never actually reaches end-of-stream in the first place — the native `loop` attribute's own wrap-around, and the decoder-reset flash that comes with it, never gets a chance to fire. Checked every rendered frame rather than via the browser's own `timeupdate` event, which is deliberately too coarse for this (fires as infrequently as ~4x/second in some browsers — easy to miss a sub-200ms window entirely). Seeking to `0` itself is cheap and clean here, since encoders start a file on a keyframe — no forward-decode needed, unlike the tail-to-head wrap `loop` performs internally. `loop = true` is left in place on both elements as a harmless fallback for the rare case this early seek is ever missed on an unusually slow frame.
+- Duplicated as a small, matching block in both files rather than extracted into a shared helper — it's a single conditional reusing values each `useFrame` already computes locally (`shouldPlay`, the `video` ref), and the two files don't otherwise share a video-lifecycle module; three near-identical lines were judged not worth a new abstraction for.
+
+### Verification
+- Production build succeeds.
+- **Not live-verified this round**: the preview pane remained hidden (`document.hidden === true`) for this round, consistent with recent rounds — and even with a visible pane, confirming this fix means watching an actual loop boundary pass in real time, which for these clip lengths (tens of seconds each) isn't practical to wait out in this environment regardless of pane visibility. The technique itself (seek-before-end rather than relying on the native end-of-stream loop) is a well-established fix for exactly this class of browser behavior, and the existing `loop = true` fallback means this change can't make looping behavior worse even in an edge case it misses — but actually confirming the flash is gone remains the top item queued for whenever the preview is next reliably visible.
+
+---
+
 ## 4A. Geometry Refinement — Entrance Pillars (cross-cutting, Phase 1A revision)
 
 **Status:** TECHNICALLY COMPLETE
