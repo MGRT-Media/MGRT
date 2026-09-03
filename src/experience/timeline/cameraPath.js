@@ -315,17 +315,21 @@ const MONITOR_SNAP_HALF_FOV_RADIANS = THREE.MathUtils.degToRad(45 / 2) * MONITOR
 const MONITOR_VIEW_DISTANCE = MONITOR_ANCHOR.screenHeight / 2 / Math.tan(MONITOR_SNAP_HALF_FOV_RADIANS)
 const [screenX, screenY, screenZ] = MONITOR_ANCHOR.screenWorldPosition
 const [screenFwdX, , screenFwdZ] = MONITOR_ANCHOR.screenForward
-// Position kept on the lens-axis corridor's own line (X/Z), but held at
-// `lensY` rather than the screen's own real height — see the Film ->
-// Digital hand-off note below for why: this whole hop is now vertically
-// locked to the height Film ends at, per explicit request that Film and
-// Digital "feel like the same camera position and vertical perspective."
+// Back to the monitor's own real screen height (`screenY`) for both
+// position AND look-at — per explicit follow-up correcting §4BQ's
+// over-correction: holding this whole hand-off at Film's lower `lensY`
+// kept the camera perfectly level (good) but arrived too low to frame
+// the monitor centered (not good). `screenY` is the physically correct
+// height for a centered, on-axis shot of the monitor — see the Film ->
+// Digital hand-off note below for how the rise TO this height stays
+// perfectly level throughout, rather than reintroducing the tilt this
+// same request forbids.
 const MONITOR_ALIGNED_POSITION = new THREE.Vector3(
   screenX + screenFwdX * MONITOR_VIEW_DISTANCE,
-  lensY,
+  screenY,
   screenZ + screenFwdZ * MONITOR_VIEW_DISTANCE,
 )
-const MONITOR_ALIGNED_LOOKAT = new THREE.Vector3(screenX, lensY, screenZ)
+const MONITOR_ALIGNED_LOOKAT = new THREE.Vector3(screenX, screenY, screenZ)
 
 // Film -> Digital hand-off: a quick pull-back away from the lens before
 // pushing forward onto the monitor, per explicit request for that
@@ -348,40 +352,52 @@ const MONITOR_ALIGNED_LOOKAT = new THREE.Vector3(screenX, lensY, screenZ)
 // accelerating into the much longer forward push toward the monitor,
 // without needing an explicit pause.
 //
-// Vertical lock: per explicit follow-up — "do not tilt... no vertical
-// camera rotation... horizon/vertical framing locked... Film and Digital
-// should feel like the same camera position and vertical perspective" —
-// this supersedes an earlier round's proportional vertical-RISE version
-// of this same hand-off (which deliberately climbed from `lensY` toward
-// the monitor's own, genuinely higher, `screenY`). Every position AND
-// look-at in this hop now holds exactly `lensY` — the height already
-// established at the end of Film — so the eye-to-target vector's Y
-// component never changes across the whole hand-off: zero pitch, by
-// construction, not just a small one. `HANDOFF_PULLBACK_LOOKAT` keeps
-// `ORBIT_ENSEMBLE_LOOKAT`'s X/Z (BEAM_CENTER, the point already used to
-// frame both the Cinema Camera and Monitor together during the opening
-// orbit — reused, not duplicated) but with its Y overridden to `lensY`,
-// so the pull-back still horizontally reveals "the next destination"
-// without introducing any vertical reframe. `VERTICAL_LOCK_ZONE_*` below
-// additionally forces plain linear interpolation across both of this
-// hop's segments (not the spline `sampleCameraPath` otherwise uses
-// there) — necessary because Catmull-Rom's segment shape is influenced by
-// NEIGHBORING control points too (`APPROACH_POSITION`, one segment
-// earlier, sits at a different height), so equal keyframe Y values alone
-// wouldn't guarantee the *sampled* path stays flat in between; only
-// straight-line interpolation does. This intentionally means the monitor
-// no longer sits perfectly centered vertically in Digital's final resting
-// frame (its screen is genuinely above this held eye-line) — an accepted
-// trade-off, per the request's own explicit goal above.
+// Level rise, not a tilt: per explicit follow-up — "do not reintroduce
+// the previous vertical camera-angle shift... keep the vertical viewing
+// angle consistent... the correction should come from adjusting the
+// camera's position/elevation, not by tilting the camera up or down" —
+// this refines §4BQ's "hold everything at lensY" fix, which kept pitch
+// at a constant zero but pinned it to the WRONG absolute height (too low
+// to frame the monitor centered). The actual requirement is narrower
+// than §4BQ read it as: pitch (the eye-to-target vertical ANGLE) must
+// stay constant — specifically, always exactly level, zero — but the
+// camera's own absolute ELEVATION is free to rise from `lensY` (Film's
+// end) to `screenY` (the monitor's own, genuinely higher, correct
+// framing height). The trick making that a genuine "level crane/pedestal
+// rise" rather than a disguised tilt: `HANDOFF_PULLBACK_POSITION.y` and
+// `HANDOFF_PULLBACK_LOOKAT.y` are set to the IDENTICAL value (an
+// intermediate height between `lensY` and `screenY`, proportional to how
+// far through the hand-off this keyframe sits — see
+// `HANDOFF_PULLBACK_T_FRACTION`), and likewise `MONITOR_ALIGNED_POSITION.y`
+// / `MONITOR_ALIGNED_LOOKAT.y` now match each other again (both
+// `screenY`, above). Since every keyframe's position-Y equals that SAME
+// keyframe's look-at-Y, and `VERTICAL_LOCK_ZONE_*` below forces BOTH
+// through plain linear interpolation across identical per-segment
+// start/end values, `position.y(t)` and `lookAt.y(t)` are literally the
+// same function of segment progress at every sampled point, not just at
+// keyframes — `eye.y - target.y` is exactly `0` throughout the entire
+// hand-off, mathematically, even while the shared absolute height itself
+// climbs. §4BQ's version instead held every Y at the single constant
+// `lensY` (including the monitor's own final shot), which is what left
+// the arrival too low — this version rises to the correct height while
+// keeping the identical zero-pitch guarantee §4BQ established.
+//
+// `HANDOFF_PULLBACK_LOOKAT` keeps `ORBIT_ENSEMBLE_LOOKAT`'s X/Z
+// (BEAM_CENTER, the point already used to frame both the Cinema Camera
+// and Monitor together during the opening orbit — reused, not
+// duplicated), only its Y is computed here, so the pull-back still
+// horizontally reveals "the next destination" exactly as before — this
+// round only touches the vertical component.
 const HANDOFF_PULLBACK_T_FRACTION = 0.15
 const HANDOFF_PULLBACK_T = FILM_FOCUS_T + (1 - FILM_FOCUS_T) * HANDOFF_PULLBACK_T_FRACTION
+const HANDOFF_PULLBACK_Y = THREE.MathUtils.lerp(lensY, screenY, HANDOFF_PULLBACK_T_FRACTION)
 const HANDOFF_PULLBACK_DISTANCE = 1.6
 const HANDOFF_PULLBACK_POSITION = new THREE.Vector3(
   lensX + fwdX * HANDOFF_PULLBACK_DISTANCE,
-  lensY,
+  HANDOFF_PULLBACK_Y,
   lensZ + fwdZ * HANDOFF_PULLBACK_DISTANCE,
 )
-const HANDOFF_PULLBACK_LOOKAT = new THREE.Vector3(BEAM_CENTER[0], lensY, BEAM_CENTER[2])
+const HANDOFF_PULLBACK_LOOKAT = new THREE.Vector3(BEAM_CENTER[0], HANDOFF_PULLBACK_Y, BEAM_CENTER[2])
 
 // Orbit body keyframes span t: 0 -> INTRO_ALIGN_T (six points, evenly
 // spaced), leaving INTRO_ALIGN_T -> 0.135 for the gate crossing and
@@ -438,18 +454,23 @@ const STRAIGHT_ZONE_END_INDEX = STRAIGHT_ZONE_START_INDEX + 4 // LENS_DIVE_POSIT
 // The Film -> Digital hand-off's own two segments (lens-dive -> pull-back,
 // pull-back -> monitor) — forced to plain linear interpolation for the
 // same underlying reason as the straight zone above, but for a different
-// requirement: every keyframe position in this span already shares the
-// same Y (`lensY`, see the hand-off's own comment), but Catmull-Rom's
+// requirement: every keyframe's position-Y in this span is set to exactly
+// match that SAME keyframe's look-at-Y (see the hand-off's own comment —
+// a level rise from `lensY` to `screenY`, not a flat hold), but Catmull-Rom's
 // segment shape is influenced by neighboring control points OUTSIDE the
 // two endpoints too (here, `APPROACH_POSITION`, one segment before this
-// zone starts, which sits at a genuinely different height) — so equal
-// keyframe Y values alone don't guarantee the *sampled* curve stays flat
-// in between. Only straight-line interpolation does. Kept as its own
-// named zone rather than folded into `STRAIGHT_ZONE_*` above: that one
+// zone starts, which sits at a different height than either) — so equal
+// position/look-at Y values at each keyframe alone wouldn't guarantee the
+// *sampled* position curve tracks the (always-linear) look-at curve
+// exactly in between, which is what the zero-pitch guarantee actually
+// depends on. Only forcing straight-line interpolation for position too
+// makes them the same function of segment progress everywhere, not just
+// at the endpoints. Kept as its own named zone rather than folded into
+// `STRAIGHT_ZONE_*` above: that one
 // exists to keep the interior approach genuinely straight (a positional
-// concern); this one exists to keep the hand-off's vertical component at
-// exactly zero (a separate, height-only concern) — different "why", same
-// underlying `lerpVectors` mechanism.
+// concern); this one exists to keep the hand-off's pitch (not its
+// elevation) exactly level throughout (a separate, angle-only concern) —
+// different "why", same underlying `lerpVectors` mechanism.
 const VERTICAL_LOCK_ZONE_START_INDEX = STRAIGHT_ZONE_END_INDEX // LENS_DIVE_POSITION's index
 const VERTICAL_LOCK_ZONE_END_INDEX = VERTICAL_LOCK_ZONE_START_INDEX + 2 // MONITOR_ALIGNED_POSITION's index
 
