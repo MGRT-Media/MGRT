@@ -99,11 +99,14 @@ export function createScreenVideoMaterial(videoTexture, targetAspect = 1, { lens
         // a perfectly sharp bright-to-nothing cutoff still reads as a
         // mathematical mask, not an optical falloff — real lenses dim
         // gradually toward the rim. Fading brightness out just before
-        // that geometric edge (0.32 -> 0.5, in the same 0-0.5
-        // center-to-rim UV space the distortion above uses) gives the
-        // transition a soft, photographic edge instead of a hard one.
+        // that geometric edge (0.4 -> 0.5, in the same 0-0.5 center-to-
+        // rim UV space the distortion above uses) gives the transition a
+        // soft, photographic edge instead of a hard one. Start radius
+        // raised from 0.32 per explicit "slightly smaller" follow-up —
+        // a narrower dark ring, still reaching the same fully-transparent
+        // 0.5 edge.
         if (uLensEffect > 0.5) {
-          float vignette = 1.0 - smoothstep(0.32, 0.5, length(centered));
+          float vignette = 1.0 - smoothstep(0.4, 0.5, length(centered));
           color *= vignette;
         }
 
