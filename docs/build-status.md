@@ -1095,6 +1095,21 @@ The Film lens preview and its video read as too "geometric" and constructed — 
 
 ---
 
+## 4BT. Refinement — Narrower Lens Vignette
+
+**Status:** DONE
+
+### Brief
+The human confirmed the round's other work is good; one follow-up on §4BS's new lens vignette: make it slightly smaller.
+
+### What changed
+- **`screenVideoMaterial.js`** — the vignette's `smoothstep` start radius raised `0.32 -> 0.4` (still fading to fully transparent at the same `0.5` geometric edge), narrowing the dark ring without changing where it ends or the barrel-distortion strength.
+
+### Verification
+- Production build succeeds.
+
+---
+
 ## 4A. Geometry Refinement — Entrance Pillars (cross-cutting, Phase 1A revision)
 
 **Status:** TECHNICALLY COMPLETE
