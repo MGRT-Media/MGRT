@@ -86,7 +86,12 @@ const GLASS_SPHERE_RADIUS = (GLASS_BULGE ** 2 + GLASS_RADIUS ** 2) / (2 * GLASS_
  * rim, `GLASS_BULGE` at the tip) becomes the final Z depth directly.
  */
 function buildLensGlassGeometry() {
-  const segments = 12
+  // Raised from 12 — per explicit request that the lens read as
+  // genuinely curved glass rather than a faceted 3D primitive, and the
+  // lens-dive keyframe (cameraPath.js) brings this dome close enough to
+  // fill nearly the whole frame, where coarser profile resolution would
+  // be the first thing to show as flat-sided rather than smoothly round.
+  const segments = 24
   const points = []
   for (let i = 0; i <= segments; i += 1) {
     const h = (i / segments) * GLASS_BULGE
@@ -150,9 +155,14 @@ export default function CinemaCamera() {
   const lensGlassGeometry = useMemo(() => buildLensGlassGeometry(), [])
   // A slim torus at the barrel's front opening — the "curved lip" that
   // frames the glass/video, per explicit request. An open-ended cylinder
-  // alone has no edge thickness of its own to read as a lip.
+  // alone has no edge thickness of its own to read as a lip. Tube
+  // segments raised 12 -> 24 alongside the glass dome's own profile
+  // resolution above, for the same reason: this rim sits right at the
+  // frame's edge during the lens-dive close-up, where a coarser tube
+  // cross-section would be the first thing to read as faceted rather
+  // than a smoothly rounded edge.
   const lensLipGeometry = useMemo(
-    () => new THREE.TorusGeometry(LENS.frontRadius, LENS.frontRadius * 0.09, 12, 32),
+    () => new THREE.TorusGeometry(LENS.frontRadius, LENS.frontRadius * 0.09, 24, 32),
     [],
   )
   // Lens screen — Act 1's Film media (film-01-hero.mp4), sharing the same
@@ -177,7 +187,15 @@ export default function CinemaCamera() {
   // unlike the video's native ~16:9. The material's cover-fit UV remap
   // (screenVideoMaterial.js) crops instead of stretching, eliminating the
   // dead space/letterboxing a plain 0-1 UV mapping left inside the lens.
-  const lensScreenMaterial = useMemo(() => createScreenVideoMaterial(videoTexture, 1), [videoTexture])
+  // lensEffect: true — adds the subtle barrel distortion + soft vignette
+  // that same module now supports, per explicit request that this
+  // specific preview "feel like a real cinema camera lens... not a hard
+  // geometric shape" (Monitor.jsx's own screen leaves this off, since a
+  // flat rectangular monitor shouldn't warp or vignette like glass).
+  const lensScreenMaterial = useMemo(
+    () => createScreenVideoMaterial(videoTexture, 1, { lensEffect: true }),
+    [videoTexture],
+  )
   const wasPlaying = useRef(false)
 
   useEffect(() => {
