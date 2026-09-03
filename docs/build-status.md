@@ -1076,6 +1076,25 @@ Direct follow-up to §4BQ: that fix correctly removed the pitch shift, but over-
 
 ---
 
+## 4BS. Refinement — Optical Lens Feel (Vignette, Barrel Distortion, Smoother Glass/Lip)
+
+**Status:** DONE
+
+### Brief
+The Film lens preview and its video read as too "geometric" and constructed — a hard-edged 3D primitive rather than something feeling like real cinema-camera glass. Requested: softer circular curvature, subtle lens distortion, a soft image-to-lens transition instead of a hard crop, without touching camera movement, composition, lighting, or animation.
+
+### What changed
+- **`screenVideoMaterial.js`** — added an opt-in `lensEffect` option (default off) to `createScreenVideoMaterial`, since this module is shared with `Monitor.jsx`'s flat rectangular screen, which shouldn't warp or vignette like glass. When on, the fragment shader now: (1) applies a subtle radial barrel distortion to the video's sample UVs before the existing cover-fit remap — real curved glass bends the image slightly more toward the rim than the center, so an undistorted crop was one of the things making this read as a flat panel rather than something viewed through a lens; (2) fades brightness out in a smooth radial band approaching the disc's geometric edge (`smoothstep` from 0.32 to the true edge at 0.5, in the same centered UV space), rather than the previous hard bright-to-nothing cutoff at the mesh boundary. The mesh itself is already a perfect circle (`circleGeometry`, no geometry change needed for "roundness"), but a mathematically sharp color cutoff at that boundary still reads as a mask, not an optical falloff — the vignette is what actually makes the transition feel soft, per the brief's own "avoid obvious hard corners... transition should be soft and natural."
+- **`CinemaCamera.jsx`** — the lens screen's own material call now passes `{ lensEffect: true }` (Monitor.jsx's own call is untouched, so its screen stays flat/undistorted). Also raised two geometry resolutions that sit right at the frame's edge during the lens-dive close-up (`LENS_DIVE_FILL_FRACTION: 0.99`, nearly full-frame) where coarser tessellation would be the first thing to read as faceted: the glass dome's profile (`buildLensGlassGeometry`'s `segments`, `12 -> 24`) and the barrel lip's tube cross-section (`lensLipGeometry`'s `TorusGeometry` tube segments, `12 -> 24`).
+- Camera movement, composition, lighting, and the animation timeline are all untouched — this round only changes shader math and two geometry resolution constants.
+
+### Verification
+- Production build succeeds.
+- Vignette/distortion formulas verified numerically via a standalone script rather than eyeballed: at UV center, zero distortion and full brightness (as expected — the effect should vanish at the middle of frame); at the true geometric edge, distortion peaks at only a ~1.5% UV shift (confirms "subtle," not an obvious warp) while brightness has already faded to exactly `0` (confirms the harsh cutoff is genuinely gone, not just softened a little).
+- **Not live-verified this round**: the preview pane remained hidden (`document.hidden === true`, re-checked at the start of testing) — same persistent condition as the last several rounds, and shader/material changes have no DOM-level proxy to substitute for actually seeing the rendered lens. Actually looking at the lens-dive frame with these effects applied remains the top item queued for whenever the preview is next reliably visible.
+
+---
+
 ## 4A. Geometry Refinement — Entrance Pillars (cross-cutting, Phase 1A revision)
 
 **Status:** TECHNICALLY COMPLETE
