@@ -1035,6 +1035,27 @@ Two requests, one already resolved and reconfirmed, one new refinement:
 
 ---
 
+## 4BQ. Fix — Film→Digital Hand-off Made Perfectly Level (Vertical Rise Removed)
+
+**Status:** DONE
+
+### Brief
+Direct follow-up superseding §4BP's own vertical-rise refinement, one round later: the Film→Digital hand-off must not shift vertically AT ALL — no tilt, no vertical camera rotation, horizon/vertical framing locked throughout. The transition should read as purely horizontal movement, with Digital's monitor entering frame at the exact same vertical viewing angle Film ends at.
+
+### What changed
+- **`cameraPath.js`** — every position AND look-at in the Film→Digital span (`LENS_DIVE_POSITION` through `MONITOR_ALIGNED_POSITION`) now holds exactly `lensY` — the height already established at the end of Film — rather than climbing toward the monitor's own, genuinely higher, `screenY` (§4BP's proportional lerp is gone entirely). Concretely: `MONITOR_ALIGNED_POSITION.y` and `MONITOR_ALIGNED_LOOKAT.y` changed from `screenY` to `lensY`; `HANDOFF_PULLBACK_POSITION.y` changed from the §4BP proportional lerp to a flat `lensY`; a new `HANDOFF_PULLBACK_LOOKAT` keeps `ORBIT_ENSEMBLE_LOOKAT`'s X/Z (still revealing both the Cinema Camera and Monitor horizontally) but with Y overridden to `lensY`, replacing the reused `ORBIT_ENSEMBLE_LOOKAT` (Y `1.8`) the keyframe previously pointed at directly.
+- Since the eye-to-target vector's Y component is now the SAME constant at every keyframe in this span (`eye.y - target.y = lensY - lensY = 0`), the transition is level — zero pitch — by construction, not just approximately.
+- **New `VERTICAL_LOCK_ZONE_START/END_INDEX`**, covering both of this hop's segments (lens-dive→pull-back, pull-back→monitor): forces plain linear interpolation there instead of the spline `sampleCameraPath` otherwise uses. This is the part that makes the guarantee hold everywhere, not just at keyframes — equal keyframe Y values alone wouldn't be enough, since Catmull-Rom's segment shape is also influenced by the neighboring `APPROACH_POSITION` control point (one segment earlier), which sits at a different height; only forcing straight-line interpolation rules that out. `lookAt` was already unconditionally linear (never spline-based, per this file's own long-standing design), so it needed no equivalent zone.
+- Kept as a separate, distinctly-named zone from the existing `STRAIGHT_ZONE_*` (which governs the unrelated Intro→Film "no curve after the pillar gap" guarantee) rather than merged into it — different requirement, same underlying `lerpVectors` mechanism, reused rather than duplicated.
+- Accepted, explicit trade-off: Digital's final resting shot no longer frames the monitor screen perfectly centered vertically (the screen sits genuinely above this held eye-line) — a direct, intentional consequence of "Film and Digital should feel like the same camera position and vertical perspective," not an oversight.
+
+### Verification
+- Production build succeeds.
+- **Verified by construction, not simulation**: with every keyframe Y in this span set to the identical constant `lensY` and interpolation forced to plain `lerp`, the identity `lerp(x, x, t) = x` guarantees `position.y` (and, since look-at was already linear, `lookAt.y`) equal `lensY` exactly at every possible sample point across the whole hand-off, not approximately — a stronger guarantee than a numeric spot-check would give.
+- **Not live-verified this round**: the preview pane remained hidden (`document.hidden === true`, checked again) for the entire round — same persistent condition as §4BO/§4BP. Actually watching the transition read as level, and confirming the accepted off-center Digital framing looks acceptable rather than awkward, remains the top item queued for whenever the preview is next reliably visible.
+
+---
+
 ## 4A. Geometry Refinement — Entrance Pillars (cross-cutting, Phase 1A revision)
 
 **Status:** TECHNICALLY COMPLETE
