@@ -15,7 +15,7 @@ import * as THREE from 'three'
 export const lightingParams = {
   spot: {
     color: '#fff1dc',
-    intensity: 55,
+    intensity: 88,
     // Repositioned to coincide with the z: -3 clerestory window
     // (`Environment.jsx`'s `Window`, right side wall) so the beam visually
     // originates at the window rather than an unmarked point in space —
@@ -33,10 +33,21 @@ export const lightingParams = {
     // than "reposition the light."
     position: [9.85, 6.3, -3],
     target: [0.6, 0, -3.5],
-    angle: 0.32,
-    penumbra: 0.92,
-    decay: 1.8,
-    distance: 24,
+    // Widened and carried further, per the request to let the practical
+    // actually reveal the room rather than just mark where it lands.
+    //
+    // `angle` 0.32 -> 0.46 opens the cone so it washes the floor and the
+    // near columns instead of dropping a single pool; `distance` 24 -> 40
+    // and `decay` 1.8 -> 1.45 let it still be carrying light when it
+    // reaches the far wall, which at 24/1.8 it was not — the boundary was
+    // being lit almost entirely by ambient, which is why depth read flat.
+    // `intensity` follows those up: a wider cone spreads the same flux
+    // over more surface, so holding 55 would have made the room dimmer,
+    // not brighter.
+    angle: 0.46,
+    penumbra: 0.9,
+    decay: 1.45,
+    distance: 40,
   },
   key: {
     color: '#fff1dc',
@@ -50,14 +61,22 @@ export const lightingParams = {
   // light doesn't reach, per the readability request.
   fill: {
     color: '#c9cdd6',
-    intensity: 0.6,
+    // 0.6 -> 0.95: the shadow side is where silhouettes were being lost
+    // entirely, and this is the light whose only job is to keep them
+    // readable without touching the lit side's contrast.
+    intensity: 0.95,
     position: [-5, 5, -1],
   },
   ambient: {
     color: '#adadb8',
-    // Raised 2.3 -> 2.5 (+0.2, within the requested +0.15 to +0.25) so
-    // the shadow-side stone surfaces don't drop toward pitch black.
-    intensity: 2.5,
+    // Raised again, 2.5 -> 3.15. The brief is specifically that the
+    // pillars' and architecture's outlines stay readable in the dark, and
+    // ambient is the only term that reaches surfaces the beam never
+    // touches. Kept a lift rather than a flood: at this level the far
+    // architecture resolves as silhouette and surface, while the room is
+    // still plainly night — the fog and the tone curve carry the mood, and
+    // neither has moved.
+    intensity: 3.15,
     // The scroll-0 starting ambient during the dark-to-light reveal (see
     // VolumetricLightingRig's ignition ramp) — near-total darkness with
     // just enough tint to outline geometry edges, per explicit request.
@@ -96,8 +115,15 @@ export const lightingParams = {
     darkIntensity: 1.5,
   },
   shadow: {
-    mapSize: 2048,
-    radius: 4,
+    // 2048 -> 4096. The spot's cone widened this round, and a shadow map
+    // covers the whole cone: at the old resolution the same 2048 texels
+    // now had to span a much larger footprint, and the column shadows on
+    // the floor broke up into soft blobs instead of reading as shadows.
+    // This restores their edge at the new cone width.
+    mapSize: 4096,
+    // Blur reduced to match — at 4096 the previous radius was smearing
+    // away detail the higher resolution exists to provide.
+    radius: 2.5,
     bias: -0.0012,
     normalBias: 0.02,
   },
@@ -107,7 +133,18 @@ export const lightingParams = {
   },
   beam: {
     color: '#fff1dc',
-    opacity: 0.11,
+    // 0.09 -> 0.15. The restraint pass earlier the same day took this to
+    // its lowest value yet; the spatial-realism pass that followed asked
+    // for the opposite — air with continuous volume rather than a thin
+    // accent. Set above even the pre-restraint 0.11, because the vaulted
+    // shell now gives the shaft a real upper boundary to spring from, so a
+    // denser beam reads as light in a room rather than as haze in a box.
+    // Settled at 0.12 rather than 0.15: at 0.15 the shaft's own cone
+    // geometry started to read as a hard-edged wedge where it meets the
+    // floor, which is the same "geometric primitive" tell this pass exists
+    // to remove. Still well above both the restraint pass's 0.09 and the
+    // 0.11 that preceded it.
+    opacity: 0.12,
     // How much of the full spot-to-target distance the *visible* beam
     // mesh actually spans, starting from the light source. World Y drops
     // linearly along the beam from `spot.position[1]` (6.3, at the
@@ -126,20 +163,32 @@ export const lightingParams = {
     radialSegments: 24,
   },
   floorPool: {
-    opacity: 0.22,
+    // 0.18 -> 0.26, alongside the beam and dust increases either side of
+    // it. The floor is no longer flat (see Environment.jsx's
+    // useFloorGeometry), so a stronger pool now lands on relief and breaks
+    // up rather than reading as a painted ellipse.
+    opacity: 0.26,
   },
   dust: {
     color: '#fff6e8',
-    // Raised again from 230 (was 170 before that) — a significant density
-    // increase per explicit request, still concentrated near the beam
-    // origin by `topBias` below rather than spread evenly.
-    count: 550,
+    // 280 -> 720. Raised past the previous 550 high-water mark: the
+    // spatial-realism pass asks for air that has continuous 3D volume, and
+    // that is a density question before it is an opacity one — sparse
+    // motes read as individual sprites no matter how bright, while a dense
+    // field reads as something the light is travelling through. Still
+    // concentrated near the beam origin by `topBias` below rather than
+    // spread evenly through the room.
+    count: 720,
     // Size now varies per point (see buildDust's aSize attribute) between
     // these two bounds instead of one fixed value: small/tight near the
     // top of the shaft, large/heavy near the floor and pillars.
     sizeSmall: 0.022,
     sizeLarge: 0.075,
-    opacity: 0.4,
+    // 0.3 -> 0.34. Deliberately NOT raised in proportion to the count
+    // above: at 720 particles the field's apparent density comes from
+    // overlap, and holding per-mote opacity down is what keeps it reading
+    // as fine dust rather than as smoke.
+    opacity: 0.34,
     // Exponent applied to the uniform random sample that picks each
     // point's position along the beam axis (0 = light source/top, 1 =
     // floor target). >1 skews the distribution toward 0 — see buildDust —

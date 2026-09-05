@@ -103,6 +103,42 @@ The website should feel confident and sophisticated rather than visually busy.
 
 ---
 
+## 4A. Musée Reference Refinement (2026-09-05)
+
+Following review against `musee.barvian.me` as an explicit reference, the direction in §4 is **confirmed, not replaced** — that reference is itself dark, restrained, and physically-rendered, which is what §4 already specifies. The refinement is a tightening of degree, not a change of direction:
+
+- **Greater restraint in atmosphere:** the dust field and beam read as dense/busy relative to the reference's calm. Reduce particle density and opacity so the beam reads as one deliberate light shaft, not a hazy volume — subtlety over spectacle, per §13.
+- **A recurring glowing accent motif:** the reference uses one warm/cool ring-of-light element as a signature mark against near-black. This project already has a single warm accent color (`#fff1dc`, from `lightingParams.spot.color`) reused consistently across UI (`SectionIndicator`, `ScrollLockIndicator`, `FullscreenButton`) — continue that discipline rather than introducing a second accent.
+- **Film grain:** the reference uses a subtle animated grain over the whole frame, reinforcing "physically believable" and "cinematic" from §4's own target-feel list. Add as a cheap, global, non-WebGL overlay (CSS/SVG), never inside the render pipeline, and respecting `prefers-reduced-motion` (freeze rather than remove, since grain carries no motion information).
+- **A minimal serif mark:** the reference pairs its restraint with one small serif wordmark, not a UI system. Add a single discreet mark (project name), not a navigation system — this must not become "persistent navigation bars or conventional website chrome" (§4's own Don't list).
+- **Negative space in Campaigns specifically:** the exterior environment (traffic, street lights, terrain) is the newest and least pruned part of the experience — review it against "strong negative space" / "purposeful 3D objects" once art direction there resumes, rather than adding further density.
+
+This is a refinement pass, applied in place on the existing approved direction — it does not reopen or invalidate the visual decisions already approved for Phases 1A-1E (`build-status.md` §5).
+
+---
+
+## 4B. Spatial Realism Refactor (2026-09-05)
+
+A second direction change the same day, and one that partially reverses §4A. Recorded as such rather than quietly overwriting it: §4A cut atmospheric density in the name of restraint; this pass restores and exceeds it in the name of physical volume. Both were explicit human decisions, taken with the conflict surfaced first (`AskUserQuestion`), and the later one governs.
+
+**Confirmed to stand from §4A:** the film grain, the serif site mark, and the calmed stone contrast. Those are texture and typography, not spatial density, and nothing in this pass touches them.
+
+**Reversed:** dust count (280 -> 720, past the pre-restraint 550), dust opacity (0.30 -> 0.34), beam opacity (0.09 -> 0.12), floor-pool opacity (0.18 -> 0.26). The reasoning that produced §4A's numbers — that the reference reads calm — was not wrong about the reference; it was applied to a room that had no upper boundary, where density read as haze. With the vault in place the same light reads as a shaft in a space.
+
+**Architecture — the substantive change.** The hall was five flat planes meeting at hard corners, open to the void above. It is now one continuous swept surface (`architecture/galleryShellGeometry.js`): a superellipse plan that rolls every corner into a curve, rising vertically to a springing and then turning into a barrel vault with a ridge. Both openings — the arched front mouth the camera leaves through, and the fractured breach the key light arrives through — are cut from that same sheet.
+
+The hall's approved 20 x 38 footprint is preserved exactly, deliberately. The alternative offered was a rebuild that moved it, which would have invalidated every camera keyframe, the pillar-clearance guarantees and the billboard's framing; curving *within* the existing envelope delivers the same spatial result with none of that re-derivation. Verified after the fact: all six sampled camera positions and both pillar clearances are byte-identical to before the rebuild.
+
+**`campaigns/RoomCeiling.jsx` is deleted.** It existed only because the hall was open-topped and the Campaigns pull-back would otherwise show its upper boundary. A continuous vault closes the room permanently and better, so an Act-3-scoped lid is redundant.
+
+**Materials.** Floor and columns were flat colours with no maps at all — the single biggest reason they read as primitives beside the already-textured walls. Both now carry the same procedural stone PBR treatment, tuned per surface, and the floor is displaced by a few centimetres of low-frequency relief so grazing light breaks up across it instead of washing evenly.
+
+**Camera motion is deliberately untouched.** The request asked for half-moon arcs and lens-dives; that was declined with reasons and the decision confirmed, because a curved path near the Campaigns swap reintroduces a diagnosed and fixed defect (see `build-status.md`, the room-shift entry). Spatial realism here comes from the architecture the camera moves through, not from curving the move itself.
+
+**Depth of field was added in a follow-up, on explicit instruction** — §4A had ruled it out and that is now superseded. It is deliberately gentle (see `postprocessing/DepthOfField.jsx`): focus sits on the room's real subjects rather than on an authored number, and the effect is forced to zero across the Campaigns hand-over, where a depth-driven blur would otherwise break the reveal by treating the flat billboard and the deep room it replaces differently.
+
+---
+
 ## 5. Environment & Materiality
 
 ### Color palette
@@ -213,6 +249,8 @@ Selected examples of MGRT's digital work may be integrated naturally into the mo
 ### Act 3 — Campaigns
 
 Campaigns represent **amplifying ideas and bringing them into the world** — but this is proven structurally, not shown as a gallery of past work. The camera pulls back from the monitor, and the entire preceding world — Room, Film, Digital — is revealed to have been displayed on a physical billboard, seen from a larger exterior environment.
+
+The pull-back moves in three legible stages, not one continuous blur of distance: first back through the room's own pillar ring — the same pillars that have framed the space since Act 0 become a threshold the camera passes through, rather than scenery it simply leaves behind; then far enough that the room and its encircling pillars read as one complete structure, seen whole for the first time; then continuing back to reveal that the structure was never freestanding — it is the face of a billboard, standing on the right-hand shoulder of a four-lane highway that curves gently away to the right. The road, not a plaza or generic street, is the exterior context: it grounds the billboard as advertising in its native environment, reinforcing that Campaigns is the discipline that puts MGRT's work in front of the world.
 
 **Services:** advertising, commercial production, creative direction, campaign strategy.
 

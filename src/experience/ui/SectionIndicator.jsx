@@ -1,16 +1,16 @@
 import { useEffect, useState } from 'react'
 import { scrollProgress } from '../timeline/ScrollTimelineProvider.jsx'
 import { requestNavigate } from '../timeline/sectionNavigationEvent.js'
-import { FILM_FOCUS_T, MONITOR_SNAP_T, SECTION_TARGETS } from '../timeline/filmActBeats.js'
+import { CAMPAIGNS_GATE_T, FILM_FOCUS_T, MONITOR_SNAP_T, SECTION_TARGETS } from '../timeline/filmActBeats.js'
 
 // Five physical markers for the five narrative states (creative-reference.md
 // §7's Act structure: Intro → Film → Digital → Campaigns → Return). Intro
 // and Return are the bookend states and are deliberately unlabeled
 // (`label: null`) even when active — see LABEL_HIDDEN handling below.
-// `key` matches SECTION_TARGETS' keys (filmActBeats.js) — Campaigns and
-// Return simply have no entry there (no real camera landmark exists yet),
-// which is what makes clicking them a no-op below, without a second
-// duplicate "is this navigable" list to keep in sync.
+// `key` matches SECTION_TARGETS' keys (filmActBeats.js) — Return simply
+// has no entry there (no real camera landmark exists yet), which is what
+// makes clicking it a no-op below, without a second duplicate "is this
+// navigable" list to keep in sync. Campaigns gained its entry with Act 3.
 const SECTIONS = [
   { key: 'intro', label: null, ariaName: 'Intro' },
   { key: 'film', label: 'FILM', ariaName: 'Film' },
@@ -20,6 +20,7 @@ const SECTIONS = [
 ]
 const FILM_INDEX = 1
 const DIGITAL_INDEX = 2
+const CAMPAIGNS_INDEX = 3
 
 /**
  * Which of the five markers is "active" (current-section treatment),
@@ -42,7 +43,13 @@ const DIGITAL_INDEX = 2
 function getActiveIndex(progress) {
   if (progress < FILM_FOCUS_T) return null
   if (progress < MONITOR_SNAP_T) return FILM_INDEX
-  return DIGITAL_INDEX
+  // Campaigns takes over once the camera has actually left the monitor and
+  // started the pull-back (`CAMPAIGNS_GATE_T`, the act's own first stage
+  // boundary), not the moment progress passes Digital's resting point —
+  // same principle as Film above: the mark follows the camera arriving
+  // somewhere, not a generic scroll percentage.
+  if (progress < CAMPAIGNS_GATE_T) return DIGITAL_INDEX
+  return CAMPAIGNS_INDEX
 }
 
 /**
@@ -65,11 +72,12 @@ function getActiveIndex(progress) {
  * matching `ScrollLockIndicator.jsx`'s established exception to "no React
  * state for scroll-driven values."
  *
- * Campaigns and Return have no entry in `SECTION_TARGETS` (no real camera
- * landmark exists yet for either — see that constant's own doc comment in
- * filmActBeats.js) — their marks stay visually identical and hoverable
- * (matching the UI spec) but clicking them is a no-op, guarded both here
- * and again inside `ScrollTimelineProvider.jsx`'s own handler.
+ * Return has no entry in `SECTION_TARGETS` (no real camera landmark exists
+ * yet — see that constant's own doc comment in filmActBeats.js) — its mark
+ * stays visually identical and hoverable (matching the UI spec) but
+ * clicking it is a no-op, guarded both here and again inside
+ * `ScrollTimelineProvider.jsx`'s own handler. Campaigns became genuinely
+ * navigable with Act 3 and needed no change here beyond that entry.
  */
 export default function SectionIndicator() {
   const [activeIndex, setActiveIndex] = useState(() => getActiveIndex(scrollProgress.value))

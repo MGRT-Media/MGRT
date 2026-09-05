@@ -30,8 +30,40 @@ export const FILM_IGNITE_RISE = 0.12
 // deceleration can leave the resting progress a little short of exactly
 // 1.0 (e.g. 0.97), landing a slightly-off frame instead of the intended
 // aligned shot.
-export const MONITOR_SNAP_T = 1
+// Rescaled from `1` for the Campaigns act (Phase 1E): Digital is no longer
+// the literal end of the normalized timeline, so the range 0.6 -> 1 is now
+// free for the Digital -> Billboard pull-back below. `engageMonitorLock`'s
+// soft lock is unaffected by the move — it was never a "we're at the scroll
+// floor" mechanism, it's a catch-tween onto this exact value plus a timed
+// hold, and it still releases into whatever scroll follows (which is now a
+// real onward range instead of nothing).
+export const MONITOR_SNAP_T = 0.6
 export const MONITOR_SNAP_CAPTURE_RADIUS = 0.08
+
+// --- Act 3 (Campaigns) — Digital -> Billboard pull-back stage boundaries ---
+//
+// `technical-architecture.md` requires this pull-back be exposed as named,
+// identifiable stage boundaries rather than one opaque interpolation, and
+// `experience-design.md` §9 names the three stages: (1) back out through the
+// room's own pillar ring, (2) hold far enough back that the room and ring
+// read as one complete structure, (3) continue until that structure resolves
+// into a billboard beside a highway. These four constants are those stage
+// edges; `cameraPath.js` places one keyframe on each.
+//
+// The "hold" at `CAMPAIGNS_ROOM_T` is pacing, not a stop — per explicit
+// answer, the camera never pauses here. It reads as a hold purely because
+// `sampleCameraPath` gives every keyframe boundary zero velocity
+// (per-segment `smoothstep`), so the recession naturally slows through this
+// beat and accelerates out of it, without any lock or timer.
+export const CAMPAIGNS_GATE_T = 0.66
+export const CAMPAIGNS_ROOM_T = 0.8
+// Where the live interior view hands over to the billboard surface showing
+// it (see `Billboard.jsx`). Not a stage boundary the audience can perceive —
+// by construction the two images coincide exactly at this instant — but it
+// IS a real boundary in the render pipeline, so it gets its own name and its
+// own keyframe rather than being buried inside stage 3.
+export const CAMPAIGNS_SWAP_T = 0.83
+export const CAMPAIGNS_REVEAL_T = 1
 
 // How much scroll progress before MONITOR_SNAP_T the monitor screen's
 // ignite ramps in over — mirrors FILM_IGNITE_RISE's role for the Cinema
@@ -142,17 +174,19 @@ export const LOCK_CATCH_EASE = 'power4.out'
  * integrate into the existing state engine instead of building a parallel
  * one. Keyed to match the indicator's own section keys.
  *
- * `campaigns` and `return` are deliberately absent: neither has a real
- * camera landmark yet (the Campaigns billboard reveal and the Return
- * dive-back-in are both "NOT STARTED" per build-status.md's Phase Progress
- * tracker) — there is no correct coordinate to jump to, so those marks stay
- * visually present (hoverable, per the UI spec) but functionally inert
- * rather than fabricating a placeholder position.
+ * `campaigns` gained a real landmark this round (`CAMPAIGNS_REVEAL_T`, the
+ * end of the billboard pull-back), so its mark is now genuinely navigable.
+ * `return` is still deliberately absent: the Act 4 dive-back-in is
+ * "NOT STARTED" per build-status.md's Phase Progress tracker, so there is
+ * no correct coordinate to jump to — that mark stays visually present
+ * (hoverable, per the UI spec) but functionally inert rather than
+ * fabricating a placeholder position.
  */
 export const SECTION_TARGETS = {
   intro: 0,
   film: FILM_FOCUS_T,
   digital: MONITOR_SNAP_T,
+  campaigns: CAMPAIGNS_REVEAL_T,
 }
 
 // Direct-navigation jump duration range, in seconds — scaled by travel

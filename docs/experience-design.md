@@ -333,10 +333,17 @@ Campaigns is not demonstrated through curated examples of past work. It is demon
 
 The camera begins a single continuous pull-back from the monitor. Nothing about the interior room changes — no new objects, no additional screens, no separate campaign displays are introduced into the space. Instead, as the pull-back continues, the edges of the room become visible for the first time, and the visitor sees that those edges are the frame of a physical billboard.
 
+The pull-back reads as three legible stages within that one continuous movement, not a single undifferentiated recession into the distance:
+
 ```text
-MONITOR (CLOSE) → CAMERA PULLS BACK → ROOM EDGES BECOME VISIBLE
-→ ROOM REVEALED AS A BILLBOARD SURFACE → BILLBOARD SEEN WITHIN EXTERIOR ENVIRONMENT
+MONITOR (CLOSE)
+→ PULL-BACK THROUGH THE PILLAR RING (room's own architecture becomes the threshold)
+→ FULL ROOM + PILLAR RING READ AS ONE COMPLETE STRUCTURE
+→ STRUCTURE REVEALED AS A BILLBOARD FACE
+→ BILLBOARD SEEN ON THE RIGHT SHOULDER OF A 4-LANE HIGHWAY, CURVING AWAY RIGHT
 ```
+
+The first stage passes the camera back out through the same pillar ring that has framed the room since Act 0 — the pillars are not repositioned or duplicated for this moment, they are simply revisited from the other side, so the passage feels like leaving through a threshold rather than a new object appearing. The second stage holds long enough for the room and its ring of pillars to be legible as one complete, self-contained structure before that structure's true context is revealed. Only in the third stage does the billboard framing and the highway become visible.
 
 The entire interior — everything the visitor has experienced since Act 0 — remains visible on the billboard surface throughout the pull-back. It does not cut, fade, or swap to a static image. What the visitor is looking at right now continues to be what they see, at a steadily increasing distance, until its true scale and context become clear.
 
@@ -355,7 +362,7 @@ DIGITAL    — Interactive / constructed
 CAMPAIGNS  — The intimate world revealed at billboard, then city, scale
 ```
 
-The exterior environment surrounding the billboard should feel like a real, believable place — a street, a plaza, an urban exterior — not an abstract void. It should be composed with the same restraint as the rest of the experience: enough to establish scale and context, not a fully detailed cityscape competing for attention.
+The exterior environment surrounding the billboard is a four-lane highway, gently curving away to the right, with the billboard positioned on the road's right-hand shoulder as a real roadside structure would be. It should read as a believable stretch of road — lane markings, shoulder, a sense of continuing distance — not an abstract void or a generic street/plaza. It should be composed with the same restraint as the rest of the experience: enough to establish scale and context, not a fully detailed environment competing for attention.
 
 ### Campaign typography
 Primary: **CAMPAIGNS**

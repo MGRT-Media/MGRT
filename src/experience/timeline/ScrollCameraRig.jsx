@@ -25,6 +25,7 @@ const WOBBLE_DECAY_LAMBDA = 6
 const scratchMatrix = new THREE.Matrix4()
 const targetQuaternionScratch = new THREE.Quaternion()
 const lookAtScratch = new THREE.Vector3()
+const targetPositionScratch = new THREE.Vector3()
 const forwardScratch = new THREE.Vector3()
 
 function computeTargetQuaternion(outQuaternion, eye, lookAtPoint, up) {
@@ -84,9 +85,24 @@ export default function ScrollCameraRig() {
     pos.y = THREE.MathUtils.damp(pos.y, targetPosition[1], POSITION_DAMP_LAMBDA, delta)
     pos.z = THREE.MathUtils.damp(pos.z, targetPosition[2], POSITION_DAMP_LAMBDA, delta)
 
+    // Orientation is derived from the path's OWN eye/target pair, not from
+    // the damped eye — a real bug fix, not a refactor. Feeding the damped
+    // `pos` here mixed position lag into the aim: the aim vector became
+    // `(target - pos) = (targetLookAt - targetPosition) + (targetPosition -
+    // pos)`, and that second term is the lag, which points along the
+    // direction of travel and grows with speed. Any keyframe span whose
+    // travel direction isn't parallel to its view direction therefore made
+    // the camera YAW while moving and un-yaw as it settled — a
+    // speed-proportional turn that no amount of keyframe tuning could
+    // remove, and that `sampleCameraPath`'s own output can't reveal because
+    // it only exists at runtime. Act 3 depends on this: its whole design is
+    // a constant `lookAt - position` offset (see `cameraPath.js`'s
+    // `CAMPAIGNS_FACING`), which is exactly the quantity this line was
+    // corrupting. Rotation is still slerped toward the target, so the
+    // damping feel is unchanged; only what it aims at is now lag-free.
     const targetQuaternion = computeTargetQuaternion(
       targetQuaternionScratch,
-      pos,
+      targetPositionScratch.set(targetPosition[0], targetPosition[1], targetPosition[2]),
       lookAtScratch.set(targetLookAt[0], targetLookAt[1], targetLookAt[2]),
       camera.up,
     )

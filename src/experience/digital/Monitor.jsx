@@ -1,10 +1,8 @@
 import { useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
-import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import { createScreenVideoMaterial } from './screenVideoMaterial.js'
-import { createStoneWallMaterial } from '../materials/stoneWallMaterial.js'
-import { buildRockGeometry } from './buildRockGeometry.js'
+import { MODEL_URLS, cloneNode, measure, useModel, useTreatedMaterials } from '../models/modelAssets.js'
 import { scrollProgress } from '../timeline/ScrollTimelineProvider.jsx'
 import { MONITOR_SNAP_T, DIGITAL_IGNITE_RISE } from '../timeline/filmActBeats.js'
 import { BEAM_CENTER, YAW_DEGREES, MONITOR_PLINTH } from './plinthAnchor.js'
@@ -79,6 +77,129 @@ export const MONITOR_ANCHOR = {
   screenForward: screenForward.toArray(),
 }
 
+/**
+ * Names of the two nodes taken from `digital-monitor.glb`. The file is a
+ * whole computer desk — two machines, two keyboards, a render-view plane —
+ * so this deliberately takes one machine's housing and its screen panel and
+ * leaves the rest, rather than dropping the whole set into a room that
+ * needs a single monitor on a plinth.
+ */
+const MODEL_BODY_NODE = 'PC2_Material_0'
+const MODEL_SCREEN_NODE = 'PC2_Display_0'
+
+/**
+ * Fits the downloaded housing to the screen anchor this project already
+ * had, rather than the other way round.
+ *
+ * `MONITOR_ANCHOR.screenHeight` is not a decoration: `cameraPath.js`
+ * derives `MONITOR_VIEW_DISTANCE` from it, and that distance sets both the
+ * Digital shot and the whole Campaigns rail's look-at offset. So the model
+ * is scaled until ITS screen is that height, and translated until ITS
+ * screen sits exactly on `screenFrontZ` at `screenCenterHeight`. Every
+ * keyframe therefore still frames the thing it was authored to frame, with
+ * no change to the path.
+ *
+ * The one thing that cannot also be satisfied is the housing's footing: at
+ * the scale the screen demands, the model's base lands well below the old
+ * plinth's top, so a fixed 0.72 plinth would leave the monitor sunk into
+ * the stone. `baseY` is returned for exactly that reason — the stone is
+ * placed to meet the model instead. `MONITOR_PLINTH.height` itself stays
+ * untouched, because `screenCenterHeight` (and so the camera path) is
+ * derived from it.
+ */
+function useFittedMonitor() {
+  const gltf = useModel(MODEL_URLS.monitor)
+
+  return useMemo(() => {
+    const holder = new THREE.Group()
+    const body = cloneNode(gltf, MODEL_BODY_NODE)
+    const screen = cloneNode(gltf, MODEL_SCREEN_NODE)
+    if (!body || !screen) return { holder, screenWidth, baseY: MONITOR_PLINTH.height }
+    holder.add(body, screen)
+
+    // Turned to face +Z, this project's screen-forward convention.
+    //
+    // Not cosmetic: the model's housing is not centred on its own screen —
+    // it runs 0.78 behind the panel and 0.46 in front of it (the base the
+    // screen overhangs). Left unrotated, that 0.78 pointed at the viewer,
+    // and since `cameraPath.js` parks the Digital shot only
+    // MONITOR_VIEW_DISTANCE (0.675) in front of the screen, the camera sat
+    // INSIDE the housing — the monitor rendered perfectly and could not be
+    // seen, because the shot was behind its own front faces. Turned round,
+    // the housing reaches 0.48 toward the camera and clears it.
+    holder.rotation.y = Math.PI
+
+    const authored = measure(screen)
+    holder.scale.setScalar(screenHeight / authored.size.y)
+
+    const scaled = measure(screen)
+    holder.position.x -= scaled.center.x
+    holder.position.y += screenCenterHeight - scaled.center.y
+    // Align the panel's FRONT face, not its centre — the panel has real
+    // thickness, and the video plane has to sit just proud of the glass.
+    holder.position.z += screenFrontZ - scaled.box.max.z
+    holder.updateWorldMatrix(true, true)
+
+    // The GLB's own screen panel is kept in the tree but hidden. The video
+    // goes on this project's own plane instead of on that panel: the
+    // panel's UVs are whatever the author gave it, while
+    // `screenVideoMaterial.js` does its cover-fit in a clean 0..1 space.
+    screen.visible = false
+
+    const fitted = measure(screen)
+    return {
+      holder,
+      screenWidth: fitted.size.x,
+      baseY: measure(body).box.min.y,
+    }
+  }, [gltf])
+}
+
+/**
+ * The stone pedestal (`digital-stone.glb`), replacing `buildRockGeometry`'s
+ * procedural block.
+ *
+ * `topAt` is the housing's real base rather than `MONITOR_PLINTH.height`,
+ * so the monitor lands ON the stone instead of floating above it or sinking
+ * into it. The rock is fitted by footprint width and left to run below the
+ * floor — it is a boulder the room was built around, not a plinth balanced
+ * on the surface, and burying the remainder is both cheaper and more
+ * convincing than trying to sit an irregular base flat on a floor.
+ */
+function useStonePedestal(topAt, footprintWidth) {
+  const gltf = useModel(MODEL_URLS.pedestal)
+
+  return useMemo(() => {
+    const group = new THREE.Group()
+    const rock = cloneNode(gltf, 'Object_2')
+    if (!rock) return group
+    group.add(rock)
+
+    const authored = measure(rock)
+    group.scale.setScalar(footprintWidth / authored.size.x)
+
+    const scaled = measure(rock)
+    group.position.x -= scaled.center.x
+    group.position.z -= scaled.center.z
+    group.position.y += topAt - scaled.box.max.y
+    return group
+  }, [gltf, topAt, footprintWidth])
+}
+
+/** Matte painted-industrial finish, matching the casing this replaces. */
+function casingTreatment(material) {
+  material.roughness = Math.max(material.roughness ?? 1, 0.72)
+  material.metalness = Math.min(material.metalness ?? 0, 0.15)
+  if (material.color) material.color.multiplyScalar(0.45)
+}
+
+/** Dry, unpolished stone, tuned to sit beside the room's own wall stone. */
+function stoneTreatment(material) {
+  material.roughness = 0.95
+  material.metalness = 0
+  if (material.color) material.color.multiplyScalar(0.5)
+}
+
 export default function Monitor() {
   // A plain <video> element (not React state) driving a THREE.VideoTexture
   // — muted/playsInline/loop so autoplay is permitted and the clip repeats
@@ -95,8 +216,16 @@ export default function Monitor() {
     return el
   }, [])
   const videoTexture = useMemo(() => new THREE.VideoTexture(video), [video])
+  // `coverTransmittance` is what the glass pane below leaves of this screen,
+  // measured off a flat test colour rendered through it (0.76 of the value
+  // the shader writes). It exists only so the Campaigns billboard's copy of
+  // this screen matches the direct view — see `screenVideoMaterial.js`. If
+  // the glass's opacity or colour changes, re-measure it.
   const screenMaterial = useMemo(
-    () => createScreenVideoMaterial(videoTexture, screenWidth / screenHeight),
+    () =>
+      createScreenVideoMaterial(videoTexture, screenWidth / screenHeight, {
+        coverTransmittance: 0.76,
+      }),
     [videoTexture],
   )
 
@@ -163,92 +292,48 @@ export default function Monitor() {
     }
   })
 
-  const plinthGeometry = useMemo(
-    () => buildRockGeometry(MONITOR_PLINTH.width, MONITOR_PLINTH.height, MONITOR_PLINTH.depth),
-    [],
-  )
-  const plinthMaterial = useMemo(() => createStoneWallMaterial('#6e685e', [1, 1]), [])
-  const housingGeometry = useMemo(
-    () => new RoundedBoxGeometry(HOUSING.width, HOUSING.height, HOUSING.frontDepth, 3, HOUSING.cornerRadius),
-    [],
-  )
-  const rearHumpGeometry = useMemo(
-    () => new RoundedBoxGeometry(HOUSING.rearWidth, HOUSING.rearHeight, HOUSING.rearDepth, 3, HOUSING.cornerRadius),
-    [],
-  )
+  const model = useFittedMonitor()
+  const pedestal = useStonePedestal(model.baseY, MONITOR_PLINTH.width)
 
-  // Casing material: matte, mostly non-metallic — a painted/textured
-  // industrial finish rather than a sleek brushed-aluminum look.
-  const casingProps = { color: '#2b2a28', roughness: 0.75, metalness: 0.12 }
+  // The downloaded housing and the stone both arrive lit for someone
+  // else's scene. Knocking the albedo down and the roughness up puts them
+  // in the same night interior as the walls and columns beside them,
+  // rather than reading as brighter objects pasted into it.
+  useTreatedMaterials(model.holder, casingTreatment)
+  useTreatedMaterials(pedestal, stoneTreatment)
 
   return (
     <group position={BEAM_CENTER} rotation={[0, yawRadians, 0]}>
       <group position={[MONITOR_PLINTH.offsetX, 0, 0]}>
-        {/* Own dedicated stone plinth — beside, not shared with, the Cinema Camera's */}
-        <mesh
-          position={[0, MONITOR_PLINTH.height / 2, 0]}
-          geometry={plinthGeometry}
-          material={plinthMaterial}
-          castShadow
-          receiveShadow
-        />
+        {/* Stone pedestal (digital-stone.glb), replacing the procedural
+            rock. Its top is placed to meet the housing's real base rather
+            than a fixed height — see `useFittedMonitor`. */}
+        <primitive object={pedestal} />
 
-        {/* Rear hump — a smaller, recessed box suggesting the CRT tube's depth */}
-        <mesh
-          position={[0, housingCenterY, -HOUSING.frontDepth / 2 - HOUSING.rearDepth / 2 + 0.03]}
-          geometry={rearHumpGeometry}
-          castShadow
-          receiveShadow
-        >
-          <meshStandardMaterial {...casingProps} />
-        </mesh>
-
-        {/* Main housing — deep, boxy, rounded-corner chassis */}
-        <mesh position={[0, housingCenterY, 0]} geometry={housingGeometry} castShadow receiveShadow>
-          <meshStandardMaterial {...casingProps} />
-        </mesh>
+        {/* Housing (digital-monitor.glb), fitted to the existing screen
+            anchor so `cameraPath.js` still frames what it was authored to. */}
+        <primitive object={model.holder} />
 
         {/*
-          Control knobs — small retro detail on the lower bezel. Shadow
-          casting deliberately off: at this scale (0.028 radius) relative to
-          the shadow map's texel density across the light's full frustum,
-          thin geometry like this is exactly what's prone to shadow-map
-          aliasing/shimmer, for negligible visual payoff — per
-          technical-architecture.md §8's "disable shadows on objects where
-          they provide negligible visual value."
-        */}
-        {[-0.14, 0].map((x, i) => (
-          <mesh
-            key={i}
-            position={[x, screenCenterHeight - screenHeight / 2 - 0.08, screenFrontZ - 0.01]}
-            rotation={[Math.PI / 2, 0, 0]}
-            castShadow={false}
-          >
-            <cylinderGeometry args={[0.028, 0.028, 0.03, 16]} />
-            <meshStandardMaterial color="#111112" roughness={0.6} metalness={0.3} />
-          </mesh>
-        ))}
-
-        {/*
-          Screen surface — live video texture (Phase 2 Digital media), still
-          gated behind `uIgnite` (see the material module and the
-          scrollProgress-driven ignite ramp above): dark/dormant until the
-          camera nears the monitor lock. `screenVideoMaterial` is a raw unlit
-          ShaderMaterial (no PBR lighting model), so roughness/metalness
-          don't apply to it — its "emission" is just its fragment-shader
-          output read directly, `toneMapped: false`. Explicitly excluded
-          from both cast and receive shadows so neither the bezel nor the
-          entrance/side pillars can cast a shadow onto the (once ignited)
-          glowing screen face.
+          Screen surface — unchanged in every way that matters. Same
+          `screenVideoMaterial`, same scroll-driven `uIgnite` ramp, same
+          video element and seamless-loop handling; only its width now
+          comes from the model's own panel so the image sits in the recess
+          instead of overhanging it. Height is still `screenHeight`, which
+          is the dimension the camera path derives from.
         */}
         <mesh position={[0, screenCenterHeight, screenFrontZ]} castShadow={false} receiveShadow={false}>
-          <planeGeometry args={[screenWidth, screenHeight]} />
+          <planeGeometry args={[model.screenWidth, screenHeight]} />
           <primitive object={screenMaterial} attach="material" />
         </mesh>
 
-        {/* Glass — a thin, subtly reflective pane over the screen */}
+        {/* Glass — a thin, subtly reflective pane over the screen. Sized
+            from the model's panel for the same reason as the screen above.
+            Kept, not dropped: `screenVideoMaterial`'s `coverTransmittance`
+            is calibrated against this pane's 0.25 opacity, and removing it
+            would silently invalidate that. */}
         <mesh position={[0, screenCenterHeight, glassFrontZ]} castShadow={false} receiveShadow={false}>
-          <planeGeometry args={[screenWidth + 0.02, screenHeight + 0.02]} />
+          <planeGeometry args={[model.screenWidth + 0.02, screenHeight + 0.02]} />
           <meshPhysicalMaterial
             color="#0a0a0c"
             roughness={0.08}

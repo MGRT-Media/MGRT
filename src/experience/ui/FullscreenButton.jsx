@@ -1,16 +1,24 @@
 import { useEffect, useState } from 'react'
 import { scrollProgress } from '../timeline/ScrollTimelineProvider.jsx'
-import { FILM_FOCUS_T, MONITOR_SNAP_T } from '../timeline/filmActBeats.js'
+import { CAMPAIGNS_GATE_T, FILM_FOCUS_T, MONITOR_SNAP_T } from '../timeline/filmActBeats.js'
 import { FILM_MEDIA_SRC } from '../film/CinemaCamera.jsx'
 import { DIGITAL_MEDIA_SRC } from '../digital/Monitor.jsx'
 import FullscreenVideoModal from './FullscreenVideoModal.jsx'
 
 /**
  * Full-screen CTA for Film and Digital, visible from the moment the
- * camera reaches Film (`FILM_FOCUS_T`) onward — covers both chapters,
- * since there's no separate per-section DOM element to attach a button
- * to (this whole experience is one persistent WebGL canvas; "reaching
- * Film/Digital" is a `scrollProgress` value, not a viewport intersection).
+ * camera reaches Film (`FILM_FOCUS_T`) until Campaigns takes over
+ * (`CAMPAIGNS_GATE_T`) — covers both chapters, since there's no separate
+ * per-section DOM element to attach a button to (this whole experience is
+ * one persistent WebGL canvas; "reaching Film/Digital" is a
+ * `scrollProgress` value, not a viewport intersection).
+ *
+ * Campaigns has no clip of its own to open full screen — the monitor's
+ * video is by then a detail inside the billboard's picture of the room,
+ * not the thing being shown — so the button ends where that chapter
+ * begins. `CAMPAIGNS_GATE_T` is the same boundary
+ * `SectionIndicator.jsx`'s `getActiveIndex` uses for the Digital ->
+ * Campaigns hand-over, reused rather than a third threshold.
  *
  * Clicking it opens `FullscreenVideoModal` — a custom full-viewport
  * pop-up playing whichever chapter's own file is currently active — per
@@ -24,15 +32,19 @@ import FullscreenVideoModal from './FullscreenVideoModal.jsx'
  * continuous value itself), only `useState` for the rare, discrete
  * visible/open boolean flips.
  */
+function isInRange(progress) {
+  return progress >= FILM_FOCUS_T && progress < CAMPAIGNS_GATE_T
+}
+
 export default function FullscreenButton() {
-  const [visible, setVisible] = useState(() => scrollProgress.value >= FILM_FOCUS_T)
+  const [visible, setVisible] = useState(() => isInRange(scrollProgress.value))
   const [isOpen, setIsOpen] = useState(false)
 
   useEffect(() => {
     let rafId
     let lastVisible = visible
     const tick = () => {
-      const next = scrollProgress.value >= FILM_FOCUS_T
+      const next = isInRange(scrollProgress.value)
       if (next !== lastVisible) {
         lastVisible = next
         setVisible(next)
@@ -44,8 +56,9 @@ export default function FullscreenButton() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Scrolling back out of Film/Digital while the modal is open shouldn't
-  // leave it dangling over content it no longer matches.
+  // Scrolling out of Film/Digital while the modal is open — back toward
+  // the Intro, or forward into Campaigns — shouldn't leave it dangling
+  // over content it no longer matches.
   useEffect(() => {
     if (!visible) setIsOpen(false)
   }, [visible])

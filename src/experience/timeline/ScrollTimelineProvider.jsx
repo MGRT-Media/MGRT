@@ -55,6 +55,7 @@ function easeIntroCinematic(t) {
  * dispatch, per technical-architecture.md §7.
  */
 export const scrollProgress = { value: 0 }
+if (import.meta.env.DEV) window.__sp = scrollProgress // TEMP DEBUG SCAFFOLD
 
 /**
  * A small "spring" nudge applied while the Snap 2 hard lock (below) is
@@ -227,7 +228,7 @@ export function ScrollSpacer() {
     // CHAPTER_ORDER — see SECTION_TARGETS' own doc comment for why.
     let currentChapter = 'intro'
     let chapterModeActive = false
-    const CHAPTER_ORDER = ['film', 'digital']
+    const CHAPTER_ORDER = ['film', 'digital', 'campaigns']
 
     // --- Direct navigation (side nav clicks) ---
     // Set for the duration of a nav-triggered jump; suppresses the
@@ -527,7 +528,15 @@ export function ScrollSpacer() {
           scrollProgress.value = targetT
           if (sectionKey === 'film') engageLensHold(trigger)
           else if (sectionKey === 'digital') engageMonitorLock()
-          else {
+          else if (sectionKey === 'campaigns') {
+            // Act 3 has no lock of its own: per explicit answer its middle
+            // beat is "pacing only — one scroll," so the pull-back is a
+            // single uninterrupted movement that simply ends at the reveal.
+            // Chapter state still has to be recorded, or a subsequent
+            // backward gesture would compute the wrong neighbour.
+            currentChapter = 'campaigns'
+            chapterModeActive = true
+          } else {
             // 'intro' — also exits chapter mode if the visitor was in it
             // (e.g. clicking the Intro mark while at Film/Digital), so
             // `currentChapter`/scroll-suspension stay synchronized with
@@ -725,7 +734,7 @@ export function ScrollSpacer() {
         returnToAlignedPause()
         return
       }
-      if (nextIndex >= CHAPTER_ORDER.length) return // Digital is the last reachable chapter for now
+      if (nextIndex >= CHAPTER_ORDER.length) return // Campaigns is the last reachable chapter for now
       navigateToSection(CHAPTER_ORDER[nextIndex])
     }
 

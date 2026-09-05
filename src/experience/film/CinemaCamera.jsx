@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import { createScreenVideoMaterial } from '../digital/screenVideoMaterial.js'
+import { MODEL_URLS, cloneNode, measure, useModel, useTreatedMaterials } from '../models/modelAssets.js'
 import { scrollProgress } from '../timeline/ScrollTimelineProvider.jsx'
 import { FILM_FOCUS_T, FILM_IGNITE_RISE } from '../timeline/filmActBeats.js'
 import { BEAM_CENTER, YAW_DEGREES, CAMERA_STAND } from '../digital/plinthAnchor.js'
@@ -132,7 +133,87 @@ export const CAMERA_ANCHOR = {
   lensForward: lensForward.toArray(),
 }
 
+/**
+ * The camera body, from `film-camera.glb`.
+ *
+ * **Why the model's own lenses are hidden and this project's lens is
+ * kept.** `cameraPath.js` turns `CAMERA_ANCHOR.lensRadius` into the Film
+ * dive's stopping distance, so whatever sits at the anchor has to be that
+ * radius or the dive stops at the wrong size. Fitting the model by its
+ * taking lens does satisfy that — and was built and measured — but the
+ * two objects have opposite proportions: this project's camera carries a
+ * 0.07 lens on a 0.5 body (a ratio of 0.14), while the model carries a
+ * 4.18 lens on a 120 body (0.035). Matching the lens therefore scales the
+ * body up four-fold, to just over two metres, and the dive ends INSIDE
+ * it — which is exactly what it did.
+ *
+ * So the model supplies the body, and the lens assembly the camera path
+ * is derived from is left alone: barrel, dome and the video screen behind
+ * it all keep their existing geometry and position. The dive frames the
+ * same aperture at the same distance as before, and the Film clip still
+ * plays where it always did.
+ *
+ * The body is fitted by matching its length along the optical axis to
+ * `BODY.depth`. That is not arbitrary: at that scale the model's height
+ * comes out at 0.295 against the box's own 0.28, so the two objects agree
+ * on proportion as well as footprint, and the barrel still protrudes from
+ * the front face the way it did.
+ */
+const MODEL_LENS_NODES = ['Lenses_Metal_0', 'Lenses_BlackPlastic_0', 'Lenses_Misc_0']
+const MODEL_BODY_NODES = [
+  'Camera_Metal_0',
+  'Camera_BlackPlastic_0',
+  'Camera_Misc_0',
+  'Eyepiece_BlackPlastic_0',
+  'Eyepiece_Metal_0',
+  'Eyepiece_Misc_0',
+  'Handle_Metal_0',
+  'Handle_BlackPlastic_0',
+  'Handle_Misc_0',
+]
+
+function useFittedCameraBody() {
+  const gltf = useModel(MODEL_URLS.camera)
+
+  return useMemo(() => {
+    const group = new THREE.Group()
+    const parts = MODEL_BODY_NODES.map((name) => cloneNode(gltf, name)).filter(Boolean)
+    if (!parts.length) return group
+
+    const inner = new THREE.Group()
+    inner.add(...parts)
+    group.add(inner)
+
+    // Authored looking down -X; +90 degrees about Y puts that on +Z, this
+    // scene's forward.
+    group.rotation.y = Math.PI / 2
+
+    const authored = measure(inner)
+    // Post-rotation the optical axis is Z, so that extent is the body's
+    // length.
+    inner.scale.setScalar(BODY.depth / authored.size.z)
+
+    const scaled = measure(inner)
+    group.position.x -= scaled.center.x
+    group.position.y += bodyCenterHeight - scaled.center.y
+    // Front face on the body's own front plane, so the barrel that follows
+    // it emerges from the housing rather than floating clear of it.
+    group.position.z += BODY.depth / 2 - scaled.box.max.z
+    return group
+  }, [gltf])
+}
+
+/** Dark, lightly metallic body — the finish the procedural camera had. */
+function cameraBodyTreatment(material) {
+  material.roughness = Math.max(material.roughness ?? 1, 0.45)
+  material.metalness = Math.min(material.metalness ?? 0, 0.6)
+  if (material.color) material.color.multiplyScalar(0.4)
+}
+
 export default function CinemaCamera() {
+  const cameraBody = useFittedCameraBody()
+  useTreatedMaterials(cameraBody, cameraBodyTreatment)
+
   const hubGeometry = useMemo(
     () => new THREE.CylinderGeometry(QUADPOD.hubRadius, QUADPOD.hubRadius, QUADPOD.hubHeight, 20),
     [],
@@ -272,24 +353,15 @@ export default function CinemaCamera() {
           <meshStandardMaterial {...standProps} />
         </mesh>
 
-        {/* Camera body */}
-        <mesh position={[0, bodyCenterHeight, 0]} geometry={bodyGeometry} castShadow receiveShadow>
-          <meshStandardMaterial {...bodyProps} />
-        </mesh>
-
-        {/* Viewfinder — small raised block, upper-rear of the body */}
-        <mesh
-          position={[
-            0,
-            bodyCenterHeight + BODY.height / 2 + VIEWFINDER.height / 2 - 0.015,
-            -BODY.depth / 2 + VIEWFINDER.depth / 2 + 0.02,
-          ]}
-          geometry={viewfinderGeometry}
-          castShadow
-          receiveShadow
-        >
-          <meshStandardMaterial {...bodyProps} />
-        </mesh>
+        {/* Camera body (film-camera.glb), replacing the procedural
+            body, viewfinder and lens barrel. Fitted to `CAMERA_ANCHOR` —
+            see `useFittedCameraBody` for why that fit, rather than a
+            chosen scale, is what keeps the Film lens-dive valid. The
+            quadpod stand above is kept: the model has no support of its
+            own, and the stand is what sets `CAMERA_STAND.standHeight`,
+            which `bodyCenterHeight` (and so the camera path) derives
+            from. */}
+        <primitive object={cameraBody} />
 
         {/* Lens barrel — tapers slightly toward the front element */}
         <mesh

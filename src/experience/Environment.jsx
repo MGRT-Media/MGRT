@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { useMemo } from 'react'
 import VolumetricLightingRig from './lighting/VolumetricLightingRig.jsx'
 import { createStoneWallMaterial, stoneRepeatForSize } from './materials/stoneWallMaterial.js'
+import { buildGalleryShellGeometry, GALLERY_SHELL } from './architecture/galleryShellGeometry.js'
 
 // Widened/deepened (14x32 -> 20x38) per explicit request: the previous
 // dimensions left almost no room for a genuine wide establishing orbit
@@ -12,9 +13,9 @@ import { createStoneWallMaterial, stoneRepeatForSize } from './materials/stoneWa
 // (`BEAM_CENTER`/`Monitor.jsx`/`CinemaCamera.jsx`) is untouched, at its
 // same absolute position; only the surrounding architecture grows around
 // it, which is also what gives the pillar ring (below) room to grow too.
-const HALL_WIDTH = 20
-const HALL_DEPTH = 38
-const HALL_HEIGHT = 9
+export const HALL_WIDTH = 20
+export const HALL_DEPTH = 38
+export const HALL_HEIGHT = 9
 
 /**
  * Three-tier surface tonality, lightest to darkest: columns catch the most
@@ -23,10 +24,22 @@ const HALL_HEIGHT = 9
  * volumetric light pool and column bases stand out against it.
  */
 const SURFACE_TONE = {
-  column: '#8c8c8c',
+  // Column and floor tints re-derived when those two surfaces moved from
+  // flat colours onto the procedural stone material. These values are
+  // multiplied INTO that material's own albedo (base ~#948c7c, shaded
+  // 0.4-1.18 by the height field), so the same number that read correctly
+  // as a final colour reads roughly half as bright as a tint — the floor
+  // and columns both dropped visibly on the first pass. Raised to restore
+  // their previous apparent brightness and, with it, the approved
+  // three-tier order: columns lightest, walls mid, floor darkest.
+  //
+  // `wallBack`/`wallSide` are deliberately untouched: those were always
+  // tints on this material, so they are already calibrated for it, and
+  // they carry the Phase 1B tonality approval.
+  column: '#c4c4c4',
   wallBack: '#5e5e5e',
   wallSide: '#565656',
-  floor: '#484848',
+  floor: '#8a8a8a',
 }
 
 /**
@@ -70,95 +83,22 @@ const pillarPositions = Array.from({ length: PILLAR_COUNT }, (_, i) => {
 })
 
 /**
- * Organic breach in the right side wall (x = +HALL_WIDTH/2) — replaces the
- * previous structured window frame (§4O/§4P) with a jagged opening, as if
- * a section of stone collapsed away, per explicit request. Its center
- * exactly matches `volumetricLighting.js`'s `spot.position` (x: 6.85,
- * y: 6.3, z: -3) so the beam visually originates from inside the breach.
- *
- * `panelWidthZ` is the width (along world Z) of the dedicated wall panel
- * that contains the hole — the right wall is split into this panel plus
- * two plain flanking segments (front/back) covering the rest of its
- * length, since punching an actual opening requires real geometry, not
- * just an overlaid bright plane (see `Breach` and `stoneRepeatForSize`
- * call sites in `Environment`).
- */
-const BREACH = {
-  centerZ: -3,
-  centerY: 6.3,
-  panelWidthZ: 4,
-  holeRadiusZ: 1.05,
-  holeRadiusY: 1.85,
-  depth: 0.2,
-}
-
-/** Deterministic hash, matching the approach already used in stoneWallMaterial.js. */
-function hash1D(n) {
-  const s = Math.sin(n * 127.1) * 43758.5453
-  return s - Math.floor(s)
-}
-
-/**
- * An irregular, fractured hole outline: a base ellipse perturbed by two
- * low-frequency sine harmonics (broad lobes/bites, like real fracture
- * planes) plus fine per-point jitter — rather than pure per-vertex random
- * noise, which tends to read as a spiky star instead of broken stone.
- */
-function buildFractureOutline(radiusZ, radiusY, pointCount = 18) {
-  const points = []
-  for (let i = 0; i < pointCount; i += 1) {
-    const t = (i / pointCount) * Math.PI * 2
-    const lobes = 1 + 0.16 * Math.sin(3 * t + 0.6) + 0.12 * Math.sin(5 * t + 2.1)
-    const jitter = 1 + (hash1D(i * 3.7 + 11) - 0.5) * 0.3
-    const r = lobes * jitter
-    points.push(new THREE.Vector2(Math.cos(t) * radiusZ * r, Math.sin(t) * radiusY * r))
-  }
-  return points
-}
-
-/**
- * Wall panel geometry containing the breach: a flat rectangle (matching
- * the wall's own thickness-less plane convention elsewhere, extruded only
- * enough to give the fractured edge real depth) with the fracture outline
- * cut out as a `Shape` hole. Local coordinates are centered like the
- * existing wall planes (position marks the center), so it drops into the
- * same `position`/`rotation` pattern as the other wall meshes.
- */
-function useBreachGeometry() {
-  return useMemo(() => {
-    const halfW = BREACH.panelWidthZ / 2
-    const halfH = HALL_HEIGHT / 2
-    const holeCenterY = BREACH.centerY - HALL_HEIGHT / 2
-
-    const outer = new THREE.Shape()
-    outer.moveTo(-halfW, -halfH)
-    outer.lineTo(halfW, -halfH)
-    outer.lineTo(halfW, halfH)
-    outer.lineTo(-halfW, halfH)
-    outer.lineTo(-halfW, -halfH)
-
-    const outline = buildFractureOutline(BREACH.holeRadiusZ, BREACH.holeRadiusY).map(
-      (p) => new THREE.Vector2(p.x, p.y + holeCenterY),
-    )
-    outer.holes.push(new THREE.Path(outline))
-
-    const geometry = new THREE.ExtrudeGeometry(outer, { depth: BREACH.depth, bevelEnabled: false })
-    geometry.translate(0, 0, -BREACH.depth / 2)
-    geometry.computeVertexNormals()
-    return geometry
-  }, [])
-}
-
-/**
- * A simple classical column profile (plinth → shaft with a subtle taper →
+ * A simple classical column profile (plinth -> shaft with a subtle taper ->
  * capital), revolved into a single restrained LatheGeometry. Deliberately
  * plain — no fluting, carving, or ornamentation — and shared across every
  * column instance rather than rebuilt per-mesh.
+ *
+ * The taper and the rounded plinth/capital transitions are what keep the
+ * ring from reading as twelve cylinders: they give each column a silhouette
+ * that changes with height, which is the same reason the shell around them
+ * curves rather than meeting at corners.
  */
+export const PILLAR_SHAFT_RADIUS = 0.26
+
 function useColumnGeometry(height) {
   return useMemo(() => {
     const baseRadius = 0.4
-    const shaftRadius = 0.26
+    const shaftRadius = PILLAR_SHAFT_RADIUS
     const capitalRadius = 0.36
     const plinthHeight = 0.16
     const capitalHeight = 0.22
@@ -173,97 +113,140 @@ function useColumnGeometry(height) {
       new THREE.Vector2(capitalRadius, height),
     ]
 
-    const geometry = new THREE.LatheGeometry(points, 16)
+    // 16 -> 48 segments: at 16 the shaft's own silhouette was a visible
+    // dodecagon against the light, which is exactly the "boxy, rigid,
+    // geometric" read this pass exists to remove. The cost is trivial —
+    // one shared geometry, twelve instances.
+    const geometry = new THREE.LatheGeometry(points, 48)
     geometry.computeVertexNormals()
     return geometry
   }, [height])
 }
 
 /**
- * The breach wall panel — the stone material, with the fracture shape cut
- * as a genuine geometric hole (see `useBreachGeometry`). No separate
- * "glow pane" is layered into the opening: a flat rectangle couldn't match
- * the jagged outline without either falling short of it (leaving a visible
- * gap to the stone edge) or overflowing onto the surrounding solid stone.
- * The opening reading as lit comes from what's genuinely visible through
- * it — the beam mesh's own bright apex (already established, unchanged)
- * sits right at this location, and the fill/ambient light increases from
- * this round keep the fractured edges themselves from going pitch black.
+ * The floor, displaced by a low-frequency noise field so it is a surface
+ * rather than a plane.
+ *
+ * The amplitude is deliberately tiny (`FLOOR_RELIEF`, in centimetres, not
+ * tens of centimetres). It is not meant to be seen as terrain — everything
+ * in this room stands on this floor at y = 0, and the plinths, the column
+ * bases and the light pool would all break contact with it if it moved
+ * enough to notice directly. What it is for is the grazing light: the key
+ * light arrives at a shallow angle through the breach, and across a
+ * perfectly flat plane that produces a perfectly even wash, which is the
+ * single strongest "this is a 3D primitive" cue in the room. A few
+ * centimetres of relief is enough for that wash to break up into something
+ * that reads as a real, slightly uneven stone floor.
  */
-function Breach({ material }) {
-  const geometry = useBreachGeometry()
-  const wallX = HALL_WIDTH / 2
+const FLOOR_RELIEF = 0.05
 
-  return (
-    <mesh
-      position={[wallX, HALL_HEIGHT / 2, BREACH.centerZ]}
-      rotation={[0, -Math.PI / 2, 0]}
-      geometry={geometry}
-      material={material}
-      castShadow
-      receiveShadow
-    />
-  )
-}
+/**
+ * A slow swell across the whole hall, on top of the fine relief.
+ *
+ * The fine relief alone reads as texture; what a floor of this age also
+ * has is SETTLEMENT — long, shallow undulations tens of metres across,
+ * far too gradual to see directly but enough that a grazing light never
+ * crosses a truly flat run. This is the part that removes the last of the
+ * "primitive" read from the floor, because a plane with bumps on it is
+ * still, unmistakably, a plane.
+ *
+ * Kept to `FLOOR_SETTLE` because everything in the room stands at y = 0:
+ * the plinths, the column bases and the light pool all break contact with
+ * the floor if it moves further than this.
+ */
+const FLOOR_SETTLE = 0.11
 
-// Right wall is split around the breach into a front segment (nearer the
-// camera's hero start, +Z side) and a back segment (-Z side), covering
-// the rest of the wall's full HALL_DEPTH length.
-const rightFrontZ = {
-  center: (BREACH.centerZ + BREACH.panelWidthZ / 2 + HALL_DEPTH / 2) / 2,
-  width: HALL_DEPTH / 2 - (BREACH.centerZ + BREACH.panelWidthZ / 2),
-}
-const rightBackZ = {
-  center: (-HALL_DEPTH / 2 + BREACH.centerZ - BREACH.panelWidthZ / 2) / 2,
-  width: BREACH.centerZ - BREACH.panelWidthZ / 2 + HALL_DEPTH / 2,
+function useFloorGeometry() {
+  return useMemo(() => {
+    // Denser than the previous 120 x 220: the long swell below needs
+    // enough vertices to resolve as a curve rather than as facets, and the
+    // whole thing is built once at mount.
+    const geometry = new THREE.PlaneGeometry(HALL_WIDTH, HALL_DEPTH, 170, 320)
+    const position = geometry.attributes.position
+    for (let i = 0; i < position.count; i += 1) {
+      const x = position.getX(i)
+      const y = position.getY(i)
+      // Two octaves at incommensurate frequencies, so the relief never
+      // repeats visibly across the hall's length.
+      const relief =
+        Math.sin(x * 0.42 + 1.7) * Math.cos(y * 0.31 - 0.4) * 0.6 +
+        Math.sin(x * 1.13 - 2.2) * Math.cos(y * 0.87 + 1.1) * 0.4
+      // Wavelengths on the order of the room itself.
+      const settle =
+        Math.sin(x * 0.13 - 0.9) * Math.cos(y * 0.077 + 2.4) * 0.65 +
+        Math.sin(x * 0.061 + 3.1) * Math.cos(y * 0.115 - 1.3) * 0.35
+      position.setZ(i, relief * FLOOR_RELIEF + settle * FLOOR_SETTLE)
+    }
+    position.needsUpdate = true
+    geometry.computeVertexNormals()
+    return geometry
+  }, [])
 }
 
 /**
- * Persistent architectural shell: floor, walls, structural columns, and
- * (as of the window/relighting revision — see `Breach` and
- * `volumetricLighting.js`'s repositioned spot) a fractured wall opening.
+ * Persistent architectural shell: a curved, vaulted gallery enclosure,
+ * a relieved stone floor, and the structural column ring.
  *
- * Core room dimensions and overall layout are the approved Phase 1A
- * foundation. Column *layout* (now a full ring — see `pillarPositions`
- * above) and wall *material* (procedural old stone) are deliberate
- * revisions of that foundation —
- * see the Phase 1A entry in build-status.md §5. Lighting comes from the
- * Phase 1B system (`VolumetricLightingRig`). The stone material's `color`
- * tint still carries the existing three-tier tonality from
- * `SURFACE_TONE` (walls mid, floor darkest, multiplied with the
- * generated stone albedo) — that part of Phase 1B's approval is
- * preserved, not replaced.
+ * The hall's approved Phase 1A footprint (20 x 38 x 9) is preserved
+ * exactly — `galleryShellGeometry.js` curves *within* that envelope rather
+ * than moving it, which is what keeps `cameraPath.js`'s keyframes, the
+ * pillar-clearance guarantees and the billboard's framing valid without
+ * re-derivation. What changed is the form, not the volume: five flat
+ * planes meeting at hard corners, open to the void above, became one
+ * continuous swept surface that rises into a barrel vault. See that
+ * module for the plan curve, the vault profile and how both openings —
+ * the front mouth the camera leaves through, and the fractured breach the
+ * key light arrives through — are cut from the same sheet.
  *
- * Each wall segment gets its own `createStoneWallMaterial` call (rather
- * than sharing one cloned texture set, as an earlier round did) so its
- * `repeat` can be derived from that segment's own physical size via
- * `stoneRepeatForSize` — keeping the stone block scale consistent
- * relative to the pillars across every wall, including the two new right-
- * wall segments the breach split off. The extra noise-texture generation
- * this costs is a one-time mount cost (five materials × three 256×256
- * DataTextures), not a per-frame one — confirmed via frame-timing after.
+ * The three-tier tonality from `SURFACE_TONE` is preserved (columns
+ * lightest, walls mid, floor darkest), still applied as a tint multiplied
+ * over the procedural stone albedo — that part of Phase 1B's approval
+ * survives this pass intact.
+ *
+ * Every surface in the room is now PBR. The floor and columns previously
+ * carried flat `meshStandardMaterial` colours with no maps at all, which
+ * is why they read as primitives next to the already-textured walls: a
+ * colour with uniform roughness has no surface, and the eye reads the
+ * silhouette instead. Both now take the same procedural stone treatment
+ * the walls use, tuned per surface — a large, low-relief repeat for the
+ * floor (worn slabs underfoot, not rubble) and a tight, very low-relief
+ * one for the columns (dressed stone, so the normal map grazes rather
+ * than roughens their silhouette).
  */
+/** A stable per-column turn, so no two present the same face to the light. */
+function columnYaw(index) {
+  const value = Math.sin(index * 127.1 + 3.7) * 43758.5453
+  return (value - Math.floor(value)) * Math.PI * 2
+}
+
 export default function Environment() {
   const columnGeometry = useColumnGeometry(HALL_HEIGHT)
+  const floorGeometry = useFloorGeometry()
+  const shellGeometry = useMemo(() => buildGalleryShellGeometry(), [])
 
-  const wallBackMaterial = useMemo(
-    () => createStoneWallMaterial(SURFACE_TONE.wallBack, stoneRepeatForSize(HALL_WIDTH, HALL_HEIGHT)),
+  // One material for the whole shell. The five per-segment materials this
+  // replaces existed so each flat wall could size its own texture repeat
+  // to its own width; a single swept surface has one continuous UV
+  // parameterisation, so it needs — and can only have — one.
+  const shellMaterial = useMemo(() => {
+    const material = createStoneWallMaterial(
+      SURFACE_TONE.wallSide,
+      stoneRepeatForSize(HALL_DEPTH * 2, GALLERY_SHELL.crownHeight),
+    )
+    return material
+  }, [])
+  const floorMaterial = useMemo(
+    // Low `normalScale`: a floor lit at a grazing angle exaggerates its own
+    // normal map badly, and at the walls' 1.4 the slabs read as gravel.
+    () => createStoneWallMaterial(SURFACE_TONE.floor, stoneRepeatForSize(HALL_WIDTH, HALL_DEPTH), [0.45, 0.45]),
     [],
   )
-  const wallLeftMaterial = useMemo(
-    () => createStoneWallMaterial(SURFACE_TONE.wallSide, stoneRepeatForSize(HALL_DEPTH, HALL_HEIGHT)),
-    [],
-  )
-  const wallRightFrontMaterial = useMemo(
-    () => createStoneWallMaterial(SURFACE_TONE.wallSide, stoneRepeatForSize(rightFrontZ.width, HALL_HEIGHT)),
-    [],
-  )
-  const wallRightBackMaterial = useMemo(
-    () => createStoneWallMaterial(SURFACE_TONE.wallSide, stoneRepeatForSize(rightBackZ.width, HALL_HEIGHT)),
-    [],
-  )
-  const breachMaterial = useMemo(
-    () => createStoneWallMaterial(SURFACE_TONE.wallSide, stoneRepeatForSize(BREACH.panelWidthZ, HALL_HEIGHT)),
+  // Columns use the drum bond, not ashlar — see `stoneAt`. `repeat` is
+  // [1, ...] around the shaft so no vertical seam runs up it, and the
+  // vertical count is chosen so the bed joints land at believable drum
+  // heights against a 9-unit column rather than at the wall's stone scale.
+  const columnMaterial = useMemo(
+    () => createStoneWallMaterial(SURFACE_TONE.column, [1, 2.6], [0.55, 0.55], 'drum'),
     [],
   )
 
@@ -271,51 +254,42 @@ export default function Environment() {
     <group>
       <VolumetricLightingRig />
 
-      {/* Floor — darkest tier */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-        <planeGeometry args={[HALL_WIDTH, HALL_DEPTH, 32, 64]} />
-        <meshStandardMaterial color={SURFACE_TONE.floor} roughness={0.9} metalness={0.05} />
-      </mesh>
+      {/* Floor — darkest tier, relieved rather than flat (see useFloorGeometry) */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} geometry={floorGeometry} material={floorMaterial} receiveShadow />
 
-      {/* Back wall — mid tier, old-stone PBR material */}
-      <mesh position={[0, HALL_HEIGHT / 2, -HALL_DEPTH / 2]} material={wallBackMaterial} receiveShadow>
-        <planeGeometry args={[HALL_WIDTH, HALL_HEIGHT]} />
-      </mesh>
+      {/* The gallery shell — curved walls rising into a vault, with the
+          front mouth and the breach cut from the same surface.
+          `receiveShadow` only, matching the flat walls it replaces: the
+          key light sits 0.025 inside this surface (it shines *through* the
+          breach), so a shell that cast shadows would put itself between
+          the light and the entire room and black the space out — which is
+          exactly what it did when first wired up. */}
+      <mesh geometry={shellGeometry} material={shellMaterial} receiveShadow />
 
-      {/* Left side wall — mid tier, old-stone PBR material, unsplit */}
-      <mesh
-        position={[-HALL_WIDTH / 2, HALL_HEIGHT / 2, 0]}
-        rotation={[0, Math.PI / 2, 0]}
-        material={wallLeftMaterial}
-        receiveShadow
-      >
-        <planeGeometry args={[HALL_DEPTH, HALL_HEIGHT]} />
-      </mesh>
+      {/*
+        Full column ring — lightest tier, surrounds the production space.
 
-      {/* Right side wall — split around the breach into front/back segments */}
-      <mesh
-        position={[HALL_WIDTH / 2, HALL_HEIGHT / 2, rightFrontZ.center]}
-        rotation={[0, -Math.PI / 2, 0]}
-        material={wallRightFrontMaterial}
-        receiveShadow
-      >
-        <planeGeometry args={[rightFrontZ.width, HALL_HEIGHT]} />
-      </mesh>
-      <mesh
-        position={[HALL_WIDTH / 2, HALL_HEIGHT / 2, rightBackZ.center]}
-        rotation={[0, -Math.PI / 2, 0]}
-        material={wallRightBackMaterial}
-        receiveShadow
-      >
-        <planeGeometry args={[rightBackZ.width, HALL_HEIGHT]} />
-      </mesh>
-      <Breach material={breachMaterial} />
-
-      {/* Full pillar ring — lightest tier, surrounds the production space */}
+        Each column is turned by its own amount. They share one geometry and
+        one material, so without this every column presents the identical
+        face, the identical stone and the identical wear to the light — a
+        row of clones, which is the strongest remaining "instanced
+        primitive" cue in the room once the surfaces themselves are aged.
+        Rotation alone is enough to break it, and it is also the only
+        transform that is free of consequences here: positions feed
+        `cameraPath.js`'s pillar-clearance derivation and the radius feeds
+        `PILLAR_SHAFT_RADIUS`, so neither is touched. A column turned about
+        its own axis occupies exactly the same space.
+      */}
       {pillarPositions.map(([x, z], i) => (
-        <mesh key={`pillar-${i}`} position={[x, 0, z]} geometry={columnGeometry} castShadow receiveShadow>
-          <meshStandardMaterial color={SURFACE_TONE.column} roughness={0.8} metalness={0.1} />
-        </mesh>
+        <mesh
+          key={`pillar-${i}`}
+          position={[x, 0, z]}
+          rotation={[0, columnYaw(i), 0]}
+          geometry={columnGeometry}
+          material={columnMaterial}
+          castShadow
+          receiveShadow
+        />
       ))}
     </group>
   )

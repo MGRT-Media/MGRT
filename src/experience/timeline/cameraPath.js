@@ -2,8 +2,17 @@ import * as THREE from 'three'
 import { MONITOR_ANCHOR } from '../digital/Monitor.jsx'
 import { CAMERA_ANCHOR } from '../film/CinemaCamera.jsx'
 import { BEAM_CENTER } from '../digital/plinthAnchor.js'
-import { PILLAR_RING_CENTER, PILLAR_RING_RADIUS } from '../Environment.jsx'
-import { ESTABLISH_T, FILM_FOCUS_T, INTRO_ALIGN_T } from './filmActBeats.js'
+import { PILLAR_COUNT, PILLAR_RING_CENTER, PILLAR_RING_RADIUS, PILLAR_SHAFT_RADIUS } from '../Environment.jsx'
+import {
+  CAMPAIGNS_GATE_T,
+  CAMPAIGNS_REVEAL_T,
+  CAMPAIGNS_ROOM_T,
+  CAMPAIGNS_SWAP_T,
+  ESTABLISH_T,
+  FILM_FOCUS_T,
+  INTRO_ALIGN_T,
+  MONITOR_SNAP_T,
+} from './filmActBeats.js'
 
 /**
  * Multi-keyframe path, replacing the single straight opening→monitor line
@@ -418,6 +427,259 @@ const orbitKeyframes = orbitPositions.map((position, i) => ({
   lookAt: i === 0 ? ORBIT_ENTRANCE_LOOKAT : i === ORBIT_POINT_COUNT - 1 ? LENS_LOOKAT : ORBIT_ENSEMBLE_LOOKAT,
 }))
 
+
+// --- Act 3 (Campaigns): Digital -> Billboard, one continuous recession ---
+//
+// The whole act is a single backward dolly from the monitor out onto a
+// highway, and the hardest requirement on it is negative: "preserve the
+// established camera orientation and vertical alignment from the Digital
+// section... do not introduce unnecessary new camera rotations."
+//
+// Two things have to hold for that, and earlier rounds only ever got the
+// first. **Orientation** is held constant by `railFrame` below, which puts
+// every keyframe's look-at at `position + CAMPAIGNS_FACING *
+// MONITOR_VIEW_DISTANCE` — one constant direction, one constant distance
+// ahead of wherever the camera is. With `CAMPAIGNS_LOCK_ZONE_*` forcing
+// linear interpolation (necessary for exactly the reason `STRAIGHT_ZONE_*`
+// and `VERTICAL_LOCK_ZONE_*` already exist: a Catmull-Rom segment's shape
+// is pulled around by control points outside its own endpoints), position
+// and look-at become the same linear function of segment progress offset by
+// one constant vector, so `lookAt(t) - position(t)` is identically that
+// vector at every sampled point, not just at keyframes.
+//
+// **Direction of travel** is the half that was missing, and it is why the
+// camera still visibly turned after orientation was already provably fixed.
+// Holding the aim still says nothing about where the camera goes: the old
+// keyframes formed a bent polyline running 16.2° off the direction the
+// camera faced, and a camera translating across its own view axis makes the
+// world slide sideways, which reads as an orbit. `CAMPAIGNS_RAIL_DIRECTION`
+// below removes that by construction. (The third contributor was
+// `ScrollCameraRig.jsx` deriving orientation from the damped eye, which fed
+// position lag straight into the aim — fixed there, in the same round.)
+//
+// The Digital keyframe already satisfies `railFrame`'s formula exactly
+// (`MONITOR_ALIGNED_POSITION + CAMPAIGNS_FACING * MONITOR_VIEW_DISTANCE` IS
+// `MONITOR_ALIGNED_LOOKAT`, by how both were derived above), so the act
+// begins as an identity with the shot before it rather than a new movement.
+// Height is locked to `screenY` throughout for the same reason the aim is —
+// "preserve... vertical alignment" — and comes for free here, since the
+// rail is horizontal.
+const CAMPAIGNS_FACING = MONITOR_ALIGNED_LOOKAT.clone().sub(MONITOR_ALIGNED_POSITION).normalize()
+const CAMPAIGNS_RIGHT = new THREE.Vector3().crossVectors(CAMPAIGNS_FACING, new THREE.Vector3(0, 1, 0)).normalize()
+
+/**
+ * **Act 3 is one straight rail, and every keyframe is a distance along it.**
+ *
+ * The previous version placed the four Campaigns keyframes as hand-chosen
+ * XZ coordinates. They held the orientation constant — but the polyline
+ * they formed ran 16.2° off the direction the camera was facing, so the
+ * camera was crabbing sideways the whole way back. A camera translating
+ * across its own view axis makes the world slide laterally, which reads as
+ * an orbit even though nothing is rotating; that, together with
+ * `ScrollCameraRig.jsx`'s position-lag bug (fixed in the same round), is
+ * what "the backward zoom rotates/turns" actually was.
+ *
+ * The fix is structural rather than a retune: keyframes are no longer
+ * positions at all, only distances along `CAMPAIGNS_RAIL_DIRECTION` from
+ * `MONITOR_ALIGNED_POSITION`. Nothing downstream can reintroduce a bend,
+ * because there is nowhere left to put one. Combined with the linear
+ * interpolation zone below, the sampled path is a literal straight line,
+ * and since the rail is (near enough) the reverse of the view direction,
+ * the recession is a pure dolly: the frame's contents scale about the
+ * vanishing point and nothing slides across it.
+ */
+const CAMPAIGNS_BACK = CAMPAIGNS_FACING.clone().negate()
+
+// The clearance the rail is expected to keep from a pillar's SURFACE. The
+// camera's near plane is 0.05, so this is a comfortable margin rather than a
+// bare miss — enough that a pillar sweeping past the frame edge stays solid.
+// No longer used to DERIVE the tilt (see `CAMPAIGNS_RAIL_TILT`), but kept as
+// the floor the achieved clearance is checked against.
+export const RAIL_PILLAR_CLEARANCE = 0.25
+
+const PILLAR_CENTERS = Array.from({ length: PILLAR_COUNT }, (_, i) =>
+  pointOnRing((360 / PILLAR_COUNT) * i, PILLAR_RING_RADIUS, 0),
+)
+
+function railDirection(tiltRadians) {
+  return CAMPAIGNS_BACK.clone()
+    .multiplyScalar(Math.cos(tiltRadians))
+    .addScaledVector(CAMPAIGNS_RIGHT, Math.sin(tiltRadians))
+    .normalize()
+}
+
+/** Closest approach between the rail at this tilt and any pillar ahead of the monitor. */
+function nearestPillarDistance(tiltRadians) {
+  const direction = railDirection(tiltRadians)
+  const relative = new THREE.Vector3()
+  let nearest = Infinity
+  for (const pillar of PILLAR_CENTERS) {
+    relative.subVectors(pillar, MONITOR_ALIGNED_POSITION).setY(0)
+    const along = relative.dot(direction)
+    if (along <= 0) continue // behind the camera's retreat — can't be hit
+    nearest = Math.min(nearest, relative.addScaledVector(direction, -along).length())
+  }
+  return nearest
+}
+
+/**
+ * The rail's angle off the camera's own axis.
+ *
+ * It used to be the smallest tilt that cleared the pillar ring (~3.4
+ * degrees), with the final viewpoint reached by bending the path after the
+ * swap. That bend was the bug: `ScrollCameraRig.jsx` damps the camera toward
+ * the sampled target, and during a chapter jump it trails by ~18 units — far
+ * more than the corner is long — so the camera cut the corner instead of
+ * passing through it. Simulating the real damping against a real jump ramp
+ * put the camera **1.4 units from the swap pose, almost entirely sideways,
+ * at the moment the swap fired**, in both directions. The billboard's image
+ * is rendered from the swap pose, so that offset was exactly the reported
+ * jump.
+ *
+ * A single straight line removes it as a class rather than by margin:
+ * damping between collinear points stays collinear, so the camera is
+ * provably ON the rail at every instant, at any scroll speed, and crossing
+ * `CAMPAIGNS_SWAP_DISTANCE` therefore means being AT the swap pose. Nothing
+ * about the fix depends on how fast the visitor scrolls.
+ *
+ * The angle is now set by where the act has to END — off to the side of the
+ * board, between it and the carriageway — since that is the only remaining
+ * way to get there without a corner. Pillar clearance is no longer derived
+ * from it but still measured from it (`CAMPAIGNS_RAIL_PILLAR_CLEARANCE`,
+ * exported so the verification can assert it rather than trust it): the
+ * rail now leaves through the 150-180 degree gap rather than the 120-150
+ * one, and clears by 0.45 against a 0.05 near plane, which is better than
+ * the 0.25 the old tilt managed.
+ */
+const CAMPAIGNS_RAIL_TILT = THREE.MathUtils.degToRad(-15.1)
+
+/** Measured, not assumed — see above. Surface clearance, past the shaft. */
+export const CAMPAIGNS_RAIL_PILLAR_CLEARANCE =
+  nearestPillarDistance(CAMPAIGNS_RAIL_TILT) - PILLAR_SHAFT_RADIUS
+
+const CAMPAIGNS_RAIL_DIRECTION = railDirection(CAMPAIGNS_RAIL_TILT)
+
+/**
+ * A keyframe at `distance` metres back along the rail. `railFrame(0)` is
+ * `MONITOR_ALIGNED_POSITION`/`MONITOR_ALIGNED_LOOKAT` exactly, so the act
+ * begins at the Digital shot itself rather than near it — the hand-off is
+ * an identity, not a match.
+ *
+ * The look-at is always `MONITOR_VIEW_DISTANCE` ahead along the same fixed
+ * `CAMPAIGNS_FACING`. With linear interpolation (`CAMPAIGNS_LOCK_ZONE_*`
+ * below), `lookAt(t) - position(t)` is then identically that one constant
+ * vector, so the view direction cannot change: no yaw, no pitch, no roll,
+ * and — since the rail is horizontal — no change in elevation either.
+ */
+function railFrame(distance) {
+  const position = MONITOR_ALIGNED_POSITION.clone().addScaledVector(CAMPAIGNS_RAIL_DIRECTION, distance)
+  return {
+    position,
+    lookAt: position.clone().addScaledVector(CAMPAIGNS_FACING, MONITOR_VIEW_DISTANCE),
+  }
+}
+
+// Stage 1 — back out through the pillar ring. The rail crosses the ring at
+// ~3.7; this sits just beyond it, so the beat lands with the ring passing
+// the camera rather than approaching it.
+const CAMPAIGNS_GATE_DISTANCE = 4
+const CAMPAIGNS_GATE_FRAME = railFrame(CAMPAIGNS_GATE_DISTANCE)
+
+// Stage 2 — back far enough that the room reads as one structure, still
+// well inside the hall (~2.7 clear of the right wall).
+const CAMPAIGNS_ROOM_DISTANCE = 7
+const CAMPAIGNS_ROOM_FRAME = railFrame(CAMPAIGNS_ROOM_DISTANCE)
+
+// Stage 3a — the hand-over. Pulled in from 17 to 10: the camera stops
+// further from the room's front opening and closer to the columns, which is
+// the only lever on how much bare floor ends up in the picture the
+// billboard then carries. A level camera at eye height always puts the
+// horizon across the middle of frame, so the floor occupies the lower half
+// no matter what — the fix is to have the columns rise far enough up that
+// half to fill it, and that means standing nearer to them. At 12 the
+// nearest columns sit ~6 away instead of ~11, and the bare foreground drops
+// from roughly the bottom 37% of frame to the bottom 26%. This is the only
+// lever that works on it — see `VISIBLE_HEIGHT_FRACTION` in `Billboard.jsx`
+// for why the other apparent one does not.
+//
+// `Billboard.jsx` places its surface
+// `BILLBOARD_VIEW_DISTANCE` ahead of exactly this pose, sized to overflow
+// the frame here, so the swap is invisible by construction rather than by
+// timing. Nothing about this keyframe is visible as a beat.
+//
+// Deliberately still INSIDE the hall. On this rail the camera reaches the
+// right wall's line at ~20.9, so waiting any longer would put the wall's
+// own edge inside the frame and leave a gap for the exterior to show
+// through at the one moment the two images must agree. Once past the swap
+// the interior is culled, so the rail continues straight through where the
+// wall was — there is nothing there to hit.
+export const CAMPAIGNS_SWAP_DISTANCE = 10
+const CAMPAIGNS_SWAP_FRAME = railFrame(CAMPAIGNS_SWAP_DISTANCE)
+
+// Stage 3b — the reveal. Back ON the rail, which is the whole point of the
+// fix above: the act is one straight line from the Digital shot to here.
+//
+// The viewpoint it lands on is unchanged in every way that shows — still
+// off to the side of the board rather than square down its axis, still
+// between the board and the carriageway, still ~34 out with the board at
+// ~30% right and ~9.6 degrees of obliquity. What changed is only HOW the
+// camera gets there: a constant gentle drift across the whole act instead
+// of straight-then-turn. The drift is the same angle the old final leg
+// already had (~15 degrees); it is simply spread over the full pull-back,
+// which also makes it less noticeable rather than more.
+const CAMPAIGNS_REVEAL_DISTANCE = 38.8
+const CAMPAIGNS_REVEAL_FRAME = railFrame(CAMPAIGNS_REVEAL_DISTANCE)
+
+/**
+ * The rail itself, exported so `ExteriorEnvironment.jsx` can lay the
+ * highway parallel to it and `Billboard.jsx` can anchor to its swap pose.
+ * Sharing the line means the road converges on the same vanishing point the
+ * camera is receding along, which is what makes the final shot read as one
+ * coherent space rather than a road placed near a sign.
+ */
+export const CAMPAIGNS_RAIL = {
+  origin: MONITOR_ALIGNED_POSITION.toArray(),
+  direction: CAMPAIGNS_RAIL_DIRECTION.toArray(),
+}
+
+/**
+ * How far back along the rail a point actually is — the projection of a
+ * world position onto the rail.
+ *
+ * Act 3's swap must key off THIS, applied to the live camera, and never off
+ * `scrollProgress`. The two are not interchangeable: `ScrollCameraRig.jsx`
+ * damps the camera toward the sampled target, so the camera trails scroll
+ * progress by an amount that grows with scroll speed. Keying the swap off
+ * progress therefore fired it while the camera was still short of
+ * `CAMPAIGNS_SWAP_DISTANCE` — the billboard's surface sat nearer than the
+ * distance its image was rendered for, so the room jumped in scale at the
+ * hand-over; and in reverse it fired while the camera was still PAST the
+ * swap point and outside the hall, so the interior switched back on with
+ * the camera looking at the room from outside, exposing the very boundary
+ * the act exists to hide. One cause, both symptoms. Measuring the camera
+ * itself removes the lag from the question entirely.
+ */
+export function campaignsRailDistance(position) {
+  return (
+    (position.x - MONITOR_ALIGNED_POSITION.x) * CAMPAIGNS_RAIL_DIRECTION.x +
+    (position.z - MONITOR_ALIGNED_POSITION.z) * CAMPAIGNS_RAIL_DIRECTION.z
+  )
+}
+
+/**
+ * The pose `Billboard.jsx` freezes its render-to-texture camera at, and
+ * the plane it derives its own placement from. Exported from here (rather
+ * than the billboard importing `sampleCameraPath`, or this file importing
+ * the billboard's geometry) because the dependency genuinely runs this way:
+ * the surface exists to coincide with the camera at this instant, so the
+ * camera path is the authority and the billboard follows it. It also keeps
+ * the two files acyclic.
+ */
+export const CAMPAIGNS_SWAP_POSE = {
+  position: CAMPAIGNS_SWAP_FRAME.position.toArray(),
+  facing: CAMPAIGNS_FACING.toArray(),
+}
+
 const KEYFRAMES = [
   ...orbitKeyframes, // Antipodal start (t: 0) through the exterior alignment point (t: 0.12) — already on-axis and looking at the lens
   { t: 0.135, position: GATE_POSITION, lookAt: LENS_LOOKAT }, // Through the gate — radius pulls in from the orbit to the ring itself, same axis, same look direction
@@ -425,7 +687,11 @@ const KEYFRAMES = [
   { t: APPROACH_T, position: APPROACH_POSITION, lookAt: LENS_LOOKAT }, // Approach
   { t: FILM_FOCUS_T, position: LENS_DIVE_POSITION, lookAt: LENS_LOOKAT }, // Snap 2 — Cinema Lens
   { t: HANDOFF_PULLBACK_T, position: HANDOFF_PULLBACK_POSITION, lookAt: HANDOFF_PULLBACK_LOOKAT }, // Film -> Digital hand-off: quick pull-back, vertically locked to lensY
-  { t: 1, position: MONITOR_ALIGNED_POSITION, lookAt: MONITOR_ALIGNED_LOOKAT }, // Snap 3 — Digital Monitor
+  { t: MONITOR_SNAP_T, position: MONITOR_ALIGNED_POSITION, lookAt: MONITOR_ALIGNED_LOOKAT }, // Snap 3 — Digital Monitor
+  { t: CAMPAIGNS_GATE_T, ...CAMPAIGNS_GATE_FRAME }, // Act 3 stage 1 — back out through the pillar ring
+  { t: CAMPAIGNS_ROOM_T, ...CAMPAIGNS_ROOM_FRAME }, // Act 3 stage 2 — room + ring read as one structure
+  { t: CAMPAIGNS_SWAP_T, ...CAMPAIGNS_SWAP_FRAME }, // Act 3 stage 3a — live interior hands over to the billboard surface
+  { t: CAMPAIGNS_REVEAL_T, ...CAMPAIGNS_REVEAL_FRAME }, // Act 3 stage 3b — billboard, highway, environment
 ]
 
 // Index of the LAST ORBIT POINT within KEYFRAMES — since §4BD's fix makes
@@ -473,6 +739,18 @@ const STRAIGHT_ZONE_END_INDEX = STRAIGHT_ZONE_START_INDEX + 4 // LENS_DIVE_POSIT
 // different "why", same underlying `lerpVectors` mechanism.
 const VERTICAL_LOCK_ZONE_START_INDEX = STRAIGHT_ZONE_END_INDEX // LENS_DIVE_POSITION's index
 const VERTICAL_LOCK_ZONE_END_INDEX = VERTICAL_LOCK_ZONE_START_INDEX + 2 // MONITOR_ALIGNED_POSITION's index
+
+// Act 3's own linear-interpolation zone: the Digital keyframe through the
+// reveal (four segments). Same `lerpVectors` mechanism as the two zones
+// above, third distinct reason — here it is what upgrades "every keyframe
+// shares one look direction" into "every SAMPLED point shares it." Without
+// it the spline's position curve would bow away from the (always-linear)
+// look-at curve between keyframes, and the difference between the two is
+// precisely the view direction: a bowed position path against a linear
+// look-at path is a rotation, which is the one thing this act must not
+// have. See `CAMPAIGNS_FACING`'s comment above for the full derivation.
+const CAMPAIGNS_LOCK_ZONE_START_INDEX = VERTICAL_LOCK_ZONE_END_INDEX // MONITOR_ALIGNED_POSITION's index
+const CAMPAIGNS_LOCK_ZONE_END_INDEX = CAMPAIGNS_LOCK_ZONE_START_INDEX + 4 // CAMPAIGNS_REVEAL_FRAME's index
 
 /**
  * The camera's spatial trajectory as one continuous spline threading
@@ -540,8 +818,10 @@ export function sampleCameraPath(progress) {
   // different reason (see VERTICAL_LOCK_ZONE_START_INDEX's own comment):
   // keeps this hop's Y exactly flat throughout, not just at its keyframes.
   const inVerticalLockZone = i >= VERTICAL_LOCK_ZONE_START_INDEX && i < VERTICAL_LOCK_ZONE_END_INDEX
+  // Act 3's orientation lock — see CAMPAIGNS_LOCK_ZONE_START_INDEX's comment.
+  const inCampaignsLockZone = i >= CAMPAIGNS_LOCK_ZONE_START_INDEX && i < CAMPAIGNS_LOCK_ZONE_END_INDEX
   const position =
-    inStraightZone || inVerticalLockZone
+    inStraightZone || inVerticalLockZone || inCampaignsLockZone
       ? new THREE.Vector3().lerpVectors(a.position, b.position, segmentT)
       : POSITION_CURVE.getPoint(THREE.MathUtils.clamp((i + segmentT) / POSITION_SEGMENT_COUNT, 0, 1))
   const lookAt = new THREE.Vector3().lerpVectors(a.lookAt, b.lookAt, segmentT)

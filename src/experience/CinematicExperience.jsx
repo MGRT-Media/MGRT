@@ -1,8 +1,13 @@
+import { Suspense } from 'react'
 import { Canvas } from '@react-three/fiber'
 import Environment from './Environment.jsx'
+import Billboard from './campaigns/Billboard.jsx'
+import CampaignsLayerSwitch from './campaigns/CampaignsLayerSwitch.jsx'
+import ExteriorEnvironment from './campaigns/ExteriorEnvironment.jsx'
 import Monitor from './digital/Monitor.jsx'
 import CinemaCamera from './film/CinemaCamera.jsx'
 import { lightingParams } from './lighting/volumetricLighting.js'
+import DepthOfField from './postprocessing/DepthOfField.jsx'
 import ScrollCameraRig from './timeline/ScrollCameraRig.jsx'
 import { sampleCameraPath } from './timeline/cameraPath.js'
 
@@ -47,8 +52,27 @@ export default function CinematicExperience() {
       <fogExp2 attach="fog" args={[lightingParams.fog.color, lightingParams.fog.density]} />
       <ScrollCameraRig />
       <Environment />
-      <CinemaCamera />
-      <Monitor />
+      {/* Model-backed objects load their GLBs through `useLoader`, which
+          suspends. The boundary is deliberately around these alone:
+          `ScrollCameraRig` and `DepthOfField` must keep running while the
+          assets arrive, and `DepthOfField` in particular owns the render
+          loop — suspending it would stop the frame entirely. */}
+      <Suspense fallback={null}>
+        <CinemaCamera />
+        <Monitor />
+      </Suspense>
+      {/* Act 3 (Campaigns). The exterior world and the billboard sit on
+          their own render layer and are invisible until the camera swaps
+          onto it at CAMPAIGNS_SWAP_T — see campaigns/layers.js. */}
+      <CampaignsLayerSwitch />
+      <Billboard />
+      <Suspense fallback={null}>
+        <ExteriorEnvironment />
+      </Suspense>
+      {/* Last child deliberately: this takes over the render loop (its
+          useFrame runs at priority 1), so everything that needs to draw or
+          render-to-texture for a frame must already have run. */}
+      <DepthOfField />
     </Canvas>
   )
 }

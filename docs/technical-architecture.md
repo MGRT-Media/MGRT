@@ -214,7 +214,7 @@ SCENE
 │   └── Physical Monitor
 │
 ├── Campaigns (Billboard Reveal)
-│   ├── Exterior Environment (street / plaza context)
+│   ├── Exterior Environment (4-lane highway, curving right; billboard on right shoulder)
 │   └── Billboard Surface (renders the live Interior Environment via render-to-texture)
 │
 └── Typography / Spatial UI
@@ -252,6 +252,8 @@ The Campaigns reveal requires the Interior Room to remain visible, live, and unm
 - The boundary crossing — camera passing through the Billboard Surface, in either direction — must be a single continuous camera movement. Do not implement this as two separate scenes with a cut, fade, or load boundary between them.
 - Act 4's dive-back-in re-enters the same Interior Room scene graph that was being rendered to the billboard texture, not a duplicate or newly instantiated copy. The visitor is returning to the same environment, not a rebuilt one.
 - This technique is a genuine GPU cost (effectively rendering the scene twice per frame during the reveal and return). See §15 for adaptive quality handling specific to the render target.
+- The pull-back's camera path is not a single unstructured recession — per `experience-design.md` §9, it has three defined stages: (1) passing back out through the existing Interior Room pillar ring, reusing that geometry as the threshold rather than introducing new objects; (2) holding at a distance where the room and pillar ring read as one complete structure; (3) continuing back until the Billboard Surface and Exterior Environment are legible. Camera-path implementation should expose these as identifiable stage boundaries (e.g. named keyframes/progress ranges) rather than one opaque interpolation, so each stage's framing can be tuned and reviewed independently.
+- The Exterior Environment's placeholder/provisional geometry (Phase 1E) and final geometry (Phase 2) should target a four-lane highway with a gentle rightward curve, with the Billboard Surface positioned on the road's right-hand shoulder — not a generic street or plaza. This affects road/shoulder geometry, billboard support-structure placement, and the exterior camera's framing during stage 3 above.
 
 This is the highest-risk single mechanism in the project and should be prototyped and proven early — see `build-workflow.md` for the corresponding foundation phase.
 
