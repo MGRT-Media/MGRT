@@ -1,7 +1,9 @@
-import { useLayoutEffect, useMemo } from 'react'
-import { useLoader } from '@react-three/fiber'
+import { useLayoutEffect, useMemo, useRef } from 'react'
+import { useFrame, useLoader } from '@react-three/fiber'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { scrollProgress } from '../timeline/ScrollTimelineProvider.jsx'
+import { IGNITE_START, IGNITE_END } from '../lighting/VolumetricLightingRig.jsx'
 
 /**
  * Every downloaded model asset, in one place.
@@ -163,4 +165,63 @@ export function useTreatedMaterials(root, treat) {
       })
     })
   }, [root, treat])
+}
+
+/**
+ * Scroll-coupled dimming for a model's own materials during the room's
+ * dark state, and only during it.
+ *
+ * `useTreatedMaterials` above already knocks these models' albedo down to
+ * match the night interior, but that is one fixed value for the whole
+ * sequence. Once the dark-state ambient/fill were raised so the
+ * architecture reads at progress 0, the foreground props — housing,
+ * plinth, camera body — caught that lift too and became the frame's
+ * brightest elements, which inverts the intended reading order (space
+ * first, objects last).
+ *
+ * Lowering their albedo outright would fix progress 0 by permanently
+ * darkening them, including in the close-ups where each one is the
+ * subject. So this scales the treated colour by `darkScale` at ignition 0
+ * and releases it back to exactly the treated value as the room ignites,
+ * riding the *same* `IGNITE_START`/`IGNITE_END` ramp as the lighting rig
+ * rather than a second copy of those numbers that could drift. Direct
+ * per-frame mutation, never React state, per technical-architecture.md §7.
+ *
+ * Call this *after* `useTreatedMaterials` on the same root: it captures
+ * each material's colour as its baseline, and that baseline has to be the
+ * post-treatment value.
+ */
+export function useDarkStateDimming(root, darkScale) {
+  const tracked = useRef([])
+
+  useLayoutEffect(() => {
+    if (!root) return undefined
+    const seen = new Set()
+    const collected = []
+    root.traverse((object) => {
+      if (!object.isMesh) return
+      const materials = Array.isArray(object.material) ? object.material : [object.material]
+      materials.forEach((material) => {
+        if (!material?.color || seen.has(material.uuid)) return
+        seen.add(material.uuid)
+        collected.push({ material, base: material.color.clone() })
+      })
+    })
+    tracked.current = collected
+    // Restore on unmount: these materials can be shared with a cached GLTF
+    // that outlives this component, so leaving them scaled would leak a
+    // dimmed copy into whatever mounts next.
+    return () => {
+      collected.forEach(({ material, base }) => material.color.copy(base))
+      tracked.current = []
+    }
+  }, [root])
+
+  useFrame(() => {
+    const ignite = THREE.MathUtils.smoothstep(scrollProgress.value, IGNITE_START, IGNITE_END)
+    const scale = THREE.MathUtils.lerp(darkScale, 1, ignite)
+    tracked.current.forEach(({ material, base }) => {
+      material.color.copy(base).multiplyScalar(scale)
+    })
+  })
 }

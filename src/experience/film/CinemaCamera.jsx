@@ -3,7 +3,14 @@ import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import { createScreenVideoMaterial } from '../digital/screenVideoMaterial.js'
-import { MODEL_URLS, cloneNode, measure, useModel, useTreatedMaterials } from '../models/modelAssets.js'
+import {
+  MODEL_URLS,
+  cloneNode,
+  measure,
+  useDarkStateDimming,
+  useModel,
+  useTreatedMaterials,
+} from '../models/modelAssets.js'
 import { scrollProgress } from '../timeline/ScrollTimelineProvider.jsx'
 import { FILM_FOCUS_T, FILM_IGNITE_RISE } from '../timeline/filmActBeats.js'
 import { BEAM_CENTER, YAW_DEGREES, CAMERA_STAND } from '../digital/plinthAnchor.js'
@@ -213,6 +220,11 @@ function cameraBodyTreatment(material) {
 export default function CinemaCamera() {
   const cameraBody = useFittedCameraBody()
   useTreatedMaterials(cameraBody, cameraBodyTreatment)
+  // Dark-state only — see `useDarkStateDimming`. Lighter-handed than the
+  // monitor's: this body is already the darkest object in the opening
+  // frame, so it needs its specular highlights pulled back off the
+  // architecture rather than the whole form pushed toward black.
+  useDarkStateDimming(cameraBody, 0.7)
 
   const hubGeometry = useMemo(
     () => new THREE.CylinderGeometry(QUADPOD.hubRadius, QUADPOD.hubRadius, QUADPOD.hubHeight, 20),

@@ -65,6 +65,20 @@ export const lightingParams = {
     // entirely, and this is the light whose only job is to keep them
     // readable without touching the lit side's contrast.
     intensity: 0.95,
+    // The scroll-0 floor for this light, mirroring `ambient.darkIntensity`
+    // above: at ignition 0 every other light is multiplied to exactly 0,
+    // leaving flat ambient as the only term, which lights every surface
+    // equally and so erases the shading that makes pillars, walls and
+    // floor read as separate objects. A small directional floor restores
+    // that N·L variation without brightening the room overall. Raised
+    // 0.15 -> 0.4 -> 1.2, the last step measured rather than reasoned: at
+    // ignition 0 with ambient at 4.0, sweeping this term 0.0 -> 2.0 in
+    // the running app showed it is what puts vertical shading on the
+    // pillars and lifts the far wall off black — ambient alone at the
+    // same level reads flat. 1.2 is short of the 2.0 where the pillars
+    // start to look actively lit, and the spot at full is 88, so the
+    // practical still overwhelmingly owns the reveal.
+    darkIntensity: 1.2,
     position: [-5, 5, -1],
   },
   ambient: {
@@ -112,7 +126,17 @@ export const lightingParams = {
     // position along the same path). Flagged rather than silently
     // adjusting the camera's own starting position, which is out of this
     // round's "lighting only" scope.
-    darkIntensity: 1.5,
+    // 1.5 -> 1.8 -> 4.0. The last step was measured in the running app at
+    // progress 0, not extrapolated: 1.8 left the walls and pillar volume
+    // unreadable, 3.0 brought them back, 4.5 read cleanly, and 8.0 went
+    // flat and washed out. The response through ACES is steeply
+    // non-linear here, which is why the earlier small increments felt
+    // like they did nothing. 4.0 sits just under the flatness threshold.
+    // Above the full-lit 3.15 above, which looks wrong as a raw number
+    // but is correct: at ignition 1 the spot (88), key and fill carry the
+    // room and ambient is a minor term, so the two values aren't
+    // comparable as a ratio.
+    darkIntensity: 4.0,
   },
   shadow: {
     // 2048 -> 4096. The spot's cone widened this round, and a shadow map
@@ -532,7 +556,7 @@ export function createVolumetricLighting(params = lightingParams) {
   function setIgnition(factor) {
     if (spotLight) spotLight.intensity = params.spot.intensity * factor
     if (keyLight) keyLight.intensity = params.key.intensity * factor
-    if (fillLight) fillLight.intensity = params.fill.intensity * factor
+    if (fillLight) fillLight.intensity = THREE.MathUtils.lerp(params.fill.darkIntensity, params.fill.intensity, factor)
     if (ambientLight) {
       ambientLight.intensity = THREE.MathUtils.lerp(params.ambient.darkIntensity, params.ambient.intensity, factor)
     }

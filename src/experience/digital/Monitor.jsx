@@ -2,7 +2,14 @@ import { useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import { createScreenVideoMaterial } from './screenVideoMaterial.js'
-import { MODEL_URLS, cloneNode, measure, useModel, useTreatedMaterials } from '../models/modelAssets.js'
+import {
+  MODEL_URLS,
+  cloneNode,
+  measure,
+  useDarkStateDimming,
+  useModel,
+  useTreatedMaterials,
+} from '../models/modelAssets.js'
 import { scrollProgress } from '../timeline/ScrollTimelineProvider.jsx'
 import { MONITOR_SNAP_T, DIGITAL_IGNITE_RISE } from '../timeline/filmActBeats.js'
 import { BEAM_CENTER, YAW_DEGREES, MONITOR_PLINTH } from './plinthAnchor.js'
@@ -301,6 +308,13 @@ export default function Monitor() {
   // rather than reading as brighter objects pasted into it.
   useTreatedMaterials(model.holder, casingTreatment)
   useTreatedMaterials(pedestal, stoneTreatment)
+
+  // Dark-state only: at progress 0 the housing and its plinth were the
+  // brightest things in the frame, reading before the architecture. These
+  // release back to the treated values above as the room ignites, so the
+  // monitor close-up later in the sequence is untouched.
+  useDarkStateDimming(model.holder, 0.5)
+  useDarkStateDimming(pedestal, 0.45)
 
   return (
     <group position={BEAM_CENTER} rotation={[0, yawRadians, 0]}>

@@ -27,8 +27,8 @@ import { scrollProgress } from '../timeline/ScrollTimelineProvider.jsx'
 // the established lighting... no reset of the atmosphere." `smoothstep`'s
 // own S-shape (slow-fast-slow) still gives an earlier partial-reveal beat
 // (pillars separating from darkness, not yet fully visible) for free.
-const IGNITE_START = 0
-const IGNITE_END = 0.06
+export const IGNITE_START = 0
+export const IGNITE_END = 0.06
 
 /**
  * Thin R3F adapter around the framework-agnostic lighting controller.
