@@ -78,6 +78,7 @@ export const lightingParams = {
     // same level reads flat. 1.2 is short of the 2.0 where the pillars
     // start to look actively lit, and the spot at full is 88, so the
     // practical still overwhelmingly owns the reveal.
+    // 1.2 -> 0.45, for the same reason as `ambient.darkIntensity` above.
     darkIntensity: 1.2,
     position: [-5, 5, -1],
   },
@@ -136,6 +137,13 @@ export const lightingParams = {
     // but is correct: at ignition 1 the spot (88), key and fill carry the
     // room and ambient is a minor term, so the two values aren't
     // comparable as a ratio.
+    // 4.0 -> 1.5 when the scanned stone landed. That 4.0 was never really a
+    // lighting decision: the generated albedo was artificially dark, so the
+    // ambient floor had been raised and raised again to drag a near-black
+    // surface up to readable. A scanned albedo is a real measured
+    // reflectance and far brighter, so the same floor blew the opening out
+    // completely — the darkness has to come from the light again, which is
+    // where it belonged.
     darkIntensity: 4.0,
   },
   shadow: {

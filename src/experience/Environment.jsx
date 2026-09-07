@@ -1,7 +1,9 @@
 import * as THREE from 'three'
 import { useMemo } from 'react'
 import VolumetricLightingRig from './lighting/VolumetricLightingRig.jsx'
+import SceneEnvironment from './lighting/SceneEnvironment.jsx'
 import { buildColumnGeometry } from './architecture/columnGeometry.js'
+import { buildColumnCollar, buildWallSkirt } from './architecture/contactDebris.js'
 import { createStoneWallMaterial, stoneRepeatForSize } from './materials/stoneWallMaterial.js'
 import { buildGalleryShellGeometry, GALLERY_SHELL } from './architecture/galleryShellGeometry.js'
 
@@ -201,6 +203,11 @@ function columnYaw(index) {
 
 export default function Environment() {
   const columnGeometries = useColumnGeometries(HALL_HEIGHT)
+  const collarGeometries = useMemo(
+    () => Array.from({ length: PILLAR_COUNT }, (_, i) => buildColumnCollar(0.4, i)),
+    [],
+  )
+  const wallSkirtGeometry = useMemo(() => buildWallSkirt(), [])
   const floorGeometry = useFloorGeometry()
   const shellGeometry = useMemo(() => buildGalleryShellGeometry(), [])
 
@@ -209,16 +216,29 @@ export default function Environment() {
   // to its own width; a single swept surface has one continuous UV
   // parameterisation, so it needs — and can only have — one.
   const shellMaterial = useMemo(() => {
+    // Tint far closer to white than `SURFACE_TONE.wallSide`, for the same
+    // reason as the floor: that value was lifting an artificially dark
+    // generated albedo, and the scanned quarry stone is already a dark brown.
     const material = createStoneWallMaterial(
-      SURFACE_TONE.wallSide,
+      '#a8a49c',
       stoneRepeatForSize(HALL_DEPTH * 2, GALLERY_SHELL.crownHeight),
+      [1.4, 1.4],
+      { scanned: 'walls' },
     )
     return material
   }, [])
   const floorMaterial = useMemo(
     // Low `normalScale`: a floor lit at a grazing angle exaggerates its own
     // normal map badly, and at the walls' 1.4 the slabs read as gravel.
-    () => createStoneWallMaterial(SURFACE_TONE.floor, stoneRepeatForSize(HALL_WIDTH, HALL_DEPTH), [0.45, 0.45]),
+    //
+    // Tint is much closer to white than `SURFACE_TONE.floor`: that value was
+    // dragging an artificially dark generated albedo down to the room's
+    // darkest tier, and the scanned concrete is already a dark worn brown of
+    // its own. Multiplying the two put the floor at near-black.
+    () =>
+      createStoneWallMaterial('#b0aca4', stoneRepeatForSize(HALL_WIDTH, HALL_DEPTH), [0.45, 0.45], {
+        scanned: 'floors',
+      }),
     [],
   )
   // Columns use the drum bond, not ashlar — see `stoneAt`. `repeat` is
@@ -243,15 +263,37 @@ export default function Environment() {
   // metre or so — the size a drum that two people have to move actually is.
   const columnMaterials = useMemo(
     () => [
-      createStoneWallMaterial(SURFACE_TONE.column, [1, 9], [1.6, 1.6], { bond: 'drum', erosion: 0.8, stain: 0.85 }),
-      createStoneWallMaterial('#b9b6ae', [1, 10.5], [1.8, 1.8], { bond: 'drum', erosion: 1.0, stain: 1.0 }),
-      createStoneWallMaterial('#cbc7bd', [1, 8], [1.45, 1.45], { bond: 'drum', erosion: 0.6, stain: 0.7 }),
+      // Tints are much darker than the generated-texture variants they
+      // replace. `SURFACE_TONE.column` and friends were lifting a nearly
+      // black procedural albedo into view; the scanned marble is bright
+      // cream, so the same tints put the columns several stops above the
+      // room. These sit them back in its value range without touching the
+      // lighting the rest of the room is balanced against.
+      // The V repeats are set for a square tile, not for joint spacing. One
+      // wrap of U spans the shaft's circumference (~1.6 units), so V has to
+      // cover the 9-unit height at the same units-per-tile or the scan
+      // stretches vertically — which read as timber grain rather than stone.
+      createStoneWallMaterial('#5d5952', [1, 5.5], [1.6, 1.6], { bond: 'drum', erosion: 0.8, stain: 0.85, scanned: 'columns' }),
+      createStoneWallMaterial('#565049', [1, 6.0], [1.8, 1.8], { bond: 'drum', erosion: 1.0, stain: 1.0, scanned: 'columns' }),
+      createStoneWallMaterial('#66605a', [1, 5.0], [1.45, 1.45], { bond: 'drum', erosion: 0.6, stain: 0.7, scanned: 'columns' }),
     ],
+    [],
+  )
+
+  // Debris shares the floor's scan, because debris on a floor IS floor. The
+  // repeat is expressed per world unit rather than per mesh: `contactDebris`
+  // writes world X/Z straight into its UVs, so passing 1 / TILE_SIZE lands the
+  // texture at exactly the density the floor plane carries. Any other value
+  // and the join announces itself as a change of texture scale, which is
+  // precisely the seam this geometry exists to hide.
+  const debrisMaterial = useMemo(
+    () => createStoneWallMaterial('#b0aca4', [1 / 1.4, 1 / 1.4], [0.45, 0.45], { scanned: 'floors' }),
     [],
   )
 
   return (
     <group>
+      <SceneEnvironment />
       <VolumetricLightingRig />
 
       {/* Floor — darkest tier, relieved rather than flat (see useFloorGeometry) */}
@@ -280,6 +322,22 @@ export default function Environment() {
         `PILLAR_SHAFT_RADIUS`, so neither is touched. A column turned about
         its own axis occupies exactly the same space.
       */}
+      {/* Debris banked against the foot of the shell. `castShadow` is off on
+          both contact meshes: they are centimetres tall, so their own shadows
+          add nothing but noise to the map, while receiving is what actually
+          seats them into the floor. */}
+      <mesh geometry={wallSkirtGeometry} material={debrisMaterial} receiveShadow />
+
+      {pillarPositions.map(([x, z], i) => (
+        <mesh
+          key={`collar-${i}`}
+          position={[x, 0, z]}
+          geometry={collarGeometries[i]}
+          material={debrisMaterial}
+          receiveShadow
+        />
+      ))}
+
       {pillarPositions.map(([x, z], i) => (
         <mesh
           key={`pillar-${i}`}

@@ -136,8 +136,15 @@ function wallWobble(theta, v) {
 // Fraction of the vertical parameter spent below the springing.
 const SPLIT = 0.62
 
-/** Superellipse plan radius in the XZ plane, at angle `theta` from +Z. */
-function planPoint(theta) {
+/**
+ * Superellipse plan radius in the XZ plane, at angle `theta` from +Z.
+ *
+ * Exported so the floor/wall contact debris can follow the exact same
+ * footprint — see `contactDebris.js`. A skirt built on an approximation of
+ * this curve would drift away from the wall it is supposed to be joining,
+ * which is the one thing it must not do.
+ */
+export function planPoint(theta) {
   const sin = Math.sin(theta)
   const cos = Math.cos(theta)
   const denom = Math.pow(

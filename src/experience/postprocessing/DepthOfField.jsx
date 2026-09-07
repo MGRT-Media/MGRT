@@ -4,6 +4,7 @@ import * as THREE from 'three'
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
 import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js'
+import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js'
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
 import { CAMPAIGNS_SWAP_DISTANCE, campaignsRailDistance } from '../timeline/cameraPath.js'
 import { CAMERA_ANCHOR } from '../film/CinemaCamera.jsx'
@@ -138,7 +139,7 @@ export default function DepthOfField() {
   const { gl, scene, camera, size, viewport } = useThree()
   const focusDistance = useRef(null)
 
-  const { composer, bokeh } = useMemo(() => {
+  const { composer, bokeh, gtao } = useMemo(() => {
     // A multisampled target, explicitly. The canvas is created with
     // `antialias: true`, but that only ever applied to the default
     // framebuffer — once the scene renders into a composer target instead,
@@ -150,6 +151,46 @@ export default function DepthOfField() {
     })
     const composerInstance = new EffectComposer(gl, target)
     composerInstance.addPass(new RenderPass(scene, camera))
+
+    // Contact occlusion, between the render and the lens.
+    //
+    // Nothing in this room darkened where two surfaces met: the floor ran
+    // uniformly bright right up to a column's base, so the columns read as
+    // pasted onto it rather than standing on it. Analytic lights cannot
+    // supply that — the shadowing at a contact point comes from geometry
+    // occluding the *ambient* field, and an AmbientLight by definition
+    // reaches every surface equally. The scanned `aoMap`s solve the same
+    // problem within a single texture, but they know nothing about the room
+    // around them; only a screen-space pass sees one object against another.
+    //
+    // GTAO rather than SSAO: it integrates visibility over the hemisphere
+    // properly instead of counting occluded samples, so it does not produce
+    // the dark halo around every silhouette edge that gives SSAO away.
+    const gtaoPass = new GTAOPass(scene, camera, 1, 1)
+    // A small radius keeps this reading as contact shading — the darkening in
+    // the last few centimetres where surfaces meet — rather than as a general
+    // dirt wash over the whole frame, which is the usual way AO announces
+    // itself. `screenSpaceRadius: false` keeps that radius in world units, so
+    // the effect does not change scale as the camera moves.
+    // Radius is in world units and this room is ~20 across: at the 0.28 first
+    // tried, the AO buffer came back essentially blank — the occlusion was
+    // real but confined to a few centimetres, far too tight to survive being
+    // blended into a dark frame. Verified by rendering the raw AO buffer
+    // rather than assuming, which is the only way to tell a subtle effect
+    // from one that is silently doing nothing.
+    gtaoPass.updateGtaoMaterial({
+      radius: 1.0,
+      distanceExponent: 1,
+      thickness: 1,
+      scale: 1,
+      samples: 16,
+      distanceFallOff: 1,
+      screenSpaceRadius: false,
+    })
+    // Held below 1: the room is already dark, and occlusion strong enough to
+    // notice on its own would close up the shadow end entirely.
+    gtaoPass.blendIntensity = 0.75
+    composerInstance.addPass(gtaoPass)
 
     const bokehPass = new BokehPass(scene, camera, {
       focus: 5,
@@ -166,14 +207,17 @@ export default function DepthOfField() {
     // which is what it was getting before this pipeline existed.
     composerInstance.addPass(new OutputPass())
 
-    return { composer: composerInstance, bokeh: bokehPass }
+    return { composer: composerInstance, bokeh: bokehPass, gtao: gtaoPass }
   }, [gl, scene, camera])
 
   useEffect(() => {
     composer.setPixelRatio(viewport.dpr)
     composer.setSize(size.width, size.height)
+    // GTAO keeps its own depth/normal targets and does not learn the new size
+    // from the composer, so it has to be told directly.
+    gtao.setSize(size.width, size.height)
     bokeh.uniforms.aspect.value = camera.aspect
-  }, [composer, bokeh, camera, size, viewport.dpr])
+  }, [composer, bokeh, gtao, camera, size, viewport.dpr])
 
   useEffect(() => () => composer.dispose(), [composer])
 

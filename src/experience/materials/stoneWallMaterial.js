@@ -230,8 +230,129 @@ function buildNormalTexture(height) {
  * the raking angle from the breach — visibly catches the mortar grooves
  * and block-face variation, per the request.
  */
+/**
+ * Scanned-stone upgrade.
+ *
+ * Everything above this point generates stone from a 256px value-noise field
+ * in JavaScript. That is why these surfaces read as computed rather than
+ * photographed: a closed-form noise function has no correlated structure
+ * across scales, so it cannot produce the pore-to-block continuity that a
+ * photogrammetry scan measures off real rock. No amount of extra octaves
+ * fixes that — it is the wrong kind of data, not too little of it.
+ *
+ * So if a scanned set is present on disk, it replaces the generated maps.
+ * The procedural material is still built first and returned synchronously,
+ * which means:
+ *  - the room looks exactly as it does today when no files are installed,
+ *  - nothing suspends, blocks or throws on a missing file,
+ *  - the swap happens in place the moment the textures finish decoding.
+ *
+ * See `public/textures/limestone/README.md` for what to install.
+ */
+const SCANNED_BASE = '/textures'
+const SCANNED_SLOTS = [
+  { slot: 'map', file: 'albedo.jpg', colorSpace: THREE.SRGBColorSpace },
+  { slot: 'normalMap', file: 'normal.jpg' },
+  { slot: 'roughnessMap', file: 'roughness.jpg' },
+  { slot: 'aoMap', file: 'ao.jpg' },
+]
+
+function loadOptionalTexture(url) {
+  return new Promise((resolve) => {
+    new THREE.TextureLoader().load(url, resolve, undefined, () => resolve(null))
+  })
+}
+
+/**
+ * One shared availability probe for the whole room.
+ *
+ * Every material would otherwise request all four maps, and a dev server that
+ * answers unknown paths with the SPA's index.html answers *200* — so the
+ * misses are not even cheap 404s, they are six materials fetching four copies
+ * of an HTML document each. Checking `Content-Type` once and sharing the
+ * promise turns twenty-four wasted requests into one.
+ */
+const scannedSetAvailable = new Map()
+
+function isScannedStoneInstalled(set) {
+  if (!scannedSetAvailable.has(set)) {
+    // GET, not HEAD. Vite's static middleware aborts HEAD requests for files
+    // in `public/` (net::ERR_ABORTED), which made this probe report "missing"
+    // even with the set correctly installed and silently disabled the whole
+    // upgrade. The GET costs nothing extra — the response is served straight
+    // back out of the HTTP cache when TextureLoader asks for the same URL.
+    scannedSetAvailable.set(
+      set,
+      fetch(`${SCANNED_BASE}/${set}/albedo.jpg`)
+        .then((response) => response.ok && (response.headers.get('content-type') || '').startsWith('image/'))
+        .catch(() => false),
+    )
+  }
+  return scannedSetAvailable.get(set)
+}
+
+/**
+ * World size of one scanned tile, in units.
+ *
+ * Deliberately NOT `TILE_SIZE`. The generated texture is a single dressed
+ * block with mortar around its border, so tiling it once per 1.4 units is
+ * exactly what draws the coursing. A scanned set is a photograph of a large
+ * slab of rock, and repeating that every 1.4 units turns the room into
+ * wallpaper — the repeat becomes the most obvious thing in the frame. A
+ * scanned tile has to stand for several metres of stone.
+ */
+const SCANNED_TILE_SIZE = 4.2
+
+async function upgradeToScannedStone(material, set, repeat, normalScale) {
+  const scale = TILE_SIZE / SCANNED_TILE_SIZE
+  if (!(await isScannedStoneInstalled(set))) return
+
+  const textures = await Promise.all(
+    SCANNED_SLOTS.map((slot) => loadOptionalTexture(`${SCANNED_BASE}/${set}/${slot.file}`)),
+  )
+
+  // Albedo and normal are the two that carry the realism. Without both, the
+  // generated set is the better material and is left alone.
+  if (!textures[0] || !textures[1]) return
+
+  textures.forEach((texture, index) => {
+    if (!texture) return
+    const { slot, colorSpace } = SCANNED_SLOTS[index]
+    texture.wrapS = THREE.RepeatWrapping
+    texture.wrapT = THREE.RepeatWrapping
+    // A column's U axis wraps the shaft, so its repeat must stay a whole
+    // number or the texture jumps at the seam — which also means its V cannot
+    // be rescaled independently without stretching the tile. Columns
+    // therefore pass a repeat already in square-aspect terms and are used
+    // verbatim; flat surfaces get the scanned world scale applied.
+    const wrapsShaft = repeat[0] === 1
+    texture.repeat.set(
+      wrapsShaft ? 1 : repeat[0] * scale,
+      wrapsShaft ? repeat[1] : repeat[1] * scale,
+    )
+    // Colour data is sRGB; normal, roughness and occlusion are measurements
+    // and must stay linear or the lighting maths is fed gamma-encoded values.
+    texture.colorSpace = colorSpace ?? THREE.NoColorSpace
+    texture.anisotropy = 8
+    // three reads aoMap from uv1 by default; none of this room's geometry
+    // carries a second UV set, so point it at uv0.
+    if (slot === 'aoMap') texture.channel = 0
+    material[slot]?.dispose?.()
+    material[slot] = texture
+  })
+
+  // The tint is left exactly as the caller set it. A scanned albedo is a real
+  // measured reflectance — bright cream stone — where the generated one was
+  // artificially dark, so the caller picks a tint for the scan rather than
+  // this function guessing a correction on top of it.
+  material.aoMapIntensity = 1
+  // Scanned normals are calibrated; the generated ones needed exaggerating.
+  material.normalScale.set(Math.min(normalScale[0], 1), Math.min(normalScale[1], 1))
+  material.needsUpdate = true
+}
+
 export function createStoneWallMaterial(tintColor, repeat = [6, 3], normalScale = [1.4, 1.4], options = {}) {
-  const { bond = 'ashlar', erosion = 0, stain = 0 } = options
+  const { bond = 'ashlar', erosion = 0, stain = 0, scanned = false } = options
   const height = buildHeightField(bond, erosion)
   const map = buildAlbedoTexture(height, stain)
   const normalMap = buildNormalTexture(height)
@@ -244,7 +365,7 @@ export function createStoneWallMaterial(tintColor, repeat = [6, 3], normalScale 
     texture.needsUpdate = true
   })
 
-  return new THREE.MeshStandardMaterial({
+  const material = new THREE.MeshStandardMaterial({
     map,
     normalMap,
     normalScale: new THREE.Vector2(normalScale[0], normalScale[1]),
@@ -252,6 +373,18 @@ export function createStoneWallMaterial(tintColor, repeat = [6, 3], normalScale 
     color: tintColor,
     metalness: 0,
   })
+
+  // Opt-in per surface, and each surface names its own set — `scanned` is a
+  // folder under `/textures`, not a flag. Sharing one scan across the room
+  // does not work: a cliff face reads as quarried stone on a column and as
+  // timber decking tiled flat across a floor. Each surface gets stone that
+  // matches what it physically is, or keeps the generated map.
+  //
+  // Fire and forget — no await: the caller needs a material this frame, and
+  // the swap is a no-op when nothing is installed.
+  if (scanned) upgradeToScannedStone(material, scanned, repeat, normalScale)
+
+  return material
 }
 
 /** One stone block ≈ `TILE_SIZE` world units — see the module doc comment. */

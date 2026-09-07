@@ -1,42 +1,57 @@
 import * as THREE from 'three'
+import { fbm3, ridged3, pits3 } from './stoneNoise.js'
 
 /**
  * Ruined column geometry — twelve individually weathered shafts rather than
  * twelve instances of one perfect solid of revolution.
  *
- * The ring originally shared a single `LatheGeometry`. A lathe is exactly a
- * solid of revolution, so every horizontal slice was a mathematically perfect
- * circle and every column was the same object turned to a different angle.
- * That is the "procedural primitive" read: not the polygon count, but the
- * fact that no cross-section anywhere in the room deviated from a circle.
+ * Three things have to be true at once or the shaft reads as a cylinder with
+ * a picture on it, and each was a separate failure on the way here:
  *
- * **The profile is resampled before anything is displaced, and that is the
- * whole reason this works.** A classical column profile needs about eight
- * control points to describe it, which gives seven rows of vertices over a
- * nine-unit shaft — roughly one row per 1.3 units. Displacement can only move
- * vertices that exist, so on that mesh every ridge, groove and chip below
- * ~1.3 units tall had nowhere to live and the surface stayed a clean cylinder
- * no matter how strong the noise driving it. `PROFILE_SPACING` resamples the
- * same silhouette to a uniform ~7cm, which is what gives the relief below
- * something to actually deform.
+ * 1. **The mesh must be dense enough to hold relief.** A classical profile
+ *    needs ~8 control points, which after revolving is 7 vertex rows over a
+ *    9-unit shaft. Displacement can only move vertices that exist, so nothing
+ *    finer than ~1.3 units could exist at all. `PROFILE_SPACING` resamples
+ *    the same silhouette to a uniform ~5cm.
  *
- * Cost is still modest and still paid once at mount: ~64 × 130 vertices per
- * column, twelve geometries, no runtime work and no extra draw calls.
+ * 2. **The noise must not be periodic.** Relief built from sums of sines in
+ *    (angle, height) is smooth and exactly repeating, and the angular terms
+ *    have to be whole numbers to avoid a seam — which is what produced
+ *    evenly spaced identical channels. `stoneNoise.js` samples a 3D field at
+ *    each vertex instead: seamless on a closed surface for free, and free to
+ *    be irregular. Cracks come from ridged noise and pockets from thresholded
+ *    noise, because ordinary fbm has no sharp features and cannot make either.
  *
- * **Outward displacement is capped on purpose.** `PILLAR_SHAFT_RADIUS` feeds
+ * 3. **The silhouette must break.** Surface detail alone leaves a ruler-
+ *    straight edge against the light, which reads as a primitive no matter
+ *    what the material does. `DRUM_HEIGHT` below is the main instrument for
+ *    that: the drums are individually shifted and resized, so the outline
+ *    steps.
+ *
+ * Cost is paid once at mount — twelve geometries, ~64 × 180 vertices each, no
+ * runtime work and no extra draw calls.
+ *
+ * **Outward displacement is capped.** `PILLAR_SHAFT_RADIUS` feeds
  * `cameraPath.js`'s rail clearance (`CAMPAIGNS_RAIL_PILLAR_CLEARANCE`, 0.25),
- * so a shaft free to swell would silently eat a clearance another module has
- * been derived against. Inward cuts are left unbounded — erosion removes
- * stone, which is both the safe direction and the physically correct one, and
- * it is where most of this relief lives anyway.
+ * so an unbounded shaft would silently eat a clearance another module is
+ * derived against. `MAX_OUTWARD` keeps the worst case well inside it. Inward
+ * cuts are unbounded: erosion removes stone, which is the safe direction and
+ * the physically correct one, and it is where most of this relief lives.
  */
 
-/** Vertex row spacing along the profile, in world units. See the module note. */
-const PROFILE_SPACING = 0.07
+const PROFILE_SPACING = 0.05
 const RADIAL_SEGMENTS = 64
+const MAX_OUTWARD = 0.07
 
-/** Hard ceiling on how far any point may bulge past its nominal radius. */
-const MAX_OUTWARD = 0.038
+/**
+ * Nominal height of one drum — the actual courses jitter around it. A column this size was built as a stack of cylindrical
+ * blocks, and after centuries they no longer sit true — the joints open, the
+ * drums shift a few centimetres off axis and no two present the same radius.
+ * That misalignment is the strongest single cue that the shaft is masonry
+ * rather than a turned solid, because it breaks the vertical edge at hard,
+ * irregular steps that no amount of surface noise can imitate.
+ */
+const DRUM_HEIGHT = 0.92
 
 /** Deterministic per-column PRNG, so a given index always rebuilds identically. */
 function mulberry32(seed) {
@@ -50,47 +65,10 @@ function mulberry32(seed) {
 }
 
 /**
- * Band-limited surface noise in cylindrical space, seamless around the shaft
- * by construction.
- *
- * Every term uses an *integer* multiple of the angle, so the field meets
- * itself exactly at theta = 0 and no seam runs up the column — the failure a
- * lattice noise sampled on (x, z) would have produced. The octaves are read
- * in bands: the first two are the primary form (bulge and lean), the middle
- * two are ridges and bumps, the last two are granular break-up.
- */
-const LOBES = [
-  { angular: 1, vertical: 0.18, amplitude: 1.0 },
-  { angular: 2, vertical: 0.31, amplitude: 0.85 },
-  { angular: 3, vertical: 0.74, amplitude: 0.62 },
-  { angular: 5, vertical: 1.35, amplitude: 0.44 },
-  { angular: 8, vertical: 2.6, amplitude: 0.3 },
-  { angular: 13, vertical: 4.7, amplitude: 0.19 },
-  { angular: 21, vertical: 8.3, amplitude: 0.12 },
-  { angular: 34, vertical: 14.1, amplitude: 0.07 },
-]
-
-function bandNoise(theta, y, phases, from, to) {
-  let sum = 0
-  let weight = 0
-  for (let i = from; i < to; i += 1) {
-    const lobe = LOBES[i]
-    sum +=
-      lobe.amplitude *
-      Math.sin(lobe.angular * theta + phases[i]) *
-      Math.sin(lobe.vertical * y + phases[i] * 1.7)
-    weight += lobe.amplitude
-  }
-  return weight > 0 ? sum / weight : 0
-}
-
-/**
  * The column's condition. Fixed per index rather than random so the ring's
  * composition is stable across reloads: the ruin reads as a place that has
- * stood this way, not as a shuffle that redeals every refresh.
- *
- * Kept to a minority of broken shafts — a ring where every column is snapped
- * reads as debris, not as architecture that has survived.
+ * stood this way, not as a shuffle that redeals every refresh. Broken shafts
+ * are a minority — a ring where every column is snapped reads as debris.
  */
 function conditionFor(index) {
   if (index === 2 || index === 7) return 'truncated'
@@ -99,7 +77,6 @@ function conditionFor(index) {
   return 'intact'
 }
 
-/** Profile of a column that still carries its capital. */
 function intactProfile(height, radii, condition, rand) {
   const { base, shaft, capital } = radii
   const plinthHeight = 0.16
@@ -118,12 +95,6 @@ function intactProfile(height, radii, condition, rand) {
   ]
 }
 
-/**
- * Profile of a shaft that has lost its upper section. The break is closed
- * back to the axis so the column is not a hollow tube — the crown is then
- * roughened by the displacement pass, which is what makes it read as
- * fractured stone rather than a lathe-turned lid.
- */
 function brokenProfile(breakHeight, radii, rand) {
   const { base, shaft } = radii
   const plinthHeight = 0.16
@@ -141,10 +112,7 @@ function brokenProfile(breakHeight, radii, rand) {
   ]
 }
 
-/**
- * Subdivide the control profile to a uniform spacing. See the module note —
- * without this there is nothing for the relief to displace.
- */
+/** Subdivide the control profile to a uniform spacing. See note 1 above. */
 function resampleProfile(points, spacing) {
   const dense = [points[0].clone()]
   for (let i = 1; i < points.length; i += 1) {
@@ -159,17 +127,45 @@ function resampleProfile(points, spacing) {
 }
 
 /**
- * One column, weathered on its own terms.
- *
- * `fullHeight` is the intact height (the hall's), `index` selects the stable
- * condition and seeds every jitter below it.
+ * Per-drum displacement: how far this drum has shifted off axis, and how its
+ * radius differs from nominal. Generated once per column and looked up by
+ * height, so every vertex in a drum moves together and the joint stays a hard
+ * step rather than a smooth blend.
  */
+function buildDrums(totalHeight, rand) {
+  const drums = []
+  let y = 0
+  // Courses are not a uniform pitch. Quarried drums vary, and equal spacing
+  // was reading as a rhythm — the repeating-pattern tell this pass exists to
+  // remove — so each course takes its own height.
+  while (y < totalHeight + DRUM_HEIGHT) {
+    const height = DRUM_HEIGHT * (0.74 + rand() * 0.52)
+    drums.push({
+      top: y + height,
+      // A few centimetres off true. Enough to step the outline, not enough to
+      // read as a stack of separate objects.
+      offsetX: (rand() - 0.5) * 0.032,
+      offsetZ: (rand() - 0.5) * 0.032,
+      // A joint shows a ledge, not a bulge: this stays tight to 1.
+      radiusScale: 0.985 + rand() * 0.022,
+    })
+    y += height
+  }
+  return drums
+}
+
+function drumAt(drums, y) {
+  for (let i = 0; i < drums.length; i += 1) {
+    if (y < drums[i].top) return drums[i]
+  }
+  return drums[drums.length - 1]
+}
+
 export function buildColumnGeometry(fullHeight, index, shaftRadius) {
   const rand = mulberry32(index * 2654435761 + 12345)
   const condition = conditionFor(index)
+  const seed = index * 7919 + 13
 
-  // Per-column proportions. The jitter is one-sided below the nominal radius,
-  // for the same clearance reason as MAX_OUTWARD.
   const radii = {
     base: 0.4 * (0.94 + rand() * 0.06),
     shaft: shaftRadius * (0.95 + rand() * 0.05),
@@ -193,18 +189,15 @@ export function buildColumnGeometry(fullHeight, index, shaftRadius) {
     RADIAL_SEGMENTS,
   )
 
-  // --- weathering ------------------------------------------------------
-  const phases = Array.from({ length: LOBES.length }, () => rand() * Math.PI * 2)
-  const severity = condition === 'intact' ? 0.75 : condition === 'worn' ? 1.0 : 1.25
+  const severity = condition === 'intact' ? 0.8 : condition === 'worn' ? 1.05 : 1.3
+  const drums = buildDrums(fullHeight, rand)
 
-  // Flutes: the one piece of Greek column language that is structural rather
-  // than decorative, and the strongest light-catcher available — vertical
-  // channels turn a single grazing source into alternating highlight and
-  // shadow all the way up the shaft. Count and depth vary per column, and the
-  // depth is modulated along the height so they weather away in patches
-  // rather than running the full length like machined splines.
-  const fluteCount = 16 + Math.floor(rand() * 6)
-  const fluteDepth = (0.014 + rand() * 0.016) * severity
+  // Flutes, but not machined ones. The channel count is fractional and the
+  // phase is dragged around by a slow noise field, so the channels wander,
+  // vary in width, run out and reappear — the opposite of the evenly spaced
+  // identical grooves an exact cosine produced.
+  const fluteCount = 14 + rand() * 7
+  const fluteDepth = (0.012 + rand() * 0.014) * severity
   const flutePhase = rand() * Math.PI * 2
 
   const position = geometry.attributes.position
@@ -213,52 +206,78 @@ export function buildColumnGeometry(fullHeight, index, shaftRadius) {
   for (let i = 0; i < position.count; i += 1) {
     vertex.fromBufferAttribute(position, i)
     const radius = Math.hypot(vertex.x, vertex.z)
-    // The axis vertex closing a broken crown has no meaningful angle and must
-    // stay on the axis, or the cap tears open.
+    // The axis vertex closing a broken crown must stay on the axis.
     if (radius < 0.02) continue
 
     const theta = Math.atan2(vertex.z, vertex.x)
     const y = vertex.y
+    // Sample position for the 3D fields. Kept in world-ish scale so features
+    // are sized in metres rather than in units of the shaft's radius.
+    const sx = vertex.x
+    const sy = vertex.y
+    const sz = vertex.z
 
-    // Primary form: a slow bulge and warp, so the shaft is not a straight
-    // extrusion even before any detail lands on it.
-    const bulge = bandNoise(theta, y, phases, 0, 2) * 0.026 * severity
-    // Ridges and bumps — the medium forms the light actually breaks over.
-    const ridges = bandNoise(theta, y, phases, 2, 4) * 0.032 * severity
-    // Granular break-up.
-    const grain = bandNoise(theta, y, phases, 4, LOBES.length) * 0.014 * severity
+    // Broad contour: the shaft is not straight, and does not have a constant
+    // section. Low frequency, high amplitude — this is what the silhouette
+    // actually shows at distance.
+    const contour = fbm3(sx * 1.3, sy * 0.55, sz * 1.3, 3, seed) * 0.05 * severity
 
-    // Flutes, faded in and out along the height by a slow band so stretches
-    // of the shaft have lost them entirely.
-    const fluteMask = Math.max(0, 0.55 + 0.45 * Math.sin(y * 0.42 + flutePhase * 2.3))
-    const flute = -fluteDepth * fluteMask * (0.5 + 0.5 * Math.cos(fluteCount * theta + flutePhase))
+    // Medium bumps and hollows — the forms a raking light breaks over.
+    const bumps = fbm3(sx * 4.5, sy * 2.6, sz * 4.5, 4, seed + 91) * 0.022 * severity
 
-    // Chips and spalled patches: sparse, hard-edged, inward only. Squaring the
-    // bite past the threshold keeps most of the surface untouched and makes
-    // the few hits deep, which is how stone actually fails.
-    const chipNoise = bandNoise(theta * 1.9 + 4.1, y * 1.6 - 2.7, phases, 1, 5)
-    const bite = Math.max(0, chipNoise - 0.28) / 0.72
-    const chip = -bite * bite * 0.075 * severity
+    // Granular surface, right at the limit of what the mesh can carry. Finer
+    // detail than this is the normal map's job.
+    const grain = fbm3(sx * 17, sy * 13, sz * 17, 3, seed + 211) * 0.006 * severity
 
-    let displacement = bulge + ridges + grain + flute + chip
+    // Cracks: ridged noise, cut inward only. Raising it to a power keeps the
+    // crease narrow instead of spreading it into a broad valley.
+    const crackField = ridged3(sx * 2.4, sy * 1.5, sz * 2.4, 4, seed + 337)
+    const crack = -Math.pow(Math.max(0, crackField - 0.55) / 0.45, 2) * 0.055 * severity
 
-    // Broken crowns lose material fastest at the fracture.
+    // Erosion pockets — sparse, deep, defined edge.
+    const pocket = -pits3(sx * 3.2, sy * 2.1, sz * 3.2, seed + 613, 0.46) * 0.075 * severity
+
+    // Wandering flutes.
+    const fluteDrift = fbm3(sx * 0.9, sy * 0.35, sz * 0.9, 2, seed + 77) * 1.6
+    const fluteMask = THREE.MathUtils.clamp(
+      0.5 + 0.9 * fbm3(sx * 0.7, sy * 0.5, sz * 0.7, 2, seed + 149),
+      0,
+      1,
+    )
+    const flute =
+      -fluteDepth * fluteMask * (0.5 + 0.5 * Math.cos(fluteCount * theta + flutePhase + fluteDrift))
+
+    let displacement = contour + bumps + grain + crack + pocket + flute
+
     if (breakHeight !== null) {
-      const nearness = THREE.MathUtils.smoothstep(y, breakHeight - 0.9, breakHeight)
+      const nearness = THREE.MathUtils.smoothstep(y, breakHeight - 1.0, breakHeight)
       if (nearness > 0) {
-        const fracture = bandNoise(theta * 1.7 + 2.1, y * 2.3, phases, 2, 6)
-        displacement -= Math.abs(fracture) * 0.08 * nearness
-        // ...and the fracture line itself is not level.
-        vertex.y -= Math.max(0, fracture) * 0.26 * nearness
+        const fracture = ridged3(sx * 3.1, sy * 2.4, sz * 3.1, 3, seed + 881)
+        displacement -= fracture * 0.09 * nearness
+        vertex.y -= fracture * 0.3 * nearness
       }
     }
 
-    // Cap outward growth only — see the module note on rail clearance.
     if (displacement > MAX_OUTWARD) displacement = MAX_OUTWARD
 
     const scale = Math.max(radius + displacement, 0.02) / radius
     vertex.x *= scale
     vertex.z *= scale
+
+    // Drum shift, applied last so it moves the finished surface as a block.
+    // Faded out across the plinth and the capital, which are single stones.
+    const drum = drumAt(drums, y)
+    const shaftMask =
+      THREE.MathUtils.smoothstep(y, 0.16, 0.75) *
+      (1 - THREE.MathUtils.smoothstep(y, fullHeight - 0.5, fullHeight - 0.1))
+    if (shaftMask > 0) {
+      const drumScale = 1 + (drum.radiusScale - 1) * shaftMask
+      vertex.x *= drumScale
+      vertex.z *= drumScale
+      vertex.x += drum.offsetX * shaftMask
+      vertex.z += drum.offsetZ * shaftMask
+    }
+
     position.setXYZ(i, vertex.x, vertex.y, vertex.z)
   }
 
