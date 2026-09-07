@@ -69,15 +69,36 @@ const MORTAR_GROOVE_DEPTH = 0.6
  * (in the albedo, via the existing height→shade relationship) rather than
  * a texture that has no block structure at all.
  */
-function mortarMask(u, v, width) {
-  const du = Math.min(u, 1 - u)
+function mortarMask(u, v, width, bond) {
   const dv = Math.min(v, 1 - v)
-  const d = Math.min(du, dv)
-  return THREE.MathUtils.smoothstep(d, 0, width)
+  // A drum column is a stack of cylindrical blocks: it has bed joints where
+  // one drum meets the next, and no vertical joints at all, because each
+  // drum is a single piece turned on a lathe. Masking on `v` alone gives
+  // exactly that. The ashlar default keeps both axes, for coursed walling.
+  if (bond === 'drum') return THREE.MathUtils.smoothstep(dv, 0, width)
+  const du = Math.min(u, 1 - u)
+  return THREE.MathUtils.smoothstep(Math.min(du, dv), 0, width)
+}
+
+/**
+ * Sparse, hard-edged loss of material — the chips and spalled patches that
+ * separate a weathered ruin from a merely bumpy surface.
+ *
+ * The surface noise already in the height field is smooth everywhere, which
+ * is why it reads as "procedural": real erosion is not smooth, it takes
+ * bites. Thresholding a second, differently-scaled noise field and cutting
+ * only where it crosses that threshold gives sparse damage with a defined
+ * edge, leaving most of the stone intact between hits.
+ */
+function chipField(x, y, scale, amount) {
+  if (amount <= 0) return 0
+  const n = fbm(x * scale * 2.7 + 91.3, y * scale * 2.7 - 47.9, 3)
+  const bite = Math.max(0, n - 0.55) / 0.45
+  return bite * bite * amount
 }
 
 /** Builds the shared height field once, sized `TEXTURE_SIZE` × `TEXTURE_SIZE`. */
-function buildHeightField() {
+function buildHeightField(bond, erosion) {
   const height = new Float32Array(TEXTURE_SIZE * TEXTURE_SIZE)
   const scale = 6 / TEXTURE_SIZE
   for (let y = 0; y < TEXTURE_SIZE; y += 1) {
@@ -85,14 +106,38 @@ function buildHeightField() {
       const u = x / TEXTURE_SIZE
       const v = y / TEXTURE_SIZE
       const surfaceNoise = fbm(x * scale, y * scale, 5)
-      const mask = mortarMask(u, v, MORTAR_WIDTH)
-      height[y * TEXTURE_SIZE + x] = surfaceNoise * mask - (1 - mask) * MORTAR_GROOVE_DEPTH
+      const mask = mortarMask(u, v, MORTAR_WIDTH, bond)
+      const base = surfaceNoise * mask - (1 - mask) * MORTAR_GROOVE_DEPTH
+      height[y * TEXTURE_SIZE + x] = base - chipField(x, y, scale, erosion)
     }
   }
   return height
 }
 
-function buildAlbedoTexture(height) {
+/**
+ * Weathering that lives in the albedo rather than the relief.
+ *
+ * A normal map is only visible where light arrives from a direction. The
+ * room's dark state is carried almost entirely by ambient, which is
+ * directionless by definition, so every gram of sculpted relief on these
+ * columns is invisible for the whole opening — the surface flattens to its
+ * base colour no matter how deeply it is modelled. Staining is the channel
+ * that survives that, because it changes the colour itself.
+ *
+ * Two components, both what actually marks standing stone: streaks pulled
+ * vertically by rain running down the shaft (hence the heavily anisotropic
+ * sampling — stretched along y, compressed across x), and broader blotches
+ * of discolouration where the surface has weathered unevenly.
+ */
+function stainAt(x, y, scale, amount) {
+  if (amount <= 0) return 1
+  const runoff = fbm(x * scale * 3.1 + 17.7, y * scale * 0.22 - 63.1, 4)
+  const blotch = fbm(x * scale * 0.55 - 29.3, y * scale * 0.55 + 8.8, 3)
+  const darken = runoff * 0.62 + blotch * 0.38
+  return 1 - amount * 0.5 * darken
+}
+
+function buildAlbedoTexture(height, stain) {
   const data = new Uint8Array(TEXTURE_SIZE * TEXTURE_SIZE * 4)
   // Aged, mottled gray-tan stone base, darkened/lightened by the height
   // field — brightened from the previous round's base/range specifically
@@ -101,9 +146,12 @@ function buildAlbedoTexture(height) {
   // shade down to a visibly dark line rather than the whole wall sitting
   // uniformly dim.
   const base = new THREE.Color('#948c7c')
+  const scale = 6 / TEXTURE_SIZE
   for (let i = 0; i < TEXTURE_SIZE * TEXTURE_SIZE; i += 1) {
     const h = height[i]
-    const shade = THREE.MathUtils.clamp(0.78 + h * 0.55, 0.32, 1.3)
+    const x = i % TEXTURE_SIZE
+    const y = (i - x) / TEXTURE_SIZE
+    const shade = THREE.MathUtils.clamp(0.78 + h * 0.55, 0.32, 1.3) * stainAt(x, y, scale, stain)
     data[i * 4] = THREE.MathUtils.clamp(base.r * 255 * shade, 0, 255)
     data[i * 4 + 1] = THREE.MathUtils.clamp(base.g * 255 * shade, 0, 255)
     data[i * 4 + 2] = THREE.MathUtils.clamp(base.b * 255 * shade, 0, 255)
@@ -182,9 +230,10 @@ function buildNormalTexture(height) {
  * the raking angle from the breach — visibly catches the mortar grooves
  * and block-face variation, per the request.
  */
-export function createStoneWallMaterial(tintColor, repeat = [6, 3], normalScale = [1.4, 1.4]) {
-  const height = buildHeightField()
-  const map = buildAlbedoTexture(height)
+export function createStoneWallMaterial(tintColor, repeat = [6, 3], normalScale = [1.4, 1.4], options = {}) {
+  const { bond = 'ashlar', erosion = 0, stain = 0 } = options
+  const height = buildHeightField(bond, erosion)
+  const map = buildAlbedoTexture(height, stain)
   const normalMap = buildNormalTexture(height)
   const roughnessMap = buildRoughnessTexture()
 

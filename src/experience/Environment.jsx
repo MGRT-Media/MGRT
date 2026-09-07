@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { useMemo } from 'react'
 import VolumetricLightingRig from './lighting/VolumetricLightingRig.jsx'
+import { buildColumnGeometry } from './architecture/columnGeometry.js'
 import { createStoneWallMaterial, stoneRepeatForSize } from './materials/stoneWallMaterial.js'
 import { buildGalleryShellGeometry, GALLERY_SHELL } from './architecture/galleryShellGeometry.js'
 
@@ -95,32 +96,11 @@ const pillarPositions = Array.from({ length: PILLAR_COUNT }, (_, i) => {
  */
 export const PILLAR_SHAFT_RADIUS = 0.26
 
-function useColumnGeometry(height) {
-  return useMemo(() => {
-    const baseRadius = 0.4
-    const shaftRadius = PILLAR_SHAFT_RADIUS
-    const capitalRadius = 0.36
-    const plinthHeight = 0.16
-    const capitalHeight = 0.22
-
-    const points = [
-      new THREE.Vector2(baseRadius, 0),
-      new THREE.Vector2(baseRadius, plinthHeight * 0.6),
-      new THREE.Vector2(shaftRadius, plinthHeight),
-      new THREE.Vector2(shaftRadius * 0.96, height - capitalHeight),
-      new THREE.Vector2(shaftRadius, height - capitalHeight),
-      new THREE.Vector2(capitalRadius, height - capitalHeight * 0.5),
-      new THREE.Vector2(capitalRadius, height),
-    ]
-
-    // 16 -> 48 segments: at 16 the shaft's own silhouette was a visible
-    // dodecagon against the light, which is exactly the "boxy, rigid,
-    // geometric" read this pass exists to remove. The cost is trivial —
-    // one shared geometry, twelve instances.
-    const geometry = new THREE.LatheGeometry(points, 48)
-    geometry.computeVertexNormals()
-    return geometry
-  }, [height])
+function useColumnGeometries(height) {
+  return useMemo(
+    () => Array.from({ length: PILLAR_COUNT }, (_, i) => buildColumnGeometry(height, i, PILLAR_SHAFT_RADIUS)),
+    [height],
+  )
 }
 
 /**
@@ -220,7 +200,7 @@ function columnYaw(index) {
 }
 
 export default function Environment() {
-  const columnGeometry = useColumnGeometry(HALL_HEIGHT)
+  const columnGeometries = useColumnGeometries(HALL_HEIGHT)
   const floorGeometry = useFloorGeometry()
   const shellGeometry = useMemo(() => buildGalleryShellGeometry(), [])
 
@@ -245,8 +225,28 @@ export default function Environment() {
   // [1, ...] around the shaft so no vertical seam runs up it, and the
   // vertical count is chosen so the bed joints land at believable drum
   // heights against a 9-unit column rather than at the wall's stone scale.
-  const columnMaterial = useMemo(
-    () => createStoneWallMaterial(SURFACE_TONE.column, [1, 2.6], [0.55, 0.55], 'drum'),
+  // Three column materials, not one. The drum bond and the erosion cut are
+  // real now — the previous `'drum'` argument was passed to a factory whose
+  // signature stopped at three parameters, so it was silently discarded and
+  // every column carried the walls' ashlar grid, complete with the vertical
+  // joints a turned drum cannot have.
+  //
+  // The variants differ only in tint and how hard the weathering bites. That
+  // is enough to stop twelve shafts sharing one set of stains, and it costs
+  // three 256px texture builds at mount. `normalScale` is up from 0.55: the
+  // chipping exists to be seen raking across the surface, and at the old
+  // value it flattened out.
+  //
+  // The vertical repeat is what sets drum height: at the previous 2.6 the
+  // bed joints fell ~3.5 units apart on a 9-unit shaft, which is not a
+  // course of masonry, it is three faint bands. Around 9 puts a joint every
+  // metre or so — the size a drum that two people have to move actually is.
+  const columnMaterials = useMemo(
+    () => [
+      createStoneWallMaterial(SURFACE_TONE.column, [1, 9], [1.6, 1.6], { bond: 'drum', erosion: 0.8, stain: 0.85 }),
+      createStoneWallMaterial('#b9b6ae', [1, 10.5], [1.8, 1.8], { bond: 'drum', erosion: 1.0, stain: 1.0 }),
+      createStoneWallMaterial('#cbc7bd', [1, 8], [1.45, 1.45], { bond: 'drum', erosion: 0.6, stain: 0.7 }),
+    ],
     [],
   )
 
@@ -285,8 +285,8 @@ export default function Environment() {
           key={`pillar-${i}`}
           position={[x, 0, z]}
           rotation={[0, columnYaw(i), 0]}
-          geometry={columnGeometry}
-          material={columnMaterial}
+          geometry={columnGeometries[i]}
+          material={columnMaterials[i % columnMaterials.length]}
           castShadow
           receiveShadow
         />
