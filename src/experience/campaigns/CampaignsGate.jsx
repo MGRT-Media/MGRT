@@ -1,5 +1,4 @@
-import { Suspense, lazy, useState } from 'react'
-import { useFrame } from '@react-three/fiber'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { scrollProgress } from '../timeline/ScrollTimelineProvider.jsx'
 import { CAMPAIGNS_SWAP_T } from '../timeline/filmActBeats.js'
 
@@ -41,12 +40,33 @@ const PRELOAD_LEAD = 0.14
 export default function CampaignsGate() {
   const [armed, setArmed] = useState(false)
 
-  // The one place React state is the right tool rather than the direct
-  // mutation technical-architecture.md §7 calls for: this is a single
-  // transition that has to add nodes to the tree, not a per-frame value.
-  useFrame(() => {
-    if (!armed && scrollProgress.value >= CAMPAIGNS_SWAP_T - PRELOAD_LEAD) setArmed(true)
-  })
+  /**
+   * Polled on `requestAnimationFrame`, deliberately not on R3F's `useFrame`.
+   *
+   * The `useFrame` version of this never ran. The component mounted — verified
+   * with a probe — but its callback was never invoked, so the gate sat closed
+   * however far the visitor scrolled. `DepthOfField` takes the render loop over
+   * at priority 1, and a subscription added afterwards on a component that
+   * renders nothing did not get driven.
+   *
+   * This does not need the render loop anyway. It is watching a scalar and
+   * flipping one piece of state once; rAF is the plainer tool and owes nothing
+   * to R3F's scheduling. It also stops as soon as it has armed, so it costs a
+   * comparison per frame for the first part of the sequence and nothing after.
+   */
+  useEffect(() => {
+    if (armed) return undefined
+    let handle = 0
+    const check = () => {
+      if (scrollProgress.value >= CAMPAIGNS_SWAP_T - PRELOAD_LEAD) {
+        setArmed(true)
+        return
+      }
+      handle = requestAnimationFrame(check)
+    }
+    handle = requestAnimationFrame(check)
+    return () => cancelAnimationFrame(handle)
+  }, [armed])
 
   if (!armed) return null
 

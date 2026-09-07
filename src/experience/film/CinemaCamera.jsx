@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
-import { createScreenVideoMaterial } from '../digital/screenVideoMaterial.js'
 import {
   MODEL_URLS,
   cloneNode,
@@ -11,9 +10,15 @@ import {
   useModel,
   useTreatedMaterials,
 } from '../models/modelAssets.js'
+import { createScreenVideoMaterial } from '../digital/screenVideoMaterial.js'
 import { scrollProgress } from '../timeline/ScrollTimelineProvider.jsx'
 import { FILM_FOCUS_T, FILM_IGNITE_RISE } from '../timeline/filmActBeats.js'
 import { BEAM_CENTER, YAW_DEGREES, CAMERA_STAND } from '../digital/plinthAnchor.js'
+
+// How far before the true end of the clip playback seeks back to the start —
+// browsers show a brief black frame at a real end-of-stream decode boundary,
+// so playback never reaches one.
+const LOOP_EARLY_SECONDS = 0.1
 
 // Phase 2: the cinema-camera object explicitly deferred from Phase 1D
 // (build-status.md §4's scope note). Stands on its own sleek 4-legged
@@ -22,15 +27,29 @@ import { BEAM_CENTER, YAW_DEGREES, CAMERA_STAND } from '../digital/plinthAnchor.
 // both built around the same beam center/yaw (`plinthAnchor.js`). Tilted
 // an additional `TILT_TOWARD_MONITOR_DEGREES` on top of that shared yaw
 // so the lens turns toward the Monitor rather than staying parallel to it.
+/**
+ * How far the camera turns off the shared beam yaw, back at its original 32.
+ *
+ * This angle is NOT just the object's rotation. `CAMERA_ANCHOR.lensForward` is
+ * built from it, and `cameraPath.js` derives the orbit alignment, the gate,
+ * the approach and the lens dive from that vector — so changing it moves the
+ * visitor's whole route through Act 1, not just which way the camera looks.
+ *
+ * That is why it is back at 32. Turning the camera further toward the Monitor
+ * (the geometry says a true 90 would point straight at it) swung the entire
+ * approach round with it, to the point where the wide shots looked at the
+ * Monitor's back. The path is the thing that must not move, so this stays.
+ *
+ * Pointing the camera further at the Monitor therefore needs the object's own
+ * yaw separated from the approach axis — see the note in the report. Until
+ * they are separate values, these two goals are the same number pulling in
+ * opposite directions.
+ */
 const TILT_TOWARD_MONITOR_DEGREES = 32
 
 // Exported so FullscreenButton.jsx's modal CTA (§4BN) can play the same
 // file directly, instead of hardcoding this path a second time.
 export const FILM_MEDIA_SRC = '/media/film/film-01-hero.mp4'
-
-// How far before the true end of the clip playback seeks back to the
-// start — see the seamless-loop comment in the useFrame below for why.
-const LOOP_EARLY_SECONDS = 0.1
 
 const BODY = { width: 0.42, height: 0.28, depth: 0.5, cornerRadius: 0.035 }
 const LENS = { frontRadius: 0.07, rearRadius: 0.09, length: 0.26 }
@@ -46,44 +65,43 @@ const VIEWFINDER = { width: 0.1, height: 0.08, depth: 0.12 }
 // `DepthOfField`'s focus target are both built on that — so swapping the asset
 // must not move them.
 const bodyCenterHeight = CAMERA_STAND.standHeight + BODY.height / 2
-const lensCenterZ = BODY.depth / 2 + LENS.length / 2
-const lensFrontZ = BODY.depth / 2 + LENS.length
-
-// The glass element's convex bulge, and the exact radius of a sphere that
-// would produce it (sagitta formula: R = (bulge² + radius²) / (2*bulge)),
-// used below both to build the dome profile and to size the barrel lip.
-const GLASS_RADIUS = LENS.frontRadius * 0.92
-const GLASS_BULGE = GLASS_RADIUS * 0.32
-const GLASS_SPHERE_RADIUS = (GLASS_BULGE ** 2 + GLASS_RADIUS ** 2) / (2 * GLASS_BULGE)
 
 /**
- * A smooth, convex optical lens element — a genuine spherical-cap dome,
- * not a flat disc — built as a `LatheGeometry` profile (matching this
- * codebase's existing convention for revolved forms, e.g. `Environment.jsx`
- * `useColumnGeometry`). `LatheGeometry` revolves around its local Y axis
- * by default; rather than bake a rotation into the geometry itself, the
- * mesh gets the same `rotation={[Math.PI / 2, 0, 0]}` already used on the
- * lens barrel cylinder below, so the profile's height parameter (0 at the
- * rim, `GLASS_BULGE` at the tip) becomes the final Z depth directly.
+ * Where this asset's front element actually is, once fitted.
+ *
+ * These are measured off the model after `useFittedCameraBody` has scaled and
+ * placed it — not chosen, and not the same thing as the `BODY`/`LENS` box
+ * above. That box described the procedural lens this replaced, which put its
+ * front face at z = 0.51; the real glass sits at z = 0.088 and 6cm lower.
+ *
+ * That gap is what broke the Act 1 dive. `cameraPath.js` builds
+ * `LENS_DIVE_POSITION` by walking `LENS_DIVE_DISTANCE` along the lens axis
+ * from this anchor, and the anchor was roughly 0.42 units in front of the
+ * camera — so the dive's endpoint landed past the object entirely and the beat
+ * framed an empty room. The path was never wrong; it was aimed at a point that
+ * no longer had a lens at it.
+ *
+ * Local to the object's own frame, so they compose with the shared beam yaw
+ * and this object's tilt exactly as the old constants did.
  */
-function buildLensGlassGeometry() {
-  // Raised from 12 — per explicit request that the lens read as
-  // genuinely curved glass rather than a faceted 3D primitive, and the
-  // lens-dive keyframe (cameraPath.js) brings this dome close enough to
-  // fill nearly the whole frame, where coarser profile resolution would
-  // be the first thing to show as flat-sided rather than smoothly round.
-  const segments = 24
-  const points = []
-  for (let i = 0; i <= segments; i += 1) {
-    const h = (i / segments) * GLASS_BULGE
-    const distFromCenter = h + (GLASS_SPHERE_RADIUS - GLASS_BULGE)
-    const radius = Math.sqrt(Math.max(GLASS_SPHERE_RADIUS ** 2 - distFromCenter ** 2, 0))
-    points.push(new THREE.Vector2(radius, h))
-  }
-  const geometry = new THREE.LatheGeometry(points, 32)
-  geometry.computeVertexNormals()
-  return geometry
-}
+const LENS_FRONT_LOCAL = { x: -0.028, y: 0.7813, z: 0.0879 }
+
+/**
+ * The image plane sits at the MOUTH of the lens assembly, not at the glass.
+ *
+ * The glass is recessed 0.16 behind the rig's frontmost geometry. Framing the
+ * dive on it meant the shot's endpoint was inside the hood: the body clipped
+ * the picture, the composition went off-axis, and the room showed past the
+ * edge of the housing. Bringing the image forward to the mouth means the dive
+ * can stop clear of the camera and still look straight down the barrel, which
+ * is what "looking into the lens" actually looks like.
+ *
+ * `z` stops short of the 0.25 front plane so the image reads as sitting inside
+ * the barrel rather than pasted onto its face.
+ */
+const LENS_IMAGE_LOCAL = { x: LENS_FRONT_LOCAL.x, y: LENS_FRONT_LOCAL.y, z: LENS_FRONT_LOCAL.z + 0.002 }
+const LENS_IMAGE_RADIUS = 0.0354
+
 
 // World-space anchor, combining the shared beam yaw with this object's
 // own plinth offset AND its extra tilt — all pure Y-axis rotations, so
@@ -99,12 +117,26 @@ const totalYawRadians = yawRadians + tiltRadians
 const localOffset = new THREE.Vector3(CAMERA_STAND.offsetX, 0, 0).applyAxisAngle(Y_AXIS, yawRadians)
 const worldOrigin = localOffset.add(new THREE.Vector3(BEAM_CENTER[0], 0, BEAM_CENTER[2]))
 const lensForward = new THREE.Vector3(0, 0, 1).applyAxisAngle(Y_AXIS, totalYawRadians)
-const bodyWorldOrigin = worldOrigin.clone().setY(bodyCenterHeight)
-const lensFrontFieldPosition = bodyWorldOrigin.clone().addScaledVector(lensForward, lensFrontZ)
+
+// The lens sits off the object's own centreline, so its lateral offset is
+// carried through the same rotation as its forward one — otherwise the dive
+// lines up with the camera's axis but not with its glass, and the shot ends
+// up looking slightly past the lens rather than into it.
+const lensLocalOffset = new THREE.Vector3(LENS_IMAGE_LOCAL.x, 0, LENS_IMAGE_LOCAL.z).applyAxisAngle(
+  Y_AXIS,
+  totalYawRadians,
+)
+const lensFrontFieldPosition = worldOrigin
+  .clone()
+  .add(lensLocalOffset)
+  .setY(LENS_IMAGE_LOCAL.y)
 
 export const CAMERA_ANCHOR = {
   bodyCenterHeight,
-  lensRadius: LENS.frontRadius,
+  // The IMAGE's radius, not the barrel's. `cameraPath.js` sizes the dive so
+  // this radius fills the frame, and the thing that should fill the frame is
+  // the film, not the metal around it.
+  lensRadius: LENS_IMAGE_RADIUS,
   lensFrontFieldPosition: lensFrontFieldPosition.toArray(),
   lensForward: lensForward.toArray(),
 }
@@ -142,41 +174,81 @@ const MODEL_LENS_NODES = ['Lenses_Metal_0', 'Lenses_BlackPlastic_0', 'Lenses_Mis
  * which only `film_camera` was wanted; it already carries its own `tripod`, so
  * the procedural quadpod this used to stand on is gone.
  *
- * Its own lens parts are stripped on import. The lens here is not decoration:
- * `buildLensGlassGeometry`'s dome is the surface `film-01-hero.mp4` plays on,
- * and `lensFrontZ` — derived from the `BODY`/`LENS` constants, not from any
- * model — is what `cameraPath.js`'s lens-dive keyframe and `DepthOfField`'s
- * focus target are both built on. Keeping the model's lens as well would put a
- * second barrel through that one and leave the video floating inside it.
+ * Its own lens parts are stripped on import, and the procedural lens that used
+ * to stand in front of them has since been removed too — the camera is the
+ * body asset alone. `lensFrontZ` survives as pure geometry-free maths: it is
+ * what `CAMERA_ANCHOR`, `cameraPath.js`'s Act 1 keyframe and `DepthOfField`'s
+ * focus target are derived from, so it now marks a point in space rather than
+ * an object.
  */
-const MODEL_RIG_NODE = 'film_camera'
-const MODEL_BODY_NODE = 'Film_camera'
+/**
+ * `1930s_movie_camera.glb`, optimised (18MB / 216k tris as downloaded, down to
+ * 784KB / 41k after simplification, texture reduction and meshopt).
+ *
+ * The asset arrives as loose parts rather than one group, so the rig is
+ * gathered by prefix — `Lenses_` included. The lens here is the model's own,
+ * not the procedural barrel-and-dome that used to be bolted to the front of a
+ * different asset; that construction is still gone.
+ *
+ * `lensFrontZ` still exists in the maths above and still has no geometry
+ * behind it: it is what `CAMERA_ANCHOR`, `cameraPath.js`'s Act 1 keyframe and
+ * `DepthOfField`'s focus target derive from, so it marks a point in space.
+ */
+const MODEL_BODY_PREFIXES = /^(Camera|Eyepiece|Handle|Lenses)_/
 const MODEL_STAND_NODE = 'tripod'
-const MODEL_LENS_PARTS = /^lens/i
 
 function useFittedCameraBody() {
   const gltf = useModel(MODEL_URLS.camera)
 
   return useMemo(() => {
     const group = new THREE.Group()
-    const body = cloneNode(gltf, MODEL_BODY_NODE)
-    if (!body) return group
-
-    // Drop the model's own optics — see MODEL_RIG_NODE.
-    body.traverse((o) => {
-      if (o.isMesh && MODEL_LENS_PARTS.test(o.name)) o.visible = false
+    const parts = []
+    gltf.scene.traverse((o) => {
+      if (o.isMesh && MODEL_BODY_PREFIXES.test(o.name)) parts.push(o)
     })
+    if (!parts.length) return group
 
     const inner = new THREE.Group()
-    inner.add(body)
+    parts.forEach((part) => {
+      part.updateWorldMatrix(true, false)
+      const clone = part.clone(true)
+      clone.matrix.copy(part.matrixWorld)
+      clone.matrix.decompose(clone.position, clone.quaternion, clone.scale)
+      clone.matrixAutoUpdate = true
+      inner.add(clone)
+    })
     group.add(inner)
 
-    // Measured, not guessed: the vector from the body's centre to its lens
-    // barrel runs along +X in this asset, so -90 degrees about Y turns that
-    // onto +Z, this scene's forward. (The previous asset faced -X and used
-    // +90; getting the sign wrong points the camera backwards, which reads as
-    // a plausible object facing the wrong way rather than as an obvious bug.)
-    group.rotation.y = -Math.PI / 2
+    /**
+     * The yaw is measured from the model, not chosen.
+     *
+     * Two hand-picked values were wrong before this: -90 put the camera side
+     * on, +90 put its back to the approach. Both were derived by rounding the
+     * optical axis to the nearest cardinal direction, and this asset's axis is
+     * not on one — it runs about 23 degrees off -X. Rounding it to -X and
+     * yawing by a quarter turn leaves exactly that error in the result, which
+     * is enough to turn a camera away from the shot built to fly into it.
+     *
+     * So the axis is taken from the geometry — eyepiece centroid to lens
+     * centroid, the camera's real optical line — and the yaw needed to bring
+     * it onto +Z is solved directly. Nothing to get wrong by eye, and it stays
+     * correct if the asset is ever swapped again.
+     */
+    const centroidOf = (pattern) => {
+      const box = new THREE.Box3()
+      inner.traverse((o) => {
+        if (o.isMesh && pattern.test(o.name)) box.expandByObject(o)
+      })
+      return box.isEmpty() ? null : box.getCenter(new THREE.Vector3())
+    }
+    const lensCentroid = centroidOf(/^Lenses_/)
+    const eyeCentroid = centroidOf(/^Eyepiece_/)
+    if (lensCentroid && eyeCentroid) {
+      const axis = lensCentroid.clone().sub(eyeCentroid)
+      // Angle of the optical axis from +Z in the ground plane; rotating by its
+      // negative brings the axis onto +Z.
+      group.rotation.y = -Math.atan2(axis.x, axis.z)
+    }
 
     const authored = measure(inner)
     // Post-rotation the optical axis is Z, so that extent is the body's
@@ -203,7 +275,7 @@ function useFittedCameraBody() {
  * modelled at, and the camera body stays exactly where it was.
  */
 function useFittedTripod() {
-  const gltf = useModel(MODEL_URLS.camera)
+  const gltf = useModel(MODEL_URLS.cameraStand)
 
   return useMemo(() => {
     const group = new THREE.Group()
@@ -231,93 +303,69 @@ function useFittedTripod() {
 function cameraBodyTreatment(material) {
   material.roughness = Math.max(material.roughness ?? 1, 0.45)
   material.metalness = Math.min(material.metalness ?? 0, 0.6)
-  // 0.4 -> 0.2 with the new rig. The FBX's materials are near-white studio
-  // plastic and metal, where the previous model's were already dark, so the
-  // same multiplier left the camera reading several stops above the room —
-  // the brightest object in frame again, which is the read every other surface
-  // in here has been tuned away from.
-  if (material.color) material.color.multiplyScalar(0.2)
+  // 0.2 -> 0.9. The old 0.2 was set for the previous rig, whose materials were
+  // near-white studio plastic and needed pulling down hard. This asset is
+  // ALREADY dark metal and black plastic — its own albedo does that job — so
+  // the two compounded and the camera collapsed into an unreadable mass: no
+  // barrel, no rings, no magazine.
+  //
+  // Near 1 is the right answer here rather than a middle value, because the
+  // camera stands outside the beam's pool and is lit almost entirely by the
+  // hemisphere fill. There is very little light on it to begin with, so
+  // darkening its albedo on top of that removes the object rather than
+  // subduing it. It still reads well below the architecture; that is the
+  // lighting doing the work, which is where it belongs.
+  if (material.color) material.color.multiplyScalar(0.9)
+}
+
+/**
+ * The stand, held well below the camera it carries.
+ *
+ * It shares the camera's model treatment in every respect except value: the
+ * tripod's own albedo is bright metal, and at the body's multiplier it read as
+ * the brightest object in the frame — a white armature with a dark camera
+ * perched on it, which inverts what the shot is about. This is a support, and
+ * supports recede.
+ */
+function cameraStandTreatment(material) {
+  cameraBodyTreatment(material)
+  if (material.color) material.color.multiplyScalar(0.18)
 }
 
 export default function CinemaCamera() {
   const cameraBody = useFittedCameraBody()
   const tripod = useFittedTripod()
   useTreatedMaterials(cameraBody, cameraBodyTreatment)
-  useTreatedMaterials(tripod, cameraBodyTreatment)
+  useTreatedMaterials(tripod, cameraStandTreatment)
   // Dark-state only — see `useDarkStateDimming`. Lighter-handed than the
   // monitor's: this body is already the darkest object in the opening
   // frame, so it needs its specular highlights pulled back off the
   // architecture rather than the whole form pushed toward black.
-  useDarkStateDimming(cameraBody, 0.7)
-  useDarkStateDimming(tripod, 0.7)
+  // 0.7 -> 0.85. The dark-state dimmer multiplies on top of the albedo above,
+  // so at ignition 0 the two together were taking this object to ~14% of its
+  // authored colour. Lighter-handed now that the base is no longer overcooked.
+  useDarkStateDimming(cameraBody, 0.9)
+  useDarkStateDimming(tripod, 0.9)
 
-  const bodyGeometry = useMemo(
-    () => new RoundedBoxGeometry(BODY.width, BODY.height, BODY.depth, 3, BODY.cornerRadius),
-    [],
-  )
-  const viewfinderGeometry = useMemo(
-    () => new RoundedBoxGeometry(VIEWFINDER.width, VIEWFINDER.height, VIEWFINDER.depth, 2, 0.015),
-    [],
-  )
-  const lensGeometry = useMemo(
-    // openEnded: true — a hollow tube, not a solid capped cylinder. Capped
-    // (the default) would give the barrel its own opaque front face,
-    // hiding the film-media screen mesh sitting just behind it.
-    () => new THREE.CylinderGeometry(LENS.frontRadius, LENS.rearRadius, LENS.length, 20, 1, true),
-    [],
-  )
-  const lensGlassGeometry = useMemo(() => buildLensGlassGeometry(), [])
-  // A slim torus at the barrel's front opening — the "curved lip" that
-  // frames the glass/video, per explicit request. An open-ended cylinder
-  // alone has no edge thickness of its own to read as a lip. Tube
-  // segments raised 12 -> 24 alongside the glass dome's own profile
-  // resolution above, for the same reason: this rim sits right at the
-  // frame's edge during the lens-dive close-up, where a coarser tube
-  // cross-section would be the first thing to read as faceted rather
-  // than a smoothly rounded edge.
-  const lensLipGeometry = useMemo(
-    () => new THREE.TorusGeometry(LENS.frontRadius, LENS.frontRadius * 0.09, 24, 32),
-    [],
-  )
-  // Lens screen — Act 1's Film media (film-01-hero.mp4), sharing the same
-  // dormant/ignite unlit material as the monitor screen. Ignition is a
-  // smooth "hill" centered on FILM_FOCUS_T, a pure function of
-  // scrollProgress read continuously in this object's own useFrame —
-  // matching how VolumetricLightingRig and Monitor.jsx both derive their
-  // own ignition directly from scrollProgress rather than an event, so
-  // the same progress value always produces the same ignite level
-  // regardless of scroll direction or speed.
+  // Act 1's film media, on the lens the model actually has. Same dormant/ignite
+  // material the monitor uses; ignition is a smooth hill centred on
+  // FILM_FOCUS_T, read from scrollProgress every frame so the same progress
+  // always gives the same level regardless of scroll direction or speed.
   const video = useMemo(() => {
     const el = document.createElement('video')
     el.src = FILM_MEDIA_SRC
     el.loop = true
     el.muted = true
     el.playsInline = true
-    // 'auto' -> 'none'. At 'auto' the browser began pulling this clip the
-    // instant the element was created, so ~60MB of placeholder video competed
-    // with the models and textures the opening frame actually needs. Nothing
-    // is fetched now until `play()` is called at the beat that uses it.
-    //
-    // Tradeoff, deliberately taken: the first frames have to buffer when that
-    // beat arrives instead of being ready in advance. The loop logic already
-    // guards on `video.duration`, which is NaN until metadata loads, so this
-    // is safe — but if the stall shows once the clips are final, 'metadata'
-    // (headers only, a few KB) or an explicit `load()` shortly before the beat
-    // are the two ways to buy the head start back without paying for it up front.
+    // Nothing is fetched until the beat that needs it — see Monitor.jsx for
+    // the same reasoning and the same tradeoff.
     el.preload = 'none'
     return el
   }, [])
   const videoTexture = useMemo(() => new THREE.VideoTexture(video), [video])
-  // targetAspect: 1 — the lens aperture reads as roughly circular/square,
-  // unlike the video's native ~16:9. The material's cover-fit UV remap
-  // (screenVideoMaterial.js) crops instead of stretching, eliminating the
-  // dead space/letterboxing a plain 0-1 UV mapping left inside the lens.
-  // lensEffect: true — adds the subtle barrel distortion + soft vignette
-  // that same module now supports, per explicit request that this
-  // specific preview "feel like a real cinema camera lens... not a hard
-  // geometric shape" (Monitor.jsx's own screen leaves this off, since a
-  // flat rectangular monitor shouldn't warp or vignette like glass).
   const lensScreenMaterial = useMemo(
+    // targetAspect 1: the aperture is round, so the image is cover-fitted into
+    // a square and the disc crops it.
     () => createScreenVideoMaterial(videoTexture, 1, { lensEffect: true }),
     [videoTexture],
   )
@@ -347,30 +395,12 @@ export default function CinemaCamera() {
     }
     wasPlaying.current = shouldPlay
 
-    // Seamless loop: per explicit report of a black flash on the native
-    // `loop` restart — browsers commonly show a brief empty/black frame
-    // right at end-of-stream while the decoder resets for the jump back
-    // to the start, since that reset is a real decode boundary, not
-    // just a UI transition. Checked every rendered frame (far finer-
-    // grained than the browser's own throttled `timeupdate` event, which
-    // can fire as infrequently as ~4x/second — too coarse to reliably
-    // land inside a sub-200ms window), so the seek back to `0` happens
-    // shortly BEFORE the true end, and playback never actually reaches
-    // end-of-stream in the first place. Seeking to `0` itself is cheap
-    // and clean (encoders start files on a keyframe, so there's no
-    // forward-decode needed), unlike the wrap-around the native `loop`
-    // attribute performs. `el.loop = true` is left in place as a harmless
-    // fallback in case this early seek is ever missed on a slow frame.
+    // Seek back shortly before the true end: a real end-of-stream is a decode
+    // boundary and browsers commonly show a black frame across it.
     if (shouldPlay && video.duration && video.currentTime >= video.duration - LOOP_EARLY_SECONDS) {
       video.currentTime = 0
     }
   })
-
-  // Body/stand: dark, moderately metallic — a rubberized-metal cinema
-  // camera finish, distinct from the monitor's matte painted casing
-  // (Monitor.jsx's casingProps, metalness: 0.12) so the two objects read
-  // as different material families rather than palette-matched twins.
-  const bodyProps = { color: '#1c1c1e', roughness: 0.55, metalness: 0.4 }
 
   return (
     <group position={BEAM_CENTER} rotation={[0, yawRadians, 0]}>
@@ -390,81 +420,31 @@ export default function CinemaCamera() {
             from. */}
         <primitive object={cameraBody} />
 
-        {/* Lens barrel — tapers slightly toward the front element */}
+        {/* Film image, on the model's own front element. Position and radius
+            come from the same measured constants `CAMERA_ANCHOR` is built
+            from, so what the dive frames and what is actually drawn cannot
+            drift apart. */}
         <mesh
-          position={[0, bodyCenterHeight, lensCenterZ]}
-          rotation={[Math.PI / 2, 0, 0]}
-          geometry={lensGeometry}
-          castShadow
-          receiveShadow
-        >
-          <meshStandardMaterial color="#0e0e0f" roughness={0.45} metalness={0.6} />
-        </mesh>
-
-        {/*
-          Front glass element — a genuine convex dome (buildLensGlassGeometry),
-          not a flat pane, for a real optical-lens read. `clearcoat` adds a
-          second, sharper specular layer on top of the base reflection —
-          the "anti-reflective coating" look real lens elements have — and
-          low roughness + the dome's curvature together give the rim its
-          own brightening at grazing angles (a "subtle rim highlight")
-          without needing a dedicated fresnel shader. `transmission` still
-          lets the video screen behind it read through with a soft depth,
-          per explicit request for "subtle refractions."
-        */}
-        <mesh
-          position={[0, bodyCenterHeight, lensFrontZ + 0.002]}
-          geometry={lensGlassGeometry}
-          rotation={[Math.PI / 2, 0, 0]}
+          position={[LENS_IMAGE_LOCAL.x, LENS_IMAGE_LOCAL.y, LENS_IMAGE_LOCAL.z]}
           castShadow={false}
           receiveShadow={false}
         >
-          <meshPhysicalMaterial
-            color="#050506"
-            roughness={0.04}
-            metalness={0}
-            transmission={0.85}
-            thickness={0.02}
-            ior={1.5}
-            clearcoat={1}
-            clearcoatRoughness={0.05}
-            transparent
-            opacity={0.22}
-          />
-        </mesh>
-
-        {/* Barrel lip — the curved rim framing the glass, per explicit request */}
-        <mesh
-          position={[0, bodyCenterHeight, lensFrontZ]}
-          geometry={lensLipGeometry}
-          castShadow
-          receiveShadow
-        >
-          <meshStandardMaterial color="#0a0a0b" roughness={0.35} metalness={0.7} />
-        </mesh>
-
-        {/*
-          Film-media screen, just behind the glass — ignites around the Act 1
-          lens-dive beat. Previously sat 0.02 units back inside the tapered
-          barrel at 0.94x the FRONT opening's radius — that fraction was
-          only ever measured against the opening at z: lensFrontZ, but the
-          screen itself sat recessed where the (tapered, frontRadius ->
-          rearRadius) barrel tube is measurably wider, leaving a real,
-          visible ring gap between the video's edge and the lip's inner
-          edge, per explicit follow-up report. Fixed by moving the screen
-          flush to the same z the lip itself sits at (a hair behind it,
-          `- 0.001`, purely to avoid z-fighting with the lip's own
-          geometry) and sizing it to `GLASS_RADIUS` — the exact radius the
-          glass dome in front of it already uses, which was itself derived
-          to nestle just inside the lip's inner edge (`buildLensGlassGeometry`'s
-          own comment) — so the video now touches the same boundary the
-          glass already touches, with no gap and no separate constant to
-          keep in sync.
-        */}
-        <mesh position={[0, bodyCenterHeight, lensFrontZ - 0.001]} castShadow={false} receiveShadow={false}>
-          <circleGeometry args={[GLASS_RADIUS, 32]} />
+          <circleGeometry args={[LENS_IMAGE_RADIUS, 48]} />
           <primitive object={lensScreenMaterial} attach="material" />
         </mesh>
+
+        {/* The camera is the body asset alone, per explicit request:
+            the procedural barrel, glass dome, lip and the film-media screen
+            that sat behind them are all gone, and the model's own optics stay
+            hidden as before.
+
+            `LENS` and `lensFrontZ` above are deliberately KEPT even though
+            nothing is drawn from them any more. They are what `CAMERA_ANCHOR`
+            is built from, and `cameraPath.js`'s Act 1 keyframe and
+            `DepthOfField`'s focus target are both built on that — so they now
+            describe a point in space the camera still flies to, rather than a
+            piece of geometry. Deleting them would move the camera path, which
+            this change was explicitly not to touch. */}
       </group>
     </group>
   )

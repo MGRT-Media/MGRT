@@ -91,8 +91,24 @@ export const MONITOR_ANCHOR = {
  * leaves the rest, rather than dropping the whole set into a room that
  * needs a single monitor on a plinth.
  */
-const MODEL_BODY_NODE = 'PC2_Material_0'
-const MODEL_SCREEN_NODE = 'PC2_Display_0'
+/**
+ * `old_computer_monitor_and_tv_model.glb`, optimised (533KB as downloaded to
+ * 160KB, 3.9k triangles).
+ *
+ * The one thing that made this the right asset: it has a real `Display` mesh,
+ * separate from the housing. The terminal it replaces did not, which forced
+ * the fit to be derived from a bounding box and left no reliable way to know
+ * the video plane was landing on the bezel rather than near it. With a named
+ * panel, the housing can once again be aligned so that panel sits exactly on
+ * `screenFrontZ` at `screenCenterHeight` — the constants `MONITOR_ANCHOR`,
+ * `cameraPath.js` and `DepthOfField` are all built from.
+ *
+ * A 107x107-unit Sketchfab ground plane was removed from the file; it was the
+ * only reason the asset's bounds were enormous, and it would have rendered a
+ * second floor straight through the room's own.
+ */
+const MODEL_SCREEN_NODE = 'Display_Display_0'
+const MODEL_EXCLUDE = /^(Display_Display_0|Plane_Ground_0)$/
 
 /**
  * Fits the downloaded housing to the screen anchor this project already
@@ -119,10 +135,28 @@ function useFittedMonitor() {
 
   return useMemo(() => {
     const holder = new THREE.Group()
-    const body = cloneNode(gltf, MODEL_BODY_NODE)
-    const screen = cloneNode(gltf, MODEL_SCREEN_NODE)
-    if (!body || !screen) return { holder, screenWidth, baseY: MONITOR_PLINTH.height }
-    holder.add(body, screen)
+    const parts = []
+    gltf.scene.traverse((o) => {
+      if (o.isMesh && !MODEL_EXCLUDE.test(o.name)) parts.push(o)
+      // The panel is kept and used for alignment, then hidden below — the
+      // video goes on this project's own plane, whose UVs are a clean 0..1
+      // space rather than whatever the author gave the panel.
+      if (o.isMesh && o.name === MODEL_SCREEN_NODE) parts.push(o)
+    })
+    if (!parts.length) return { holder, screenWidth, baseY: MONITOR_PLINTH.height }
+
+    const shell = new THREE.Group()
+    parts.forEach((part) => {
+      part.updateWorldMatrix(true, false)
+      const clone = part.clone(true)
+      clone.matrix.copy(part.matrixWorld)
+      clone.matrix.decompose(clone.position, clone.quaternion, clone.scale)
+      clone.matrixAutoUpdate = true
+      shell.add(clone)
+    })
+    holder.add(shell)
+    const screen = shell.getObjectByName(MODEL_SCREEN_NODE)
+    if (!screen) return { holder, screenWidth, baseY: MONITOR_PLINTH.height }
 
     // Turned to face +Z, this project's screen-forward convention.
     //
@@ -134,7 +168,10 @@ function useFittedMonitor() {
     // INSIDE the housing — the monitor rendered perfectly and could not be
     // seen, because the shot was behind its own front faces. Turned round,
     // the housing reaches 0.48 toward the camera and clears it.
-    holder.rotation.y = Math.PI
+    // Measured, not assumed: the display's centre sits at +X of the housing's,
+    // so the panel faces +X. -90 degrees about Y turns that onto +Z, this
+    // project's screen-forward convention.
+    holder.rotation.y = -Math.PI / 2
 
     const authored = measure(screen)
     holder.scale.setScalar(screenHeight / authored.size.y)
@@ -147,17 +184,52 @@ function useFittedMonitor() {
     holder.position.z += screenFrontZ - scaled.box.max.z
     holder.updateWorldMatrix(true, true)
 
-    // The GLB's own screen panel is kept in the tree but hidden. The video
-    // goes on this project's own plane instead of on that panel: the
-    // panel's UVs are whatever the author gave it, while
-    // `screenVideoMaterial.js` does its cover-fit in a clean 0..1 space.
-    screen.visible = false
+    /**
+     * The panel is a curved CRT face — 446 triangles bulging 0.28 units along
+     * its depth axis — and it ships with NO texture coordinates. That
+     * combination is why the previous asset's video went on a separate flat
+     * plane, and exactly why the result looked wrong here: a flat rectangle
+     * hung in front of a bulging glass face cannot follow it, so the image
+     * stood proud at the centre and cut short at the edges.
+     *
+     * The projection is computed in WORLD space, not in the geometry's own.
+     * Projecting on raw vertex positions looked correct on paper and came out
+     * rotated 90 degrees, because the `Display` node carries its own rotation:
+     * geometry-space Y and Z are not the screen's vertical and horizontal
+     * until that transform is applied. Reading each vertex through
+     * `matrixWorld` removes the guesswork — after the fit, world X IS the
+     * screen's horizontal and world Y its vertical, whatever the author did
+     * upstream.
+     *
+     * The geometry is cloned first: `useLoader` caches the GLB and hands every
+     * caller the same buffers, so writing UVs into the original would mutate a
+     * shared asset.
+     */
+    screen.geometry = screen.geometry.clone()
+    const geometry = screen.geometry
+    const position = geometry.attributes.position
+    const world = new THREE.Vector3()
+    const worldBox = new THREE.Box3()
+    for (let i = 0; i < position.count; i += 1) {
+      world.fromBufferAttribute(position, i).applyMatrix4(screen.matrixWorld)
+      worldBox.expandByPoint(world)
+    }
+    const spanX = worldBox.max.x - worldBox.min.x
+    const spanY = worldBox.max.y - worldBox.min.y
+    const uv = new Float32Array(position.count * 2)
+    for (let i = 0; i < position.count; i += 1) {
+      world.fromBufferAttribute(position, i).applyMatrix4(screen.matrixWorld)
+      uv[i * 2] = (world.x - worldBox.min.x) / spanX
+      uv[i * 2 + 1] = (world.y - worldBox.min.y) / spanY
+    }
+    geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2))
 
     const fitted = measure(screen)
     return {
       holder,
+      screen,
       screenWidth: fitted.size.x,
-      baseY: measure(body).box.min.y,
+      baseY: measure(shell).box.min.y,
     }
   }, [gltf])
 }
@@ -242,7 +314,7 @@ export default function Monitor() {
   const screenMaterial = useMemo(
     () =>
       createScreenVideoMaterial(videoTexture, screenWidth / screenHeight, {
-        coverTransmittance: 0.76,
+        coverTransmittance: 1,
       }),
     [videoTexture],
   )
@@ -311,6 +383,12 @@ export default function Monitor() {
   })
 
   const model = useFittedMonitor()
+
+  // The video goes on the model's own curved panel rather than on a plane of
+  // this project's making — see the UV generation in `useFittedMonitor`.
+  useEffect(() => {
+    if (model.screen) model.screen.material = screenMaterial
+  }, [model.screen, screenMaterial])
   const pedestal = useStonePedestal(model.baseY, MONITOR_PLINTH.width)
 
   // The downloaded housing and the stone both arrive lit for someone
@@ -339,36 +417,12 @@ export default function Monitor() {
             anchor so `cameraPath.js` still frames what it was authored to. */}
         <primitive object={model.holder} />
 
-        {/*
-          Screen surface — unchanged in every way that matters. Same
-          `screenVideoMaterial`, same scroll-driven `uIgnite` ramp, same
-          video element and seamless-loop handling; only its width now
-          comes from the model's own panel so the image sits in the recess
-          instead of overhanging it. Height is still `screenHeight`, which
-          is the dimension the camera path derives from.
-        */}
-        <mesh position={[0, screenCenterHeight, screenFrontZ]} castShadow={false} receiveShadow={false}>
-          <planeGeometry args={[model.screenWidth, screenHeight]} />
-          <primitive object={screenMaterial} attach="material" />
-        </mesh>
-
-        {/* Glass — a thin, subtly reflective pane over the screen. Sized
-            from the model's panel for the same reason as the screen above.
-            Kept, not dropped: `screenVideoMaterial`'s `coverTransmittance`
-            is calibrated against this pane's 0.25 opacity, and removing it
-            would silently invalidate that. */}
-        <mesh position={[0, screenCenterHeight, glassFrontZ]} castShadow={false} receiveShadow={false}>
-          <planeGeometry args={[model.screenWidth + 0.02, screenHeight + 0.02]} />
-          <meshPhysicalMaterial
-            color="#0a0a0c"
-            roughness={0.08}
-            metalness={0}
-            transmission={0.85}
-            thickness={0.02}
-            transparent
-            opacity={0.25}
-          />
-        </mesh>
+        {/* No separate screen plane and no glass pane. Both were flat, and
+            this panel is curved — a flat quad in front of it is the artefact
+            that made the picture read as pasted on rather than displayed. The
+            video is on the panel itself, and the CRT's own front face is the
+            glass. `coverTransmittance` is 1 below for the same reason: there
+            is no longer a pane in front of the image to attenuate it. */}
       </group>
     </group>
   )

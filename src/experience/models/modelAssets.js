@@ -21,8 +21,11 @@ import { IGNITE_START, IGNITE_END } from '../lighting/VolumetricLightingRig.jsx'
  * FBX and a second loader.
  */
 export const MODEL_URLS = {
-  camera: '/models/camera/studio-camera.glb',
-  monitor: '/models/monitor/digital-monitor.glb',
+  camera: '/models/camera/movie-camera.glb',
+  // The camera model has no support of its own; the stand is the tripod
+  // extracted out of the previous studio asset.
+  cameraStand: '/models/camera/camera-stand.glb',
+  monitor: '/models/monitor/crt-monitor.glb',
   pedestal: '/models/pedestal/digital-stone.glb',
   billboard: '/models/billboard/campaign-billboard.glb',
   vehicles: '/models/vehicles/vehicles.glb',
@@ -54,10 +57,15 @@ export function useModel(url) {
   return useLoader(GLTFLoader, url, configureLoader)
 }
 
-/** Warms the cache so a model is not first requested at the moment it is needed. */
-export function preloadModels() {
-  Object.values(MODEL_URLS).forEach((url) => useLoader.preload(GLTFLoader, url, configureLoader))
-}
+/**
+ * There is deliberately no bulk preloader here.
+ *
+ * A `preloadModels()` that walked `MODEL_URLS` used to live at this spot. It
+ * was never called, but it was a loaded gun: every model in one list, Act 3's
+ * included, one call away from being fetched on startup. Loading is driven by
+ * where the visitor actually is — components request their own model when they
+ * mount, and `CampaignsGate` decides when Act 3's mount at all.
+ */
 
 /**
  * Pulls one named node out of a loaded GLB and returns a clone of it.

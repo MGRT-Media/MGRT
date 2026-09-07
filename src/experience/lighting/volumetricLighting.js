@@ -133,34 +133,14 @@ export const lightingParams = {
     darkIntensity: 2.6,
   },
 
-  /**
-   * The floor bounce, as an actual light rather than an ambient guess.
-   *
-   * Where the beam lands it puts a bright patch of lit stone on the floor, and
-   * a patch of lit stone is itself a light source — it throws warm, soft,
-   * short-range illumination up onto everything around it. Without this the
-   * room reads as `direct light -> darkness`, with nothing between the pool
-   * and the surrounding architecture.
-   *
-   * Deliberately a point light with `decay: 2` and a short `distance`, not a
-   * lift in ambient: bounce obeys the same inverse-square law as any other
-   * light, so it must fall away from the pool. That falloff is the entire
-   * point — it is what makes the columns nearest the beam pick up warmth on
-   * their lower halves while the far side of the room does not.
-   *
-   * `darkIntensity` is 0, and that is physical rather than a taste call: at
-   * ignition 0 there is no direct light landing on the floor, so there is
-   * nothing for the floor to bounce. It rises with the spot, in step.
-   */
-  bounce: {
-    color: '#ffcf9e',
-    intensity: 14,
-    darkIntensity: 0,
-    // Just above the floor pool, at the beam's own target.
-    height: 0.45,
-    distance: 13,
-    decay: 2,
-  },
+  // NOTE: a warm `bounce` point light used to sit here, at the floor pool
+  // between the camera and the monitor, standing in for light reflecting off
+  // the lit patch of floor. Removed per explicit request — that space is to
+  // read as naturally dark, lit only by the room's intended sources. The
+  // consequence is deliberate: there is no indirect/bounced illumination in
+  // this scene at all now, so `direct light -> stone -> surrounding
+  // architecture` falls back to `direct light -> darkness`, with the
+  // hemisphere term below as the only fill.
 
   shadow: {
     // 2048 -> 4096. The spot's cone widened this round, and a shadow map
@@ -510,7 +490,6 @@ export function createVolumetricLighting(params = lightingParams) {
   let keyLight = null
   let fillLight = null
   let hemisphereLight = null
-  let bounceLight = null
   let beam = null
   let floorPool = null
   let dust = null
@@ -558,19 +537,6 @@ export function createVolumetricLighting(params = lightingParams) {
       params.hemisphere.intensity,
     )
 
-    // Sits just above the floor pool, at the beam's own target — see
-    // `params.bounce`. Casts no shadow: a bounce is a broad area source, and
-    // giving it a shadow map would carve hard second shadows into a term whose
-    // whole job is to be soft.
-    bounceLight = new THREE.PointLight(
-      params.bounce.color,
-      params.bounce.intensity,
-      params.bounce.distance,
-      params.bounce.decay,
-    )
-    bounceLight.position.set(target.x, params.bounce.height, target.z)
-    bounceLight.castShadow = false
-
     beam = buildBeam(params, origin, target)
     floorPool = buildFloorPool(params, origin, target)
     dust = buildDust(params, origin, target)
@@ -581,7 +547,6 @@ export function createVolumetricLighting(params = lightingParams) {
       keyLight,
       fillLight,
       hemisphereLight,
-      bounceLight,
       beam,
       floorPool,
       dust,
@@ -616,9 +581,6 @@ export function createVolumetricLighting(params = lightingParams) {
         factor,
       )
     }
-    // Bounce tracks the direct light exactly, because it IS the direct light,
-    // one reflection later — see `params.bounce`.
-    if (bounceLight) bounceLight.intensity = params.bounce.intensity * factor
     if (beam) beam.material.uniforms.uOpacity.value = params.beam.opacity * factor
     if (dust) dust.material.uniforms.uOpacity.value = params.dust.opacity * factor
     if (floorPool) floorPool.material.uniforms.uOpacity.value = params.floorPool.opacity * factor
