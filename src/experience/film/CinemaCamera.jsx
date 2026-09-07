@@ -36,49 +36,18 @@ const BODY = { width: 0.42, height: 0.28, depth: 0.5, cornerRadius: 0.035 }
 const LENS = { frontRadius: 0.07, rearRadius: 0.09, length: 0.26 }
 const VIEWFINDER = { width: 0.1, height: 0.08, depth: 0.12 }
 
-// A sleek 4-legged pod, not a stone plinth — legs run straight from the
-// floor to a small top hub, splayed outward at `spreadRadius`. All four
-// legs are geometrically identical by symmetry (same length, same angle
-// from vertical), so a single shared geometry is reused across all four
-// mesh instances below, just at different positions/rotations.
-const QUADPOD = {
-  hubRadius: 0.1,
-  hubHeight: 0.03,
-  legRadius: 0.016,
-  legFootRadius: 0.026,
-  spreadRadius: 0.24,
-}
+// The camera rig arrives with its own tripod (see MODEL_STAND_NODE), so the
+// procedural quadpod that used to stand in for it — its geometry, its leg
+// transform solver and its own material — is gone with it. `CAMERA_STAND.standHeight`
+// survives as the contract the model's tripod is fitted to.
 
+// Derived from the constants above, never from the model. `CAMERA_ANCHOR`
+// below is built on these, and `cameraPath.js`'s Act 1 lens-dive keyframe and
+// `DepthOfField`'s focus target are both built on that — so swapping the asset
+// must not move them.
 const bodyCenterHeight = CAMERA_STAND.standHeight + BODY.height / 2
 const lensCenterZ = BODY.depth / 2 + LENS.length / 2
 const lensFrontZ = BODY.depth / 2 + LENS.length
-
-/**
- * One leg's position (its midpoint) and rotation (aligning the default
- * Y-axis cylinder with the actual foot->hub direction), computed once via
- * a quaternion rather than the small hand-tuned lean angles used in this
- * object's very first tripod draft — exact regardless of how
- * `spreadRadius`/`standHeight` are tuned later.
- */
-function computeLegTransform(footX, footZ, hubTopY) {
-  const foot = new THREE.Vector3(footX, 0, footZ)
-  const hubEdge = new THREE.Vector3(0, hubTopY, 0)
-  const direction = new THREE.Vector3().subVectors(hubEdge, foot)
-  const length = direction.length()
-  const midpoint = new THREE.Vector3().addVectors(foot, hubEdge).multiplyScalar(0.5)
-  const quaternion = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize())
-  const euler = new THREE.Euler().setFromQuaternion(quaternion)
-  return { position: midpoint.toArray(), rotation: [euler.x, euler.y, euler.z] }
-}
-
-const QUADPOD_HUB_TOP_Y = CAMERA_STAND.standHeight - QUADPOD.hubHeight / 2
-const QUADPOD_LEG_LENGTH = Math.hypot(QUADPOD.spreadRadius, QUADPOD_HUB_TOP_Y)
-const QUADPOD_LEGS = [45, 135, 225, 315].map((deg) => {
-  const rad = THREE.MathUtils.degToRad(deg)
-  const footX = Math.sin(rad) * QUADPOD.spreadRadius
-  const footZ = Math.cos(rad) * QUADPOD.spreadRadius
-  return computeLegTransform(footX, footZ, QUADPOD_HUB_TOP_Y)
-})
 
 // The glass element's convex bulge, and the exact radius of a sphere that
 // would produce it (sagitta formula: R = (bulge² + radius²) / (2*bulge)),
@@ -167,33 +136,47 @@ export const CAMERA_ANCHOR = {
  * the front face the way it did.
  */
 const MODEL_LENS_NODES = ['Lenses_Metal_0', 'Lenses_BlackPlastic_0', 'Lenses_Misc_0']
-const MODEL_BODY_NODES = [
-  'Camera_Metal_0',
-  'Camera_BlackPlastic_0',
-  'Camera_Misc_0',
-  'Eyepiece_BlackPlastic_0',
-  'Eyepiece_Metal_0',
-  'Eyepiece_Misc_0',
-  'Handle_Metal_0',
-  'Handle_BlackPlastic_0',
-  'Handle_Misc_0',
-]
+/**
+ * `studio_objs.fbx`'s camera rig, converted to GLB (see build notes). The FBX
+ * held a whole studio — 241 meshes, 96k triangles, lights and a sky dome — of
+ * which only `film_camera` was wanted; it already carries its own `tripod`, so
+ * the procedural quadpod this used to stand on is gone.
+ *
+ * Its own lens parts are stripped on import. The lens here is not decoration:
+ * `buildLensGlassGeometry`'s dome is the surface `film-01-hero.mp4` plays on,
+ * and `lensFrontZ` — derived from the `BODY`/`LENS` constants, not from any
+ * model — is what `cameraPath.js`'s lens-dive keyframe and `DepthOfField`'s
+ * focus target are both built on. Keeping the model's lens as well would put a
+ * second barrel through that one and leave the video floating inside it.
+ */
+const MODEL_RIG_NODE = 'film_camera'
+const MODEL_BODY_NODE = 'Film_camera'
+const MODEL_STAND_NODE = 'tripod'
+const MODEL_LENS_PARTS = /^lens/i
 
 function useFittedCameraBody() {
   const gltf = useModel(MODEL_URLS.camera)
 
   return useMemo(() => {
     const group = new THREE.Group()
-    const parts = MODEL_BODY_NODES.map((name) => cloneNode(gltf, name)).filter(Boolean)
-    if (!parts.length) return group
+    const body = cloneNode(gltf, MODEL_BODY_NODE)
+    if (!body) return group
+
+    // Drop the model's own optics — see MODEL_RIG_NODE.
+    body.traverse((o) => {
+      if (o.isMesh && MODEL_LENS_PARTS.test(o.name)) o.visible = false
+    })
 
     const inner = new THREE.Group()
-    inner.add(...parts)
+    inner.add(body)
     group.add(inner)
 
-    // Authored looking down -X; +90 degrees about Y puts that on +Z, this
-    // scene's forward.
-    group.rotation.y = Math.PI / 2
+    // Measured, not guessed: the vector from the body's centre to its lens
+    // barrel runs along +X in this asset, so -90 degrees about Y turns that
+    // onto +Z, this scene's forward. (The previous asset faced -X and used
+    // +90; getting the sign wrong points the camera backwards, which reads as
+    // a plausible object facing the wrong way rather than as an obvious bug.)
+    group.rotation.y = -Math.PI / 2
 
     const authored = measure(inner)
     // Post-rotation the optical axis is Z, so that extent is the body's
@@ -210,30 +193,64 @@ function useFittedCameraBody() {
   }, [gltf])
 }
 
+/**
+ * The rig's own tripod, fitted to `CAMERA_STAND.standHeight`.
+ *
+ * That height is not cosmetic: `bodyCenterHeight` derives from it, and
+ * `CAMERA_ANCHOR` — and therefore the Act 1 lens-dive keyframe and the depth
+ * of field's focus target — derive from that. So the stand is scaled to the
+ * height the rest of the system already expects rather than the height it was
+ * modelled at, and the camera body stays exactly where it was.
+ */
+function useFittedTripod() {
+  const gltf = useModel(MODEL_URLS.camera)
+
+  return useMemo(() => {
+    const group = new THREE.Group()
+    const stand = cloneNode(gltf, MODEL_STAND_NODE)
+    if (!stand) return group
+
+    const inner = new THREE.Group()
+    inner.add(stand)
+    group.add(inner)
+    group.rotation.y = -Math.PI / 2
+
+    const authored = measure(inner)
+    inner.scale.setScalar(CAMERA_STAND.standHeight / authored.size.y)
+
+    const scaled = measure(inner)
+    group.position.x -= scaled.center.x
+    group.position.z -= scaled.center.z
+    // Feet on the floor, head at the height the body is already placed at.
+    group.position.y -= scaled.box.min.y
+    return group
+  }, [gltf])
+}
+
 /** Dark, lightly metallic body — the finish the procedural camera had. */
 function cameraBodyTreatment(material) {
   material.roughness = Math.max(material.roughness ?? 1, 0.45)
   material.metalness = Math.min(material.metalness ?? 0, 0.6)
-  if (material.color) material.color.multiplyScalar(0.4)
+  // 0.4 -> 0.2 with the new rig. The FBX's materials are near-white studio
+  // plastic and metal, where the previous model's were already dark, so the
+  // same multiplier left the camera reading several stops above the room —
+  // the brightest object in frame again, which is the read every other surface
+  // in here has been tuned away from.
+  if (material.color) material.color.multiplyScalar(0.2)
 }
 
 export default function CinemaCamera() {
   const cameraBody = useFittedCameraBody()
+  const tripod = useFittedTripod()
   useTreatedMaterials(cameraBody, cameraBodyTreatment)
+  useTreatedMaterials(tripod, cameraBodyTreatment)
   // Dark-state only — see `useDarkStateDimming`. Lighter-handed than the
   // monitor's: this body is already the darkest object in the opening
   // frame, so it needs its specular highlights pulled back off the
   // architecture rather than the whole form pushed toward black.
   useDarkStateDimming(cameraBody, 0.7)
+  useDarkStateDimming(tripod, 0.7)
 
-  const hubGeometry = useMemo(
-    () => new THREE.CylinderGeometry(QUADPOD.hubRadius, QUADPOD.hubRadius, QUADPOD.hubHeight, 20),
-    [],
-  )
-  const legGeometry = useMemo(
-    () => new THREE.CylinderGeometry(QUADPOD.legRadius, QUADPOD.legFootRadius, QUADPOD_LEG_LENGTH, 10),
-    [],
-  )
   const bodyGeometry = useMemo(
     () => new RoundedBoxGeometry(BODY.width, BODY.height, BODY.depth, 3, BODY.cornerRadius),
     [],
@@ -276,7 +293,18 @@ export default function CinemaCamera() {
     el.loop = true
     el.muted = true
     el.playsInline = true
-    el.preload = 'auto'
+    // 'auto' -> 'none'. At 'auto' the browser began pulling this clip the
+    // instant the element was created, so ~60MB of placeholder video competed
+    // with the models and textures the opening frame actually needs. Nothing
+    // is fetched now until `play()` is called at the beat that uses it.
+    //
+    // Tradeoff, deliberately taken: the first frames have to buffer when that
+    // beat arrives instead of being ready in advance. The loop logic already
+    // guards on `video.duration`, which is NaN until metadata loads, so this
+    // is safe — but if the stall shows once the clips are final, 'metadata'
+    // (headers only, a few KB) or an explicit `load()` shortly before the beat
+    // are the two ways to buy the head start back without paying for it up front.
+    el.preload = 'none'
     return el
   }, [])
   const videoTexture = useMemo(() => new THREE.VideoTexture(video), [video])
@@ -343,27 +371,14 @@ export default function CinemaCamera() {
   // (Monitor.jsx's casingProps, metalness: 0.12) so the two objects read
   // as different material families rather than palette-matched twins.
   const bodyProps = { color: '#1c1c1e', roughness: 0.55, metalness: 0.4 }
-  const standProps = { color: '#161616', roughness: 0.6, metalness: 0.5 }
 
   return (
     <group position={BEAM_CENTER} rotation={[0, yawRadians, 0]}>
       <group position={[CAMERA_STAND.offsetX, 0, 0]} rotation={[0, tiltRadians, 0]}>
-        {/* Sleek 4-legged quadrupod — replaces the stone plinth, per explicit request */}
-        {QUADPOD_LEGS.map((leg, i) => (
-          <mesh
-            key={i}
-            position={leg.position}
-            rotation={leg.rotation}
-            geometry={legGeometry}
-            castShadow
-            receiveShadow
-          >
-            <meshStandardMaterial {...standProps} />
-          </mesh>
-        ))}
-        <mesh position={[0, QUADPOD_HUB_TOP_Y, 0]} geometry={hubGeometry} castShadow receiveShadow>
-          <meshStandardMaterial {...standProps} />
-        </mesh>
+        {/* The rig's own tripod, from the same asset as the body — see
+            `useFittedTripod`. Replaces the procedural quadpod, which existed
+            only because the previous camera model had no support of its own. */}
+        <primitive object={tripod} />
 
         {/* Camera body (film-camera.glb), replacing the procedural
             body, viewfinder and lens barrel. Fitted to `CAMERA_ANCHOR` —

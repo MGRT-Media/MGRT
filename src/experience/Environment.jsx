@@ -4,6 +4,7 @@ import VolumetricLightingRig from './lighting/VolumetricLightingRig.jsx'
 import SceneEnvironment from './lighting/SceneEnvironment.jsx'
 import { buildColumnGeometry } from './architecture/columnGeometry.js'
 import { buildColumnCollar, buildWallSkirt } from './architecture/contactDebris.js'
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { createStoneWallMaterial, stoneRepeatForSize } from './materials/stoneWallMaterial.js'
 import { buildGalleryShellGeometry, GALLERY_SHELL } from './architecture/galleryShellGeometry.js'
 
@@ -98,12 +99,6 @@ const pillarPositions = Array.from({ length: PILLAR_COUNT }, (_, i) => {
  */
 export const PILLAR_SHAFT_RADIUS = 0.26
 
-function useColumnGeometries(height) {
-  return useMemo(
-    () => Array.from({ length: PILLAR_COUNT }, (_, i) => buildColumnGeometry(height, i, PILLAR_SHAFT_RADIUS)),
-    [height],
-  )
-}
 
 /**
  * The floor, displaced by a low-frequency noise field so it is a surface
@@ -202,11 +197,45 @@ function columnYaw(index) {
 }
 
 export default function Environment() {
-  const columnGeometries = useColumnGeometries(HALL_HEIGHT)
-  const collarGeometries = useMemo(
-    () => Array.from({ length: PILLAR_COUNT }, (_, i) => buildColumnCollar(0.4, i)),
-    [],
-  )
+  /**
+   * The ring is drawn as one batch per material instead of one per column.
+   *
+   * Twelve columns and twelve debris collars were twenty-four draw calls for
+   * geometry that never moves. Baking each column's own position and yaw into
+   * its vertices and merging by material collapses that to four — three column
+   * batches (one per tint variant) and one for the collars.
+   *
+   * Every column keeps its own geometry: the merge concatenates the twelve
+   * distinct meshes, it does not instance one of them. Nothing about the
+   * per-column condition, erosion, drum offsets or rotation is lost, which is
+   * also why `InstancedMesh` was not the tool here — instancing requires a
+   * SHARED geometry, and the whole point of these columns is that no two are
+   * the same object.
+   *
+   * The cost is frustum culling: a merged batch is drawn whenever any part of
+   * it is on screen. For a ring the camera spends the sequence inside, most of
+   * it is on screen most of the time anyway, so there was little culling to
+   * lose.
+   */
+  const mergedColumns = useMemo(() => {
+    const byMaterial = Array.from({ length: 3 }, () => [])
+    pillarPositions.forEach(([x, z], i) => {
+      const geometry = buildColumnGeometry(HALL_HEIGHT, i, PILLAR_SHAFT_RADIUS)
+      geometry.rotateY(columnYaw(i))
+      geometry.translate(x, 0, z)
+      byMaterial[i % 3].push(geometry)
+    })
+    return byMaterial.map((group) => mergeGeometries(group, false))
+  }, [])
+
+  const mergedCollars = useMemo(() => {
+    const parts = pillarPositions.map(([x, z], i) => {
+      const geometry = buildColumnCollar(0.4, i)
+      geometry.translate(x, 0, z)
+      return geometry
+    })
+    return mergeGeometries(parts, false)
+  }, [])
   const wallSkirtGeometry = useMemo(() => buildWallSkirt(), [])
   const floorGeometry = useFloorGeometry()
   const shellGeometry = useMemo(() => buildGalleryShellGeometry(), [])
@@ -327,24 +356,20 @@ export default function Environment() {
           add nothing but noise to the map, while receiving is what actually
           seats them into the floor. */}
       <mesh geometry={wallSkirtGeometry} material={debrisMaterial} receiveShadow />
+      <mesh geometry={mergedCollars} material={debrisMaterial} receiveShadow />
 
-      {pillarPositions.map(([x, z], i) => (
-        <mesh
-          key={`collar-${i}`}
-          position={[x, 0, z]}
-          geometry={collarGeometries[i]}
-          material={debrisMaterial}
-          receiveShadow
-        />
-      ))}
+      {/*
+        Full column ring — lightest tier, surrounds the production space.
 
-      {pillarPositions.map(([x, z], i) => (
+        Three meshes, twelve columns: each column's own yaw and position are
+        baked into its vertices and the results merged per material. See
+        `mergedColumns` for why this is a merge rather than instancing.
+      */}
+      {mergedColumns.map((geometry, i) => (
         <mesh
-          key={`pillar-${i}`}
-          position={[x, 0, z]}
-          rotation={[0, columnYaw(i), 0]}
-          geometry={columnGeometries[i]}
-          material={columnMaterials[i % columnMaterials.length]}
+          key={`columns-${i}`}
+          geometry={geometry}
+          material={columnMaterials[i]}
           castShadow
           receiveShadow
         />

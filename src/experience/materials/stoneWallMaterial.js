@@ -250,11 +250,23 @@ function buildNormalTexture(height) {
  * See `public/textures/limestone/README.md` for what to install.
  */
 const SCANNED_BASE = '/textures'
+/**
+ * Three files per set, not four, and WebP rather than JPEG.
+ *
+ * `MeshStandardMaterial` samples `aoMap` from the red channel and
+ * `roughnessMap` from the green one, so a single ORM texture can fill both
+ * slots. Packing them halves the requests and the GPU memory for that pair —
+ * an uploaded texture costs the same VRAM whatever its file format, so
+ * dropping a whole texture is the only thing that actually reduces it.
+ *
+ * WebP is purely a download saving (roughly half of JPEG at matching quality).
+ * Normals get a higher quality setting than colour: they encode direction, so
+ * compression error shows up as wrong lighting rather than as softness.
+ */
 const SCANNED_SLOTS = [
-  { slot: 'map', file: 'albedo.jpg', colorSpace: THREE.SRGBColorSpace },
-  { slot: 'normalMap', file: 'normal.jpg' },
-  { slot: 'roughnessMap', file: 'roughness.jpg' },
-  { slot: 'aoMap', file: 'ao.jpg' },
+  { slot: 'map', file: 'albedo.webp', colorSpace: THREE.SRGBColorSpace },
+  { slot: 'normalMap', file: 'normal.webp' },
+  { slot: 'ormMap', file: 'orm.webp' },
 ]
 
 function loadOptionalTexture(url) {
@@ -283,7 +295,7 @@ function isScannedStoneInstalled(set) {
     // back out of the HTTP cache when TextureLoader asks for the same URL.
     scannedSetAvailable.set(
       set,
-      fetch(`${SCANNED_BASE}/${set}/albedo.jpg`)
+      fetch(`${SCANNED_BASE}/${set}/albedo.webp`)
         .then((response) => response.ok && (response.headers.get('content-type') || '').startsWith('image/'))
         .catch(() => false),
     )
@@ -317,7 +329,11 @@ async function upgradeToScannedStone(material, set, repeat, normalScale) {
 
   textures.forEach((texture, index) => {
     if (!texture) return
-    const { slot, colorSpace } = SCANNED_SLOTS[index]
+    const { slot: rawSlot, colorSpace } = SCANNED_SLOTS[index]
+    // The ORM texture is assigned to two material slots; everything else maps
+    // one-to-one.
+    const slots = rawSlot === 'ormMap' ? ['aoMap', 'roughnessMap'] : [rawSlot]
+    const slot = slots[0]
     texture.wrapS = THREE.RepeatWrapping
     texture.wrapT = THREE.RepeatWrapping
     // A column's U axis wraps the shaft, so its repeat must stay a whole
@@ -337,8 +353,12 @@ async function upgradeToScannedStone(material, set, repeat, normalScale) {
     // three reads aoMap from uv1 by default; none of this room's geometry
     // carries a second UV set, so point it at uv0.
     if (slot === 'aoMap') texture.channel = 0
-    material[slot]?.dispose?.()
-    material[slot] = texture
+    slots.forEach((target) => {
+      // Only dispose a generated map being replaced — never the shared ORM
+      // texture itself, which would tear down the second slot's own reference.
+      if (material[target] && material[target] !== texture) material[target].dispose()
+      material[target] = texture
+    })
   })
 
   // The tint is left exactly as the caller set it. A scanned albedo is a real

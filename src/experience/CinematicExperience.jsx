@@ -1,9 +1,8 @@
 import { Suspense } from 'react'
 import { Canvas } from '@react-three/fiber'
 import Environment from './Environment.jsx'
-import Billboard from './campaigns/Billboard.jsx'
 import CampaignsLayerSwitch from './campaigns/CampaignsLayerSwitch.jsx'
-import ExteriorEnvironment from './campaigns/ExteriorEnvironment.jsx'
+import CampaignsGate from './campaigns/CampaignsGate.jsx'
 import Monitor from './digital/Monitor.jsx'
 import CinemaCamera from './film/CinemaCamera.jsx'
 import { lightingParams } from './lighting/volumetricLighting.js'
@@ -35,9 +34,24 @@ export default function CinematicExperience() {
   return (
     <Canvas
       className="experience-canvas"
-      shadows
-      dpr={[1, 2]}
-      gl={{ antialias: true }}
+      // "soft" selects PCFSoftShadowMap. The default PCF map gives a shadow a
+      // fixed, slightly crunchy edge; the soft variant spreads the filter taps
+      // so `shadow.radius` actually produces penumbra instead of just blur.
+      shadows="soft"
+      // Capped at 1.75 rather than 2. The post chain (GTAO + bokeh + output)
+      // is fill-rate bound, so cost scales with the square of this number:
+      // 2.0 is 30% more pixels than 1.75 for a difference no one can see on a
+      // 3x phone display, where the panel is already far past the eye's
+      // resolving power at arm's length.
+      dpr={[1, 1.75]}
+      // Exposure below 1 is what keeps the room dark now that the lighting
+      // itself is physical. The previous approach reached the same darkness by
+      // holding the LIGHTS down, which meant the only way to see anything was a
+      // large flat ambient term — bright enough to wash out the shading that
+      // makes stone read as stone. Lighting the room properly and then pulling
+      // the exposure back is how a camera does it, and it keeps the falloff and
+      // the shadow detail that the other order destroys.
+      gl={{ antialias: true, toneMappingExposure: 0.78 }}
       camera={{
         position: SEED_POSITION,
         fov: 45,
@@ -65,10 +79,10 @@ export default function CinematicExperience() {
           their own render layer and are invisible until the camera swaps
           onto it at CAMPAIGNS_SWAP_T — see campaigns/layers.js. */}
       <CampaignsLayerSwitch />
-      <Billboard />
-      <Suspense fallback={null}>
-        <ExteriorEnvironment />
-      </Suspense>
+      {/* Act 3's world and code are fetched on approach, not at load — see
+          `CampaignsGate`. The layer switch above stays mounted: it owns the
+          camera's far plane and layer mask and carries no assets of its own. */}
+      <CampaignsGate />
       {/* Last child deliberately: this takes over the render loop (its
           useFrame runs at priority 1), so everything that needs to draw or
           render-to-texture for a frame must already have run. */}

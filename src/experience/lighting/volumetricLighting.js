@@ -15,7 +15,14 @@ import * as THREE from 'three'
 export const lightingParams = {
   spot: {
     color: '#fff1dc',
-    intensity: 88,
+    // 88 -> 340 because `decay` below moved to a physical 2. Inverse-square
+    // falls off far harder than the 1.45 it replaces, so the same figure would
+    // have gone dark; this is re-derived at the beam's actual throw (~11.2
+    // units source to floor target) to land at the same illuminance there, and
+    // the difference now shows up as CONTRAST rather than as overall level —
+    // near surfaces read brighter, far ones fall away, which is what the flat
+    // 1.45 curve was suppressing.
+    intensity: 340,
     // Repositioned to coincide with the z: -3 clerestory window
     // (`Environment.jsx`'s `Window`, right side wall) so the beam visually
     // originates at the window rather than an unmarked point in space —
@@ -46,12 +53,21 @@ export const lightingParams = {
     // not brighter.
     angle: 0.46,
     penumbra: 0.9,
-    decay: 1.45,
+    // 1.45 -> 2. Inverse-square is what real light does; 1.45 was a fudge that
+    // carried illumination too far into the room and flattened the falloff into
+    // something close to uniform.
+    decay: 2,
     distance: 40,
   },
   key: {
     color: '#fff1dc',
-    intensity: 1.1,
+    // 1.1 -> 0.3. A DirectionalLight is parallel rays from infinity: it has no
+    // distance falloff whatsoever, so every surface facing it receives exactly
+    // the same illuminance no matter where it stands. That is the single
+    // largest source of the "evenly illuminated" read, and the reason the far
+    // wall was as bright as the near columns. Kept only as a trace so the
+    // shadow side does not lose its form entirely.
+    intensity: 0.3,
     position: [4, 10, 4],
   },
   // Bounce/fill light on the room's -X side, opposite the breach (+X) —
@@ -64,7 +80,8 @@ export const lightingParams = {
     // 0.6 -> 0.95: the shadow side is where silhouettes were being lost
     // entirely, and this is the light whose only job is to keep them
     // readable without touching the lit side's contrast.
-    intensity: 0.95,
+    // 0.95 -> 0.28, for the same no-falloff reason as `key`.
+    intensity: 0.28,
     // The scroll-0 floor for this light, mirroring `ambient.darkIntensity`
     // above: at ignition 0 every other light is multiplied to exactly 0,
     // leaving flat ambient as the only term, which lights every surface
@@ -79,73 +96,72 @@ export const lightingParams = {
     // start to look actively lit, and the spot at full is 88, so the
     // practical still overwhelmingly owns the reveal.
     // 1.2 -> 0.45, for the same reason as `ambient.darkIntensity` above.
-    darkIntensity: 1.2,
+    darkIntensity: 0.55,
     position: [-5, 5, -1],
   },
-  ambient: {
-    color: '#adadb8',
-    // Raised again, 2.5 -> 3.15. The brief is specifically that the
-    // pillars' and architecture's outlines stay readable in the dark, and
-    // ambient is the only term that reaches surfaces the beam never
-    // touches. Kept a lift rather than a flood: at this level the far
-    // architecture resolves as silhouette and surface, while the room is
-    // still plainly night — the fog and the tone curve carry the mood, and
-    // neither has moved.
-    intensity: 3.15,
-    // The scroll-0 starting ambient during the dark-to-light reveal (see
-    // VolumetricLightingRig's ignition ramp) — near-total darkness with
-    // just enough tint to outline geometry edges, per explicit request.
-    // This is a real absolute AmbientLight intensity in this project's
-    // established scale (not a 0-1 normalized value), verified visually
-    // rather than assumed to read as "near darkness" at this magnitude.
-    //
-    // Raised substantially, 0.03 -> 1.5, per explicit follow-up direction
-    // that the opening must be "dark, but NOT pure black" — specifically
-    // legible enough for the pillar/camera/monitor silhouettes to read as
-    // shapes ("what am I looking at?"), not just an undifferentiated dark
-    // frame. This scene's (R3F default) ACES tonemapping crushes shadows
-    // far harder than the raw numbers suggest: 0.05, 0.12, and 0.4 were
-    // all tried first and every one still rendered as flat black once
-    // tonemapped against these materials' moderate roughness/albedo —
-    // confirmed visually via screenshot, not assumed from the number,
-    // before landing on 1.5, which reads correctly as dim-but-legible
-    // silhouettes without looking "lit." Despite being 60% of the room's
-    // full 2.5 established intensity as a raw number, the tonemapped
-    // *result* still reads clearly darker/moodier than the established
-    // room, not close to it — the perceptual gap the brief cares about is
-    // preserved even though the linear-intensity gap looks smaller than
-    // the earlier, still-invisible attempts.
-    //
-    // Caveat: this is measured against the camera positions the early
-    // journey actually passes through shortly after progress 0 — the
-    // exact progress-0 frame itself sits at §4AY's ORBIT_START_POSITION,
-    // a wide, distant establishing view where the pillars subtend a small
-    // angle; even at this intensity that specific frame still reads as
-    // very close to black in a screenshot (a framing/distance effect, not
-    // a lighting bug — verified darkIntensity actually is being applied
-    // by confirming clearly-visible silhouettes at the very next camera
-    // position along the same path). Flagged rather than silently
-    // adjusting the camera's own starting position, which is out of this
-    // round's "lighting only" scope.
-    // 1.5 -> 1.8 -> 4.0. The last step was measured in the running app at
-    // progress 0, not extrapolated: 1.8 left the walls and pillar volume
-    // unreadable, 3.0 brought them back, 4.5 read cleanly, and 8.0 went
-    // flat and washed out. The response through ACES is steeply
-    // non-linear here, which is why the earlier small increments felt
-    // like they did nothing. 4.0 sits just under the flatness threshold.
-    // Above the full-lit 3.15 above, which looks wrong as a raw number
-    // but is correct: at ignition 1 the spot (88), key and fill carry the
-    // room and ambient is a minor term, so the two values aren't
-    // comparable as a ratio.
-    // 4.0 -> 1.5 when the scanned stone landed. That 4.0 was never really a
-    // lighting decision: the generated albedo was artificially dark, so the
-    // ambient floor had been raised and raised again to drag a near-black
-    // surface up to readable. A scanned albedo is a real measured
-    // reflectance and far brighter, so the same floor blew the opening out
-    // completely — the darkness has to come from the light again, which is
-    // where it belonged.
-    darkIntensity: 4.0,
+  /**
+   * Replaces the flat `AmbientLight` this room used to sit on.
+   *
+   * An AmbientLight adds the same value to every surface regardless of which
+   * way it faces or where it stands. Nothing in a real room is lit that way,
+   * and it is why the architecture read as "each object independently lit":
+   * with a large ambient term, a surface's brightness barely depends on its
+   * orientation at all, so the shading that tells you an object is a solid
+   * gets washed out. It was also carrying most of the room's exposure, which
+   * is why the level could never come down without the space going black.
+   *
+   * A hemisphere light is the cheapest honest replacement: sky value from
+   * above, ground value from below, interpolated by the surface normal. That
+   * single gradient restores up/down shading everywhere for no cost, and the
+   * warm ground term is doing real work — it stands for light that has already
+   * hit the floor and come back up, which is why it is the colour of the
+   * floor rather than the colour of the source.
+   */
+  hemisphere: {
+    // Cool from above — this is a night interior, and what little skylight
+    // reaches it arrives blue.
+    sky: '#4c5666',
+    // Warm from below: floor bounce, tinted by the stone it came off.
+    ground: '#6d5c46',
+    intensity: 1.15,
+    // Higher than the lit value, and higher again than it looks like it should
+    // need. Two reasons: at ignition 0 this is very nearly the only light in
+    // the room, and `toneMappingExposure` is now 0.78, so everything needs more
+    // energy to reach the same displayed value than it did at 1.0. Re-measured
+    // against the opening frame after the exposure change rather than carried
+    // over from before it.
+    darkIntensity: 2.6,
   },
+
+  /**
+   * The floor bounce, as an actual light rather than an ambient guess.
+   *
+   * Where the beam lands it puts a bright patch of lit stone on the floor, and
+   * a patch of lit stone is itself a light source — it throws warm, soft,
+   * short-range illumination up onto everything around it. Without this the
+   * room reads as `direct light -> darkness`, with nothing between the pool
+   * and the surrounding architecture.
+   *
+   * Deliberately a point light with `decay: 2` and a short `distance`, not a
+   * lift in ambient: bounce obeys the same inverse-square law as any other
+   * light, so it must fall away from the pool. That falloff is the entire
+   * point — it is what makes the columns nearest the beam pick up warmth on
+   * their lower halves while the far side of the room does not.
+   *
+   * `darkIntensity` is 0, and that is physical rather than a taste call: at
+   * ignition 0 there is no direct light landing on the floor, so there is
+   * nothing for the floor to bounce. It rises with the spot, in step.
+   */
+  bounce: {
+    color: '#ffcf9e',
+    intensity: 14,
+    darkIntensity: 0,
+    // Just above the floor pool, at the beam's own target.
+    height: 0.45,
+    distance: 13,
+    decay: 2,
+  },
+
   shadow: {
     // 2048 -> 4096. The spot's cone widened this round, and a shadow map
     // covers the whole cone: at the old resolution the same 2048 texels
@@ -155,7 +171,7 @@ export const lightingParams = {
     mapSize: 4096,
     // Blur reduced to match — at 4096 the previous radius was smearing
     // away detail the higher resolution exists to provide.
-    radius: 2.5,
+    radius: 5.0,
     bias: -0.0012,
     normalBias: 0.02,
   },
@@ -176,7 +192,7 @@ export const lightingParams = {
     // floor, which is the same "geometric primitive" tell this pass exists
     // to remove. Still well above both the restraint pass's 0.09 and the
     // 0.11 that preceded it.
-    opacity: 0.12,
+    opacity: 0.07,
     // How much of the full spot-to-target distance the *visible* beam
     // mesh actually spans, starting from the light source. World Y drops
     // linearly along the beam from `spot.position[1]` (6.3, at the
@@ -199,7 +215,7 @@ export const lightingParams = {
     // it. The floor is no longer flat (see Environment.jsx's
     // useFloorGeometry), so a stronger pool now lands on relief and breaks
     // up rather than reading as a painted ellipse.
-    opacity: 0.26,
+    opacity: 0.15,
   },
   dust: {
     color: '#fff6e8',
@@ -220,7 +236,7 @@ export const lightingParams = {
     // above: at 720 particles the field's apparent density comes from
     // overlap, and holding per-mote opacity down is what keeps it reading
     // as fine dust rather than as smoke.
-    opacity: 0.34,
+    opacity: 0.26,
     // Exponent applied to the uniform random sample that picks each
     // point's position along the beam axis (0 = light source/top, 1 =
     // floor target). >1 skews the distribution toward 0 — see buildDust —
@@ -493,7 +509,8 @@ export function createVolumetricLighting(params = lightingParams) {
   let spotTarget = null
   let keyLight = null
   let fillLight = null
-  let ambientLight = null
+  let hemisphereLight = null
+  let bounceLight = null
   let beam = null
   let floorPool = null
   let dust = null
@@ -535,13 +552,40 @@ export function createVolumetricLighting(params = lightingParams) {
     fillLight.position.set(...params.fill.position)
     fillLight.castShadow = false
 
-    ambientLight = new THREE.AmbientLight(params.ambient.color, params.ambient.intensity)
+    hemisphereLight = new THREE.HemisphereLight(
+      params.hemisphere.sky,
+      params.hemisphere.ground,
+      params.hemisphere.intensity,
+    )
+
+    // Sits just above the floor pool, at the beam's own target — see
+    // `params.bounce`. Casts no shadow: a bounce is a broad area source, and
+    // giving it a shadow map would carve hard second shadows into a term whose
+    // whole job is to be soft.
+    bounceLight = new THREE.PointLight(
+      params.bounce.color,
+      params.bounce.intensity,
+      params.bounce.distance,
+      params.bounce.decay,
+    )
+    bounceLight.position.set(target.x, params.bounce.height, target.z)
+    bounceLight.castShadow = false
 
     beam = buildBeam(params, origin, target)
     floorPool = buildFloorPool(params, origin, target)
     dust = buildDust(params, origin, target)
 
-    group.add(spotLight, spotTarget, keyLight, fillLight, ambientLight, beam, floorPool, dust)
+    group.add(
+      spotLight,
+      spotTarget,
+      keyLight,
+      fillLight,
+      hemisphereLight,
+      bounceLight,
+      beam,
+      floorPool,
+      dust,
+    )
 
     // Start fully dark — the ignition ramp (below) takes over from the
     // very first frame, but this avoids even a one-frame flash of full
@@ -565,9 +609,16 @@ export function createVolumetricLighting(params = lightingParams) {
     if (spotLight) spotLight.intensity = params.spot.intensity * factor
     if (keyLight) keyLight.intensity = params.key.intensity * factor
     if (fillLight) fillLight.intensity = THREE.MathUtils.lerp(params.fill.darkIntensity, params.fill.intensity, factor)
-    if (ambientLight) {
-      ambientLight.intensity = THREE.MathUtils.lerp(params.ambient.darkIntensity, params.ambient.intensity, factor)
+    if (hemisphereLight) {
+      hemisphereLight.intensity = THREE.MathUtils.lerp(
+        params.hemisphere.darkIntensity,
+        params.hemisphere.intensity,
+        factor,
+      )
     }
+    // Bounce tracks the direct light exactly, because it IS the direct light,
+    // one reflection later — see `params.bounce`.
+    if (bounceLight) bounceLight.intensity = params.bounce.intensity * factor
     if (beam) beam.material.uniforms.uOpacity.value = params.beam.opacity * factor
     if (dust) dust.material.uniforms.uOpacity.value = params.dust.opacity * factor
     if (floorPool) floorPool.material.uniforms.uOpacity.value = params.floorPool.opacity * factor

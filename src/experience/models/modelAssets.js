@@ -2,6 +2,7 @@ import { useLayoutEffect, useMemo, useRef } from 'react'
 import { useFrame, useLoader } from '@react-three/fiber'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js'
 import { scrollProgress } from '../timeline/ScrollTimelineProvider.jsx'
 import { IGNITE_START, IGNITE_END } from '../lighting/VolumetricLightingRig.jsx'
 
@@ -20,7 +21,7 @@ import { IGNITE_START, IGNITE_END } from '../lighting/VolumetricLightingRig.jsx'
  * FBX and a second loader.
  */
 export const MODEL_URLS = {
-  camera: '/models/camera/film-camera.glb',
+  camera: '/models/camera/studio-camera.glb',
   monitor: '/models/monitor/digital-monitor.glb',
   pedestal: '/models/pedestal/digital-stone.glb',
   billboard: '/models/billboard/campaign-billboard.glb',
@@ -33,13 +34,29 @@ export const MODEL_URLS = {
  * caller and suspends until ready, so a model used in two places is
  * fetched, parsed and uploaded exactly once.
  */
+/**
+ * Every GLB here is meshopt-compressed (`EXT_meshopt_compression`), which took
+ * the set from 7.0MB to 2.0MB. Without this decoder attached they do not load
+ * at all — `GLTFLoader` refuses a file whose required extension it cannot
+ * handle — so this must be applied everywhere a loader is created, including
+ * the preload path below.
+ *
+ * Meshopt rather than Draco specifically because its decoder is a single ES
+ * module that bundles with the app. Draco needs its WASM/JS decoder served as
+ * separate files at a runtime-configured path, which is one more deployment
+ * detail to get wrong for a comparable saving.
+ */
+function configureLoader(loader) {
+  loader.setMeshoptDecoder(MeshoptDecoder)
+}
+
 export function useModel(url) {
-  return useLoader(GLTFLoader, url)
+  return useLoader(GLTFLoader, url, configureLoader)
 }
 
 /** Warms the cache so a model is not first requested at the moment it is needed. */
 export function preloadModels() {
-  Object.values(MODEL_URLS).forEach((url) => useLoader.preload(GLTFLoader, url))
+  Object.values(MODEL_URLS).forEach((url) => useLoader.preload(GLTFLoader, url, configureLoader))
 }
 
 /**

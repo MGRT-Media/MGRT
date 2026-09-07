@@ -219,7 +219,18 @@ export default function Monitor() {
     el.loop = true
     el.muted = true
     el.playsInline = true
-    el.preload = 'auto'
+    // 'auto' -> 'none'. At 'auto' the browser began pulling this clip the
+    // instant the element was created, so ~60MB of placeholder video competed
+    // with the models and textures the opening frame actually needs. Nothing
+    // is fetched now until `play()` is called at the beat that uses it.
+    //
+    // Tradeoff, deliberately taken: the first frames have to buffer when that
+    // beat arrives instead of being ready in advance. The loop logic already
+    // guards on `video.duration`, which is NaN until metadata loads, so this
+    // is safe — but if the stall shows once the clips are final, 'metadata'
+    // (headers only, a few KB) or an explicit `load()` shortly before the beat
+    // are the two ways to buy the head start back without paying for it up front.
+    el.preload = 'none'
     return el
   }, [])
   const videoTexture = useMemo(() => new THREE.VideoTexture(video), [video])
