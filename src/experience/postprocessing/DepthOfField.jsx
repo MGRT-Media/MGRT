@@ -8,6 +8,7 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
 import { CAMPAIGNS_SWAP_DISTANCE, campaignsRailDistance } from '../timeline/cameraPath.js'
 import { CAMERA_ANCHOR } from '../film/CinemaCamera.jsx'
 import { MONITOR_ANCHOR } from '../digital/Monitor.jsx'
+import { PILLAR_RING_CENTER, PILLAR_RING_RADIUS } from '../Environment.jsx'
 
 /**
  * Depth of field — the project's only post-processing pass.
@@ -49,6 +50,50 @@ import { MONITOR_ANCHOR } from '../digital/Monitor.jsx'
 // of frame — a soft edge, not a smear.
 const APERTURE = 0.0009
 const MAX_BLUR = 0.0055
+
+// A real camera does not hold one stop across a whole sequence. A wide
+// establishing shot is stopped down so the set reads; the operator opens up
+// again for the close-up, where shallow focus is the point. `APERTURE` above
+// was authored for the close-ups and, held flat, it was also being applied to
+// the wide orbit — where the focal plane sits on the room's subject ~8.6 away
+// while the pillar ring stands at 3.5. That 5.1-unit gap put the colonnade at
+// ~84% of `MAX_BLUR`: the architecture, which is what the wide shot is of, was
+// the least readable thing in it.
+//
+// So the stop tracks the focus distance. At or inside `SHALLOW_FOCUS_DISTANCE`
+// the aperture is untouched, which keeps every close-up beat (focus 0.17-1.8,
+// t 0.2-0.6) exactly as authored. Beyond it the stop closes off as 1/distance,
+// deepening the field just as a real focus puller would for a wide.
+// `MIN_APERTURE_SCALE` floors it so the effect never switches off — at the
+// orbit the near pillars come back to ~12% of the blur ceiling while the far
+// wall still carries ~29%, which is the separation the pass exists for.
+//
+// `MAX_BLUR` is deliberately not scaled: it is the ceiling the close-ups are
+// calibrated against, and at the reduced wide-shot stop nothing in the room is
+// deep enough to reach it anyway.
+const SHALLOW_FOCUS_DISTANCE = 2.4
+const MIN_APERTURE_SCALE = 0.15
+
+/**
+ * Where the focal plane sits before the camera has entered the colonnade.
+ *
+ * Outside the ring the shot is not yet about the props — the camera is still
+ * approaching, looking in through the columns, and the columns are what the
+ * frame is made of. So focus rides the near arc of the ring and the interior
+ * beyond it, props included, falls off; the rack onto the subject happens as
+ * the camera passes between the pillars, which is where the shot actually
+ * changes what it is about.
+ *
+ * Keyed off the camera's radius from `PILLAR_RING_CENTER` rather than scroll
+ * progress, so it stays correct no matter how the path is re-timed later —
+ * the same reason the Campaigns fade below keys off rail distance.
+ *
+ * The band straddles the ring: fully pillar-focused a couple of units out,
+ * fully subject-focused just inside, with `FOCUS_DAMP_LAMBDA` smoothing the
+ * hand-over into a rack rather than a switch.
+ */
+const RING_FOCUS_OUTER_RADIUS = PILLAR_RING_RADIUS + 2.0
+const RING_FOCUS_INNER_RADIUS = PILLAR_RING_RADIUS - 0.5
 
 // Seconds-scale smoothing on the focus distance itself. Slower than the
 // camera's own position damping (2.6) so focus reads as following the move
@@ -136,10 +181,25 @@ export default function DepthOfField() {
   // `Billboard.jsx`'s render-to-texture pass runs at the default priority 0,
   // so it still completes before this composes the frame.
   useFrame(({ camera: activeCamera }, delta) => {
-    const targetDistance = Math.min(
+    const subjectDistance = Math.min(
       activeCamera.position.distanceTo(FILM_SUBJECT),
       activeCamera.position.distanceTo(DIGITAL_SUBJECT),
     )
+
+    // See RING_FOCUS_OUTER_RADIUS. `ringRadius` is the camera's own distance
+    // from the colonnade's axis; subtracting the ring radius gives the depth
+    // of its near arc, which is what the approach is focused on.
+    const ringRadius = Math.hypot(
+      activeCamera.position.x - PILLAR_RING_CENTER[0],
+      activeCamera.position.z - PILLAR_RING_CENTER[1],
+    )
+    const pillarDistance = Math.max(ringRadius - PILLAR_RING_RADIUS, 0.1)
+    const outsideRing = THREE.MathUtils.smoothstep(
+      ringRadius,
+      RING_FOCUS_INNER_RADIUS,
+      RING_FOCUS_OUTER_RADIUS,
+    )
+    const targetDistance = THREE.MathUtils.lerp(subjectDistance, pillarDistance, outsideRing)
 
     focusDistance.current =
       focusDistance.current === null
@@ -150,8 +210,16 @@ export default function DepthOfField() {
     const strength =
       1 - THREE.MathUtils.smoothstep(railDistance, FADE_START_DISTANCE, FADE_END_DISTANCE)
 
+    // See SHALLOW_FOCUS_DISTANCE: stop down as the subject gets further away,
+    // so wide shots hold the architecture and close-ups stay shallow.
+    const apertureScale = THREE.MathUtils.clamp(
+      SHALLOW_FOCUS_DISTANCE / Math.max(focusDistance.current, 0.0001),
+      MIN_APERTURE_SCALE,
+      1,
+    )
+
     bokeh.uniforms.focus.value = focusDistance.current
-    bokeh.uniforms.aperture.value = APERTURE * strength
+    bokeh.uniforms.aperture.value = APERTURE * apertureScale * strength
     bokeh.uniforms.maxblur.value = MAX_BLUR * strength
     // The camera's far plane is not constant — `CampaignsLayerSwitch.jsx`
     // raises it at the swap so the exterior fits. The bokeh shader
