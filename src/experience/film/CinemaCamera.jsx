@@ -118,25 +118,32 @@ const localOffset = new THREE.Vector3(CAMERA_STAND.offsetX, 0, 0).applyAxisAngle
 const worldOrigin = localOffset.add(new THREE.Vector3(BEAM_CENTER[0], 0, BEAM_CENTER[2]))
 const lensForward = new THREE.Vector3(0, 0, 1).applyAxisAngle(Y_AXIS, totalYawRadians)
 
-// The lens sits off the object's own centreline, so its lateral offset is
-// carried through the same rotation as its forward one — otherwise the dive
-// lines up with the camera's axis but not with its glass, and the shot ends
-// up looking slightly past the lens rather than into it.
-const lensLocalOffset = new THREE.Vector3(LENS_IMAGE_LOCAL.x, 0, LENS_IMAGE_LOCAL.z).applyAxisAngle(
-  Y_AXIS,
-  totalYawRadians,
-)
-const lensFrontFieldPosition = worldOrigin
-  .clone()
-  .add(lensLocalOffset)
-  .setY(LENS_IMAGE_LOCAL.y)
+/**
+ * The path anchor, restored to its original definition.
+ *
+ * `cameraPath.js` derives GATE, ESTABLISH, APPROACH and LENS_DIVE positions
+ * from these three values, so they are effectively part of the route. An
+ * earlier pass in this session rebuilt them onto the new camera model's
+ * measured glass, which moved the visitor's path by 0.425 units — a real
+ * change to the route, made while trying to fix the dive's framing. Reverted
+ * on request: the path is read-only, and these are path inputs.
+ *
+ * `lensFrontZ` is the original `BODY.depth / 2 + LENS.length`, and
+ * `lensRadius` the original `LENS.frontRadius`. They describe the procedural
+ * lens that used to be here rather than the model that is here now — which is
+ * exactly why they must not be "corrected": their values ARE the path.
+ *
+ * `LENS_IMAGE_LOCAL` / `LENS_IMAGE_RADIUS` above still place the film image on
+ * the real model, and are deliberately NOT used here. Where the video is drawn
+ * is a rendering concern; where the visitor travels is not.
+ */
+const lensFrontZ = BODY.depth / 2 + LENS.length
+const bodyWorldOrigin = worldOrigin.clone().setY(bodyCenterHeight)
+const lensFrontFieldPosition = bodyWorldOrigin.clone().addScaledVector(lensForward, lensFrontZ)
 
 export const CAMERA_ANCHOR = {
   bodyCenterHeight,
-  // The IMAGE's radius, not the barrel's. `cameraPath.js` sizes the dive so
-  // this radius fills the frame, and the thing that should fill the frame is
-  // the film, not the metal around it.
-  lensRadius: LENS_IMAGE_RADIUS,
+  lensRadius: LENS.frontRadius,
   lensFrontFieldPosition: lensFrontFieldPosition.toArray(),
   lensForward: lensForward.toArray(),
 }

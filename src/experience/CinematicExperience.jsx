@@ -51,7 +51,20 @@ export default function CinematicExperience() {
       // makes stone read as stone. Lighting the room properly and then pulling
       // the exposure back is how a camera does it, and it keeps the falloff and
       // the shadow detail that the other order destroys.
-      gl={{ antialias: true, toneMappingExposure: 0.78 }}
+      // `antialias` deliberately OFF. It only ever applied to the DEFAULT
+      // framebuffer, and `DepthOfField` renders the scene into its own
+      // composer target instead — that target's `samples: 4` is what actually
+      // anti-aliases the room's edges (its own comment says as much). All the
+      // context-level flag did was allocate a multisampled backbuffer whose
+      // MSAA is wasted, since the only thing ever drawn to it is one
+      // full-screen quad from `OutputPass`, and then pay to resolve that
+      // buffer on every present.
+      //
+      // On Safari that resolve is not free: WebKit's WebGL-to-Metal path
+      // handles multisampled backbuffer resolves markedly worse than Chrome's
+      // ANGLE path, and this one buys nothing. Removing it changes no pixels —
+      // edge quality still comes from the composer target.
+      gl={{ antialias: false, toneMappingExposure: 0.78 }}
       camera={{
         position: SEED_POSITION,
         fov: 45,

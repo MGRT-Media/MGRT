@@ -2,7 +2,7 @@ import { useRef } from 'react'
 import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import { scrollProgress, scrollLockWobble } from './ScrollTimelineProvider.jsx'
-import { sampleCameraPath } from './cameraPath.js'
+import { sampleCameraPath, sampleCameraPathInto } from './cameraPath.js'
 
 // Lowered from 3.5 (both were previously equal) per explicit request to
 // give the camera more perceived "weight and inertia" as it settles, and
@@ -24,9 +24,11 @@ const WOBBLE_DECAY_LAMBDA = 6
 // scratch space, never read from outside this module.
 const scratchMatrix = new THREE.Matrix4()
 const targetQuaternionScratch = new THREE.Quaternion()
-const lookAtScratch = new THREE.Vector3()
-const targetPositionScratch = new THREE.Vector3()
 const forwardScratch = new THREE.Vector3()
+// Written by `sampleCameraPathInto` every frame — see its note on why the
+// per-frame path does not use the allocating sampler.
+const pathPositionScratch = new THREE.Vector3()
+const pathLookAtScratch = new THREE.Vector3()
 
 function computeTargetQuaternion(outQuaternion, eye, lookAtPoint, up) {
   scratchMatrix.lookAt(eye, lookAtPoint, up)
@@ -78,12 +80,12 @@ export default function ScrollCameraRig() {
   )
 
   useFrame(({ camera }, delta) => {
-    const { position: targetPosition, lookAt: targetLookAt } = sampleCameraPath(scrollProgress.value)
+    sampleCameraPathInto(scrollProgress.value, pathPositionScratch, pathLookAtScratch)
 
     const pos = dampedPosition.current
-    pos.x = THREE.MathUtils.damp(pos.x, targetPosition[0], POSITION_DAMP_LAMBDA, delta)
-    pos.y = THREE.MathUtils.damp(pos.y, targetPosition[1], POSITION_DAMP_LAMBDA, delta)
-    pos.z = THREE.MathUtils.damp(pos.z, targetPosition[2], POSITION_DAMP_LAMBDA, delta)
+    pos.x = THREE.MathUtils.damp(pos.x, pathPositionScratch.x, POSITION_DAMP_LAMBDA, delta)
+    pos.y = THREE.MathUtils.damp(pos.y, pathPositionScratch.y, POSITION_DAMP_LAMBDA, delta)
+    pos.z = THREE.MathUtils.damp(pos.z, pathPositionScratch.z, POSITION_DAMP_LAMBDA, delta)
 
     // Orientation is derived from the path's OWN eye/target pair, not from
     // the damped eye — a real bug fix, not a refactor. Feeding the damped
@@ -102,8 +104,8 @@ export default function ScrollCameraRig() {
     // damping feel is unchanged; only what it aims at is now lag-free.
     const targetQuaternion = computeTargetQuaternion(
       targetQuaternionScratch,
-      targetPositionScratch.set(targetPosition[0], targetPosition[1], targetPosition[2]),
-      lookAtScratch.set(targetLookAt[0], targetLookAt[1], targetLookAt[2]),
+      pathPositionScratch,
+      pathLookAtScratch,
       camera.up,
     )
     // Frame-rate-independent slerp factor with the same exponential shape

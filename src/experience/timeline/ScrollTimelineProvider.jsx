@@ -389,7 +389,13 @@ export function ScrollSpacer() {
         // is likewise redundant: `navigateToSection`'s own `onComplete`
         // already calls `engageMonitorLock()` explicitly on every path
         // that can reach Digital.
-        scrub: 1.5,
+        // 1.5 -> 0.5. This was the largest single source of latency in the
+        // chain and it was redundant: Lenis already smooths the input and the
+        // camera's own damp smooths the output, so a 1.5s catch-up here was a
+        // third pass over motion that had been smoothed twice already. At 0.5
+        // it does what scrub is for — keeping the timeline synchronised with
+        // the scroller — without being a smoothing layer in its own right.
+        scrub: 0.5,
         onUpdate: (self) => {
           // Snap 2: checked every tick (not just on scroll-stop) so a
           // fast, continuous scroll still gets caught exactly at

@@ -799,7 +799,20 @@ const POSITION_SEGMENT_COUNT = KEYFRAMES.length - 1
  * progress value the old straight-line version did — only the shape
  * between waypoints changed, not the timing.
  */
-export function sampleCameraPath(progress) {
+/**
+ * Evaluates the path into caller-supplied vectors, allocating nothing.
+ *
+ * The allocating form below is fine at module-init time but was being called
+ * once per frame by `ScrollCameraRig`, where it cost five allocations a frame —
+ * two `Vector3`s (or a `getPoint()` result, itself allocating), two arrays from
+ * `toArray()`, and the returned object literal. At 120Hz that is roughly 600
+ * short-lived objects a second feeding the collector, and GC pauses are exactly
+ * the sort of intermittent hitch that reads as judder in continuous motion.
+ *
+ * The maths is untouched — same segment search, same `smoothstep`, same zone
+ * tests, same curve. Only the destination changed.
+ */
+export function sampleCameraPathInto(progress, outPosition, outLookAt) {
   const p = THREE.MathUtils.clamp(progress, 0, 1)
 
   let i = 0
@@ -809,25 +822,39 @@ export function sampleCameraPath(progress) {
   const rawSegmentT = b.t === a.t ? 0 : (p - a.t) / (b.t - a.t)
   const segmentT = THREE.MathUtils.smoothstep(rawSegmentT, 0, 1)
 
-  // Straight interior zone (gate through lens-dive): plain linear
-  // interpolation, not the spline — see STRAIGHT_ZONE_START_INDEX's own
-  // doc comment above for why the spline can't be trusted to stay
-  // perfectly straight here even though its control points already are.
   const inStraightZone = i >= STRAIGHT_ZONE_START_INDEX && i < STRAIGHT_ZONE_END_INDEX
-  // Film -> Digital hand-off's own vertical-lock zone — same mechanism,
-  // different reason (see VERTICAL_LOCK_ZONE_START_INDEX's own comment):
-  // keeps this hop's Y exactly flat throughout, not just at its keyframes.
   const inVerticalLockZone = i >= VERTICAL_LOCK_ZONE_START_INDEX && i < VERTICAL_LOCK_ZONE_END_INDEX
-  // Act 3's orientation lock — see CAMPAIGNS_LOCK_ZONE_START_INDEX's comment.
   const inCampaignsLockZone = i >= CAMPAIGNS_LOCK_ZONE_START_INDEX && i < CAMPAIGNS_LOCK_ZONE_END_INDEX
-  const position =
-    inStraightZone || inVerticalLockZone || inCampaignsLockZone
-      ? new THREE.Vector3().lerpVectors(a.position, b.position, segmentT)
-      : POSITION_CURVE.getPoint(THREE.MathUtils.clamp((i + segmentT) / POSITION_SEGMENT_COUNT, 0, 1))
-  const lookAt = new THREE.Vector3().lerpVectors(a.lookAt, b.lookAt, segmentT)
 
+  if (inStraightZone || inVerticalLockZone || inCampaignsLockZone) {
+    outPosition.lerpVectors(a.position, b.position, segmentT)
+  } else {
+    // `getPoint`'s second argument is an optional target — passing it is what
+    // keeps the curve evaluation allocation-free.
+    POSITION_CURVE.getPoint(
+      THREE.MathUtils.clamp((i + segmentT) / POSITION_SEGMENT_COUNT, 0, 1),
+      outPosition,
+    )
+  }
+  outLookAt.lerpVectors(a.lookAt, b.lookAt, segmentT)
+}
+
+/**
+ * Allocating convenience form, for callers that run once and keep the result.
+ *
+ * `CinematicExperience`'s `SEED_POSITION` and `NightSky` both retain what this
+ * returns, so it must hand back objects they own. That is precisely why the
+ * per-frame path got its own function rather than this one being changed to
+ * reuse a shared buffer: a shared buffer would have silently mutated those
+ * module-level constants to whatever the last rendered frame happened to be.
+ */
+const samplePositionScratch = new THREE.Vector3()
+const sampleLookAtScratch = new THREE.Vector3()
+
+export function sampleCameraPath(progress) {
+  sampleCameraPathInto(progress, samplePositionScratch, sampleLookAtScratch)
   return {
-    position: position.toArray(),
-    lookAt: lookAt.toArray(),
+    position: samplePositionScratch.toArray(),
+    lookAt: sampleLookAtScratch.toArray(),
   }
 }
