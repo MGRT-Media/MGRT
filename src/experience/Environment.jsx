@@ -7,6 +7,7 @@ import { buildColumnCollar, buildWallSkirt } from './architecture/contactDebris.
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { createStoneWallMaterial, stoneRepeatForSize } from './materials/stoneWallMaterial.js'
 import { buildGalleryShellGeometry, GALLERY_SHELL } from './architecture/galleryShellGeometry.js'
+import { buildWallInscriptionGeometry, createWallInscriptionMaterial } from './architecture/wallInscription.js'
 
 // Widened/deepened (14x32 -> 20x38) per explicit request: the previous
 // dimensions left almost no room for a genuine wide establishing orbit
@@ -239,6 +240,8 @@ export default function Environment() {
   const wallSkirtGeometry = useMemo(() => buildWallSkirt(), [])
   const floorGeometry = useFloorGeometry()
   const shellGeometry = useMemo(() => buildGalleryShellGeometry(), [])
+  const inscriptionGeometry = useMemo(() => buildWallInscriptionGeometry(), [])
+  const inscriptionMaterial = useMemo(() => createWallInscriptionMaterial(), [])
 
   // One material for the whole shell. The five per-segment materials this
   // replaces existed so each flat wall could size its own texture repeat
@@ -336,6 +339,19 @@ export default function Environment() {
           the light and the entire room and black the space out — which is
           exactly what it did when first wired up. */}
       <mesh geometry={shellGeometry} material={shellMaterial} receiveShadow />
+
+      {/*
+        MGRT MEDIA, cut into the back wall — see `wallInscription.js` for why
+        this is a carved bronze inlay rather than text placed in front of the
+        room. It has no reveal of its own: it is mounted here, in the
+        architecture, so that the ignition ramp in `VolumetricLightingRig`
+        lights it on exactly the same terms as the wall it sits in.
+
+        `receiveShadow` for the same reason as the shell, and `castShadow`
+        off for the same reason as the contact debris: it is 12mm proud of a
+        surface, so its own shadow would be nothing but noise in the map.
+      */}
+      <mesh geometry={inscriptionGeometry} material={inscriptionMaterial} receiveShadow />
 
       {/*
         Full column ring — lightest tier, surrounds the production space.

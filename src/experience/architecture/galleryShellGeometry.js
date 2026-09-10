@@ -137,6 +137,22 @@ function wallWobble(theta, v) {
 const SPLIT = 0.62
 
 /**
+ * How far the wall stands off its ideal sweep at (`theta`, `y`), measured
+ * along its own plan radius — positive is outward.
+ *
+ * Exported for the same reason as `planPoint`: anything that has to sit ON
+ * this surface has to follow the same wander, or it drifts through it. The
+ * wall bows by up to ~0.15 units, which is an order of magnitude more than
+ * the clearance a flush inlay can afford — see `wallInscription.js`.
+ *
+ * Only meaningful below the springing, which is the only part of the shell
+ * that is vertical wall rather than vault.
+ */
+export function wallDeviation(theta, y) {
+  return wallWobble(theta, (y / SPRINGING_HEIGHT) * SPLIT) * WALL_DEVIATION
+}
+
+/**
  * Superellipse plan radius in the XZ plane, at angle `theta` from +Z.
  *
  * Exported so the floor/wall contact debris can follow the exact same

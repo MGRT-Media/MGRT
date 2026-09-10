@@ -10,7 +10,7 @@
 export default function SiteMark() {
   return (
     <div className="site-mark" aria-hidden="true">
-      MGRT
+      MGRT Media
     </div>
   )
 }
