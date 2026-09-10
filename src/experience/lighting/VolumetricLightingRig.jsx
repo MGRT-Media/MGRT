@@ -44,6 +44,10 @@ export default function VolumetricLightingRig() {
 
   useEffect(() => {
     controller.init()
+    // Dev-only handle, matching `window.__sp` in ScrollTimelineProvider: the
+    // lighting is mutated per frame rather than held in React state, so there
+    // is otherwise no way to read or try a value without a rebuild.
+    if (import.meta.env.DEV) window.__lights = controller
     return () => controller.dispose()
   }, [controller])
 

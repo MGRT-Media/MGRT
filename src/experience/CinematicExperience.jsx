@@ -64,7 +64,16 @@ export default function CinematicExperience() {
       // handles multisampled backbuffer resolves markedly worse than Chrome's
       // ANGLE path, and this one buys nothing. Removing it changes no pixels —
       // edge quality still comes from the composer target.
-      gl={{ antialias: false, toneMappingExposure: 0.78 }}
+      gl={{
+        antialias: false,
+        // 0.78 -> 1.0. That 0.78 was set against a room whose only real light
+        // was a lamp in a wall, and it is a large part of why the site reads
+        // as underexposed on a bright screen: it was pulling an already dark
+        // frame down another two thirds of a stop. With daylight coming
+        // through the roof the frame no longer needs protecting from
+        // blowing out, and neutral is the honest place to grade from.
+        toneMappingExposure: 1.0,
+      }}
       camera={{
         position: SEED_POSITION,
         fov: 45,

@@ -6,7 +6,11 @@ import { buildColumnGeometry } from './architecture/columnGeometry.js'
 import { buildColumnCollar, buildWallSkirt } from './architecture/contactDebris.js'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { createStoneWallMaterial, stoneRepeatForSize } from './materials/stoneWallMaterial.js'
-import { buildGalleryShellGeometry, GALLERY_SHELL } from './architecture/galleryShellGeometry.js'
+import {
+  buildGalleryShellGeometry,
+  buildRoofOpeningRimGeometry,
+  GALLERY_SHELL,
+} from './architecture/galleryShellGeometry.js'
 import { buildWallInscriptionGeometry, createWallInscriptionMaterial } from './architecture/wallInscription.js'
 
 // Widened/deepened (14x32 -> 20x38) per explicit request: the previous
@@ -20,7 +24,16 @@ import { buildWallInscriptionGeometry, createWallInscriptionMaterial } from './a
 // it, which is also what gives the pillar ring (below) room to grow too.
 export const HALL_WIDTH = 20
 export const HALL_DEPTH = 38
-export const HALL_HEIGHT = 9
+// 9 -> 5.9. The columns are built to this height and terminate into the
+// vault's springing, so it moves with `SPRINGING_HEIGHT` by the same 0.65 and
+// keeps the same small overshoot past it (0.3 against the old 0.4). Lowering
+// the roof without this would have left twelve columns standing through it.
+//
+// Only the vertical extent changes. `HALL_WIDTH`, `HALL_DEPTH`,
+// `PILLAR_RING_CENTER`, `PILLAR_RING_RADIUS`, `PILLAR_COUNT` and
+// `PILLAR_SHAFT_RADIUS` are all untouched, so the footprint, the ring and
+// everything `cameraPath.js` derives from them are unaffected.
+export const HALL_HEIGHT = 5.9
 
 /**
  * Three-tier surface tonality, lightest to darkest: columns catch the most
@@ -240,6 +253,7 @@ export default function Environment() {
   const wallSkirtGeometry = useMemo(() => buildWallSkirt(), [])
   const floorGeometry = useFloorGeometry()
   const shellGeometry = useMemo(() => buildGalleryShellGeometry(), [])
+  const roofRimGeometry = useMemo(() => buildRoofOpeningRimGeometry(), [])
   const inscriptionGeometry = useMemo(() => buildWallInscriptionGeometry(), [])
   const inscriptionMaterial = useMemo(() => createWallInscriptionMaterial(), [])
 
@@ -259,6 +273,23 @@ export default function Environment() {
     )
     return material
   }, [])
+  /**
+   * The cut face of the roof opening. Same scan and same world scale as the
+   * shell, because it IS the shell — the stone the hole was cut through.
+   *
+   * `DoubleSide` is the one difference and it is structural: this is a band
+   * of open geometry rather than a closed surface, so the reveal is seen
+   * from inside the court while the coping beside it is seen from
+   * underneath, and there is no single winding that serves both.
+   */
+  const roofRimMaterial = useMemo(() => {
+    const material = createStoneWallMaterial('#a8a49c', [1 / 1.4, 1 / 1.4], [1.4, 1.4], {
+      scanned: 'walls',
+    })
+    material.side = THREE.DoubleSide
+    return material
+  }, [])
+
   const floorMaterial = useMemo(
     // Low `normalScale`: a floor lit at a grazing angle exaggerates its own
     // normal map badly, and at the walls' 1.4 the slabs read as gravel.
@@ -334,11 +365,29 @@ export default function Environment() {
       {/* The gallery shell — curved walls rising into a vault, with the
           front mouth and the breach cut from the same surface.
           `receiveShadow` only, matching the flat walls it replaces: the
-          key light sits 0.025 inside this surface (it shines *through* the
-          breach), so a shell that cast shadows would put itself between
-          the light and the entire room and black the space out — which is
-          exactly what it did when first wired up. */}
-      <mesh geometry={shellGeometry} material={shellMaterial} receiveShadow />
+          key light used to sit 0.025 inside this surface — it shone *through*
+          the breach — so a shell that cast shadows put itself between the
+          light and the entire room and blacked the space out, which is
+          exactly what it did when first wired up.
+
+          `castShadow` is ON now, and that reason is what changed rather than
+          the decision being reversed: the sun is a DirectionalLight standing
+          46 units OUTSIDE the building. With the light source outside, the
+          roof has to occlude it or the sun passes straight through the stone
+          and lights the whole floor as though the roof were not there. This
+          is the mesh that makes the court opening mean anything — the patch
+          of daylight on the floor is this surface's shadow with a hole in
+          it. */}
+      <mesh geometry={shellGeometry} material={shellMaterial} castShadow receiveShadow />
+
+      {/*
+        The thickness of the roof, exposed around the court opening — see
+        `buildRoofOpeningRimGeometry`. `castShadow` is on here and nowhere
+        else on the shell: this band is the only geometry that stands between
+        the sky and the floor, so it is what will throw the hard-edged patch
+        of daylight across the room once the sun exists.
+      */}
+      <mesh geometry={roofRimGeometry} material={roofRimMaterial} castShadow receiveShadow />
 
       {/*
         MGRT MEDIA, cut into the back wall — see `wallInscription.js` for why

@@ -1,229 +1,235 @@
 import * as THREE from 'three'
+import { GALLERY_SHELL } from '../architecture/galleryShellGeometry.js'
 
 /**
- * Lighting parameters — the single source of truth for the room's
- * lighting. Exposed as plain data so later phases can reference these
- * values without touching this module's internals.
+ * The composition anchor — the point on the floor the production ensemble is
+ * built around.
  *
- * Three light sources, each with one job:
- *  - `spot`   — the primary practical light: casts the room's only
- *               shadows and drives the visible beam/floor-pool.
- *  - `key`    — a stable, non-shadow-casting directional fill so the
- *               room reads clearly even where the spot doesn't reach.
- *  - `ambient` — flat base fill underneath both.
+ * This used to be `spot.target`, the artificial spotlight's aim point, and
+ * `plinthAnchor.js` derives `BEAM_CENTER` from it, which in turn places the
+ * monitor, the camera stand and the entire scroll destination in
+ * `cameraPath.js`. The spotlight is gone, but the composition it anchored is
+ * approved and must not move, so the value outlives the light that produced
+ * it. It is a SPATIAL constant now, not a lighting one — nothing here aims
+ * at it any more.
+ */
+export const COMPOSITION_ANCHOR = [0.6, 0, -3.5]
+
+/** Roof opening, read from the architecture rather than restated here. */
+const OPENING = GALLERY_SHELL.roofOpening
+
+/**
+ * Lighting parameters — the single source of truth for the room's lighting.
+ *
+ * **This room is now lit by the sky.** Phase 1 cut a 10 x 11 court through
+ * the roof; everything below follows from that hole existing. The previous
+ * scheme was a theatrical one — a single 340-intensity SpotLight jammed
+ * inside a breach in the +X wall, aimed at a floor mark, with a cone mesh and
+ * a painted floor pool standing in for a beam it could not really cast. It
+ * has been removed entirely. What replaces it is an ordinary daylight
+ * hierarchy:
+ *
+ *  - `sun`    — a DirectionalLight outside the building. Parallel rays, the
+ *               room's only shadow caster, and the only light that has to be
+ *               occluded by the roof for any of this to read.
+ *  - `sky`    — hemisphere. Open sky above, warm stone bounce below. This is
+ *               what makes the room legible before the sun arrives, and it is
+ *               deliberately the largest term at progress 0.
+ *  - `bounce` — warm, non-shadowing, standing for light coming back off the
+ *               sunlit floor. There is no GI in this scene; without this term
+ *               every surface the sun does not touch falls to sky alone.
+ *  - `fill`   — cool, non-shadowing, opposite side. Keeps the shaded flank of
+ *               the columns from going to a single flat value.
+ *
+ * **Two states, not dark-to-light.** `setIgnition` no longer ramps a room out
+ * of blackness. It moves the room from SKYLIT to SUNLIT: at 0 the court is
+ * open and the sky is coming through it, so floor, columns, walls, vault and
+ * the depth between them are all readable; at 1 the sun itself has come round
+ * into the opening and the hard shaft lands. That is a real thing light does
+ * in a room like this, and it keeps the opening frame exposed rather than
+ * black — see the daylight-legibility requirement.
  */
 export const lightingParams = {
-  spot: {
-    color: '#fff1dc',
-    // 88 -> 340 because `decay` below moved to a physical 2. Inverse-square
-    // falls off far harder than the 1.45 it replaces, so the same figure would
-    // have gone dark; this is re-derived at the beam's actual throw (~11.2
-    // units source to floor target) to land at the same illuminance there, and
-    // the difference now shows up as CONTRAST rather than as overall level —
-    // near surfaces read brighter, far ones fall away, which is what the flat
-    // 1.45 curve was suppressing.
-    intensity: 340,
-    // Repositioned to coincide with the z: -3 clerestory window
-    // (`Environment.jsx`'s `Window`, right side wall) so the beam visually
-    // originates at the window rather than an unmarked point in space —
-    // "key light streams directly through the windows." X re-derived this
-    // round from the same 0.15-inside-the-wall offset as before
-    // (`HALL_WIDTH / 2 - 0.15`) after `Environment.jsx`'s hall widened
-    // 14 -> 20 (wall moved from x: 7 to x: 10) — without this, the breach
-    // itself would move to the new wall but the light would stay behind at
-    // the OLD wall's position, floating in mid-air instead of shining
-    // through the opening. `target` is intentionally unchanged:
-    // `Monitor.jsx`'s `MONITOR_ANCHOR.position` and therefore the entire
-    // camera path's monitor-aligned endpoint (`cameraPath.js`) are both
-    // derived from this exact point, so moving it would silently relocate
-    // the monitor and the whole scroll destination — a much bigger change
-    // than "reposition the light."
-    position: [9.85, 6.3, -3],
-    target: [0.6, 0, -3.5],
-    // Widened and carried further, per the request to let the practical
-    // actually reveal the room rather than just mark where it lands.
-    //
-    // `angle` 0.32 -> 0.46 opens the cone so it washes the floor and the
-    // near columns instead of dropping a single pool; `distance` 24 -> 40
-    // and `decay` 1.8 -> 1.45 let it still be carrying light when it
-    // reaches the far wall, which at 24/1.8 it was not — the boundary was
-    // being lit almost entirely by ambient, which is why depth read flat.
-    // `intensity` follows those up: a wider cone spreads the same flux
-    // over more surface, so holding 55 would have made the room dimmer,
-    // not brighter.
-    angle: 0.46,
-    penumbra: 0.9,
-    // 1.45 -> 2. Inverse-square is what real light does; 1.45 was a fudge that
-    // carried illumination too far into the room and flattened the falloff into
-    // something close to uniform.
-    decay: 2,
-    distance: 40,
+  /**
+   * The sun.
+   *
+   * Its direction is not a free choice — it is solved backwards from the
+   * hole. `elevationDegrees` and `azimuthDegrees` place the sun, and
+   * `floorTargetFor` below drops a ray from the middle of the opening to the
+   * floor along that direction, so the light provably passes through the
+   * court rather than through the roof.
+   *
+   * Both numbers were measured in the running scene, not reasoned to.
+   *
+   * The elevation is constrained hard by the room: the court sits 12.4 above
+   * the floor of a hall only 20 wide, so the horizontal throw is
+   * `12.4 / tan(elevation)`. At the low raking angle of the reference the
+   * patch lands 20+ units out — through the wall, never touching the floor.
+   * The first pass used 64 degrees and it looked wrong for a reason that only
+   * showed up on screen: the shaft landed 5.95 out, which is just OUTSIDE the
+   * 5.5 pillar ring, so the sunlit floor sat behind the columns and the
+   * camera spent the whole opening orbit looking at shade.
+   *
+   * The azimuth is what buys the elevation back. Swinging it from 39 toward
+   * 70 turns the throw across the room rather than down it, so at 68 degrees
+   * the patch lands at (-4.71, -5.71) — 5.01 from the ring centre, INSIDE the
+   * ring and on the sightline the camera holds through the orbit — while the
+   * sun sits four degrees lower than the version that missed. It also keeps
+   * the sun over the camera's shoulder, so the columns are front-lit and read
+   * as solid rather than being rimmed into silhouettes.
+   */
+  sun: {
+    color: '#ffe8c6',
+    /** Full sun, once it has come round into the opening. */
+    intensity: 6.0,
+    /**
+     * Before it does. Zero, not a low value: this is the whole point of the
+     * two-state design — at progress 0 there is no direct sun in the room at
+     * all, only sky, and every bit of the room's legibility at that moment
+     * comes from `sky` and `bounce` below rather than from a dimmed sun.
+     */
+    skylitIntensity: 0,
+    elevationDegrees: 68,
+    /** Degrees from +Z toward +X. */
+    azimuthDegrees: 70,
+    /** How far outside the building to stand the light. Direction is all that matters; this only has to clear the roof. */
+    distance: 46,
   },
-  key: {
-    color: '#fff1dc',
-    // 1.1 -> 0.3. A DirectionalLight is parallel rays from infinity: it has no
-    // distance falloff whatsoever, so every surface facing it receives exactly
-    // the same illuminance no matter where it stands. That is the single
-    // largest source of the "evenly illuminated" read, and the reason the far
-    // wall was as bright as the near columns. Kept only as a trace so the
-    // shadow side does not lose its form entirely.
-    intensity: 0.3,
-    position: [4, 10, 4],
-  },
-  // Bounce/fill light on the room's -X side, opposite the breach (+X) —
-  // non-shadow-casting, like `key`, so it can't introduce a second shadow
-  // source. Purely lifts the shadow-side (left) wall out of near-black so
-  // its stone material stays readable even where the breach's direct
-  // light doesn't reach, per the readability request.
-  fill: {
-    color: '#c9cdd6',
-    // 0.6 -> 0.95: the shadow side is where silhouettes were being lost
-    // entirely, and this is the light whose only job is to keep them
-    // readable without touching the lit side's contrast.
-    // 0.95 -> 0.28, for the same no-falloff reason as `key`.
-    intensity: 0.28,
-    // The scroll-0 floor for this light, mirroring `ambient.darkIntensity`
-    // above: at ignition 0 every other light is multiplied to exactly 0,
-    // leaving flat ambient as the only term, which lights every surface
-    // equally and so erases the shading that makes pillars, walls and
-    // floor read as separate objects. A small directional floor restores
-    // that N·L variation without brightening the room overall. Raised
-    // 0.15 -> 0.4 -> 1.2, the last step measured rather than reasoned: at
-    // ignition 0 with ambient at 4.0, sweeping this term 0.0 -> 2.0 in
-    // the running app showed it is what puts vertical shading on the
-    // pillars and lifts the far wall off black — ambient alone at the
-    // same level reads flat. 1.2 is short of the 2.0 where the pillars
-    // start to look actively lit, and the spot at full is 88, so the
-    // practical still overwhelmingly owns the reveal.
-    // 1.2 -> 0.45, for the same reason as `ambient.darkIntensity` above.
-    darkIntensity: 0.55,
-    position: [-5, 5, -1],
+  sky: {
+    /** Open daylight coming straight down through the court. */
+    sky: '#93b0d4',
+    /** Warm, off the stone floor it has already hit. */
+    ground: '#a8865c',
+    /**
+     * With the sun in the room the sky is no longer carrying it, and this has
+     * to come DOWN as the sun comes up or there is no shade for the sunlight
+     * to alternate with. Measured against the sun rather than chosen: at 1.35
+     * the lit and unlit floor were within a few percent of each other and the
+     * patch did not read at all.
+     */
+    intensity: 0.95,
+    /**
+     * At progress 0 this is very nearly the whole room, so it is the number
+     * that decides whether the opening frame is legible on a bright screen.
+     * Raised over the lit value for that reason, and only that reason.
+     */
+    skylitIntensity: 2.0,
   },
   /**
-   * Replaces the flat `AmbientLight` this room used to sit on.
+   * Light off the sunlit floor.
    *
-   * An AmbientLight adds the same value to every surface regardless of which
-   * way it faces or where it stands. Nothing in a real room is lit that way,
-   * and it is why the architecture read as "each object independently lit":
-   * with a large ambient term, a surface's brightness barely depends on its
-   * orientation at all, so the shading that tells you an object is a solid
-   * gets washed out. It was also carrying most of the room's exposure, which
-   * is why the level could never come down without the space going black.
-   *
-   * A hemisphere light is the cheapest honest replacement: sky value from
-   * above, ground value from below, interpolated by the surface normal. That
-   * single gradient restores up/down shading everywhere for no cost, and the
-   * warm ground term is doing real work — it stands for light that has already
-   * hit the floor and come back up, which is why it is the colour of the
-   * floor rather than the colour of the source.
+   * Rises with the sun because it IS the sun, one bounce later — which also
+   * means it is the term that reveals the wall inscription. The sun's own
+   * shaft never reaches the back wall (the roof shadows everything past
+   * z = -11), so `wallInscription.js`'s bronze has nothing directional to
+   * catch except this. Positioned low and forward rather than overhead, both
+   * because bounce comes off the floor and because that puts more of it on
+   * the back wall's face.
    */
-  hemisphere: {
-    // Cool from above — this is a night interior, and what little skylight
-    // reaches it arrives blue.
-    sky: '#4c5666',
-    // Warm from below: floor bounce, tinted by the stone it came off.
-    ground: '#6d5c46',
-    intensity: 1.15,
-    // Higher than the lit value, and higher again than it looks like it should
-    // need. Two reasons: at ignition 0 this is very nearly the only light in
-    // the room, and `toneMappingExposure` is now 0.78, so everything needs more
-    // energy to reach the same displayed value than it did at 1.0. Re-measured
-    // against the opening frame after the exposure change rather than carried
-    // over from before it.
-    darkIntensity: 2.6,
+  bounce: {
+    color: '#ffd9a8',
+    intensity: 0.65,
+    skylitIntensity: 0.08,
+    position: [3, 6, 5],
   },
-
-  // NOTE: a warm `bounce` point light used to sit here, at the floor pool
-  // between the camera and the monitor, standing in for light reflecting off
-  // the lit patch of floor. Removed per explicit request — that space is to
-  // read as naturally dark, lit only by the room's intended sources. The
-  // consequence is deliberate: there is no indirect/bounced illumination in
-  // this scene at all now, so `direct light -> stone -> surrounding
-  // architecture` falls back to `direct light -> darkness`, with the
-  // hemisphere term below as the only fill.
-
+  /**
+   * Cool sky fill from the shaded flank, non-shadowing so it can never
+   * introduce a second shadow source. Falls as the sun rises: its job is to
+   * keep the unlit side readable, and the brighter the room gets the less of
+   * it that takes.
+   */
+  fill: {
+    color: '#b9c9dd',
+    intensity: 0.28,
+    skylitIntensity: 0.6,
+    position: [-6, 5, -2],
+  },
   shadow: {
-    // 2048 -> 4096. The spot's cone widened this round, and a shadow map
-    // covers the whole cone: at the old resolution the same 2048 texels
-    // now had to span a much larger footprint, and the column shadows on
-    // the floor broke up into soft blobs instead of reading as shadows.
-    // This restores their edge at the new cone width.
     mapSize: 4096,
-    // Blur reduced to match — at 4096 the previous radius was smearing
-    // away detail the higher resolution exists to provide.
-    radius: 5.0,
-    bias: -0.0012,
-    normalBias: 0.02,
+    /**
+     * The sun is a DirectionalLight, so its shadow camera is orthographic and
+     * has to span the whole building rather than a cone. 26 covers the
+     * 20 x 38 footprint with margin for the shear a 64-degree sun puts into
+     * the projection; at 4096 that is ~13mm per texel, which is what keeps
+     * the roof opening's edge a hard line on the floor instead of a soft
+     * gradient.
+     */
+    halfExtent: 26,
+    near: 10,
+    far: 100,
+    bias: -0.0004,
+    normalBias: 0.04,
   },
+  /**
+   * NOTE: fog is deliberately untouched this phase. `fog.color` is not local
+   * to this room — `campaigns/River.jsx` and `campaigns/NightSky.jsx` both
+   * read it to build the Act 3 NIGHT exterior, so warming it for a sunlit
+   * interior would recolour a night sky. It is the largest remaining lever on
+   * distant-surface darkness (at 24 units it mixes 36% of this dark grey into
+   * everything) and it belongs to the atmosphere pass, with a per-act value.
+   */
   fog: {
     color: '#2c2c30',
     density: 0.028,
   },
-  beam: {
-    color: '#fff1dc',
-    // 0.09 -> 0.15. The restraint pass earlier the same day took this to
-    // its lowest value yet; the spatial-realism pass that followed asked
-    // for the opposite — air with continuous volume rather than a thin
-    // accent. Set above even the pre-restraint 0.11, because the vaulted
-    // shell now gives the shaft a real upper boundary to spring from, so a
-    // denser beam reads as light in a room rather than as haze in a box.
-    // Settled at 0.12 rather than 0.15: at 0.15 the shaft's own cone
-    // geometry started to read as a hard-edged wedge where it meets the
-    // floor, which is the same "geometric primitive" tell this pass exists
-    // to remove. Still well above both the restraint pass's 0.09 and the
-    // 0.11 that preceded it.
-    opacity: 0.07,
-    // How much of the full spot-to-target distance the *visible* beam
-    // mesh actually spans, starting from the light source. World Y drops
-    // linearly along the beam from `spot.position[1]` (6.3, at the
-    // window) to 0 (floor target), so at fraction f the beam's lowest
-    // point is at Y = 6.3 * (1 - f) — recalculated after the window
-    // reposition (previously Y = 8 * (1 - f) with fraction 0.75, giving
-    // Y ≈ 2.0). Lowered to 0.65 here so the new, shallower window-angle
-    // beam keeps essentially the same ~2.2 clearance above every camera
-    // height in cameraPath.js (max ~1.7) — recomputed, not left at the
-    // old value, since the window's lower/shallower origin would
-    // otherwise drop the beam's bottom to ~1.57, inside the camera's
-    // reachable height range. No scroll-coupling needed to avoid a
-    // transition pop; the floor pool below still reads as where the beam
-    // lands.
-    lengthFraction: 0.65,
+  /**
+   * The visible shaft of air in the light.
+   *
+   * A placeholder, and flagged as one: the opening is rectangular and this is
+   * still the cone `buildBeam` makes, so it is carried at a low enough
+   * opacity to read as air rather than as a solid volume with the wrong
+   * shape. A real rectangular shaft is atmosphere work, not lighting.
+   *
+   * The floor pool that used to sit under it is GONE. It was an additive
+   * disc faking the light landing, from a time when no light actually could;
+   * the sun now casts a real, roof-shaped patch, and leaving the disc would
+   * have painted a circle on top of a rectangle.
+   */
+  shaft: {
+    color: '#ffe8c6',
+    opacity: 0.05,
+    angle: 0.3,
+    lengthFraction: 0.72,
     radialSegments: 24,
-  },
-  floorPool: {
-    // 0.18 -> 0.26, alongside the beam and dust increases either side of
-    // it. The floor is no longer flat (see Environment.jsx's
-    // useFloorGeometry), so a stronger pool now lands on relief and breaks
-    // up rather than reading as a painted ellipse.
-    opacity: 0.15,
   },
   dust: {
     color: '#fff6e8',
-    // 280 -> 720. Raised past the previous 550 high-water mark: the
-    // spatial-realism pass asks for air that has continuous 3D volume, and
-    // that is a density question before it is an opacity one — sparse
-    // motes read as individual sprites no matter how bright, while a dense
-    // field reads as something the light is travelling through. Still
-    // concentrated near the beam origin by `topBias` below rather than
-    // spread evenly through the room.
     count: 720,
-    // Size now varies per point (see buildDust's aSize attribute) between
-    // these two bounds instead of one fixed value: small/tight near the
-    // top of the shaft, large/heavy near the floor and pillars.
     sizeSmall: 0.022,
     sizeLarge: 0.075,
-    // 0.3 -> 0.34. Deliberately NOT raised in proportion to the count
-    // above: at 720 particles the field's apparent density comes from
-    // overlap, and holding per-mote opacity down is what keeps it reading
-    // as fine dust rather than as smoke.
     opacity: 0.26,
-    // Exponent applied to the uniform random sample that picks each
-    // point's position along the beam axis (0 = light source/top, 1 =
-    // floor target). >1 skews the distribution toward 0 — see buildDust —
-    // clustering particles near the top while still leaving a long, sparse
-    // tail drifting down into the room, rather than a hard density cutoff.
     topBias: 2.4,
   },
+}
+
+/** Unit vector pointing at the sun. */
+export function sunDirection(params = lightingParams) {
+  const elevation = THREE.MathUtils.degToRad(params.sun.elevationDegrees)
+  const azimuth = THREE.MathUtils.degToRad(params.sun.azimuthDegrees)
+  const horizontal = Math.cos(elevation)
+  return new THREE.Vector3(
+    Math.sin(azimuth) * horizontal,
+    Math.sin(elevation),
+    Math.cos(azimuth) * horizontal,
+  )
+}
+
+/**
+ * Where the shaft through the court lands on the floor.
+ *
+ * Solved, not chosen: a ray dropped from the centre of the roof opening along
+ * the sun's own direction. This is what guarantees the light and the hole
+ * agree — change the elevation and the patch moves the way a real one would,
+ * with nothing to keep in sync by hand.
+ */
+export function sunFloorTarget(params = lightingParams) {
+  const direction = sunDirection(params)
+  const travel = OPENING.crownHeight / direction.y
+  return new THREE.Vector3(
+    OPENING.centerX - direction.x * travel,
+    0,
+    OPENING.centerZ - direction.z * travel,
+  )
 }
 
 /** Perpendicular basis for offsetting points around the beam's own axis. */
@@ -246,10 +252,10 @@ function buildBeam(params, origin, target) {
   const fullLength = axisVec.length()
   const axis = axisVec.clone().normalize()
 
-  const beamLength = fullLength * params.beam.lengthFraction
-  const radius = Math.tan(params.spot.angle) * beamLength
+  const beamLength = fullLength * params.shaft.lengthFraction
+  const radius = Math.tan(params.shaft.angle) * beamLength
 
-  const geometry = new THREE.ConeGeometry(radius, beamLength, params.beam.radialSegments, 1, true)
+  const geometry = new THREE.ConeGeometry(radius, beamLength, params.shaft.radialSegments, 1, true)
   // Apex defaults to local +height/2; shift so the apex sits at the local
   // origin and the (open) base trails off along local -Y.
   geometry.translate(0, -beamLength / 2, 0)
@@ -260,8 +266,8 @@ function buildBeam(params, origin, target) {
     side: THREE.DoubleSide,
     blending: THREE.AdditiveBlending,
     uniforms: {
-      uColor: { value: new THREE.Color(params.beam.color) },
-      uOpacity: { value: params.beam.opacity },
+      uColor: { value: new THREE.Color(params.shaft.color) },
+      uOpacity: { value: params.shaft.opacity },
     },
     vertexShader: /* glsl */ `
       varying float vT;
@@ -290,45 +296,6 @@ function buildBeam(params, origin, target) {
   mesh.position.copy(origin)
   mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), axis)
 
-  return mesh
-}
-
-/** A soft, analytic radial glow where the beam meets the floor. */
-function buildFloorPool(params, origin, target) {
-  const fullLength = target.clone().sub(origin).length()
-  const radius = Math.tan(params.spot.angle) * fullLength * 0.6
-  const geometry = new THREE.CircleGeometry(radius, 32)
-
-  const material = new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    uniforms: {
-      uColor: { value: new THREE.Color(params.beam.color) },
-      uOpacity: { value: params.floorPool.opacity },
-    },
-    vertexShader: /* glsl */ `
-      varying vec2 vUv;
-      void main() {
-        vUv = uv;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `,
-    fragmentShader: /* glsl */ `
-      uniform vec3 uColor;
-      uniform float uOpacity;
-      varying vec2 vUv;
-      void main() {
-        float d = distance(vUv, vec2(0.5));
-        float fade = 1.0 - smoothstep(0.12, 0.5, d);
-        gl_FragColor = vec4(uColor, uOpacity * fade);
-      }
-    `,
-  })
-
-  const mesh = new THREE.Mesh(geometry, material)
-  mesh.rotation.x = -Math.PI / 2
-  mesh.position.set(target.x, 0.02, target.z)
   return mesh
 }
 
@@ -364,7 +331,7 @@ function buildDust(params, origin, target) {
   const fullLength = target.clone().sub(origin).length()
   const axis = target.clone().sub(origin).normalize()
   const { u, v } = buildRadialBasis(axis)
-  const maxRadius = Math.tan(params.spot.angle) * fullLength
+  const maxRadius = Math.tan(params.shaft.angle) * fullLength
 
   const positions = new Float32Array(count * 3)
   // A per-point random phase offset so points don't oscillate in lockstep
@@ -485,105 +452,108 @@ export function createVolumetricLighting(params = lightingParams) {
   const group = new THREE.Group()
   group.name = 'VolumetricLighting'
 
-  let spotLight = null
-  let spotTarget = null
-  let keyLight = null
+  let sunLight = null
+  let sunTarget = null
+  let bounceLight = null
   let fillLight = null
   let hemisphereLight = null
   let beam = null
-  let floorPool = null
   let dust = null
 
   function init() {
-    const origin = new THREE.Vector3(...params.spot.position)
-    const target = new THREE.Vector3(...params.spot.target)
+    const floorTarget = sunFloorTarget(params)
+    const origin = floorTarget.clone().addScaledVector(sunDirection(params), params.sun.distance)
 
-    spotLight = new THREE.SpotLight(
-      params.spot.color,
-      params.spot.intensity,
-      params.spot.distance,
-      params.spot.angle,
-      params.spot.penumbra,
-      params.spot.decay,
-    )
-    spotLight.position.copy(origin)
-    spotLight.castShadow = true
-    spotLight.shadow.mapSize.set(params.shadow.mapSize, params.shadow.mapSize)
-    spotLight.shadow.radius = params.shadow.radius
-    spotLight.shadow.bias = params.shadow.bias
-    spotLight.shadow.normalBias = params.shadow.normalBias
-    spotLight.shadow.camera.near = 1
-    spotLight.shadow.camera.far = params.spot.distance
+    /**
+     * A DirectionalLight, not a SpotLight, and that is the substantive change
+     * in this phase rather than a detail of it. The sun is 150 million km
+     * away: its rays are parallel, it has no inverse-square falloff and no
+     * cone, so a near surface and a far one facing the same way receive the
+     * same illuminance. A SpotLight cannot express that at any settings — the
+     * previous one needed intensity 340 and `decay: 2` precisely because it
+     * was a lamp in the room pretending not to be.
+     *
+     * It is also the room's only shadow caster, which is what makes the roof
+     * opening mean anything: the shape of the light on the floor is the shape
+     * of the hole, cast by the roof, not a painted disc.
+     */
+    sunLight = new THREE.DirectionalLight(params.sun.color, params.sun.skylitIntensity)
+    sunLight.position.copy(origin)
+    sunLight.castShadow = true
+    sunLight.shadow.mapSize.set(params.shadow.mapSize, params.shadow.mapSize)
+    sunLight.shadow.bias = params.shadow.bias
+    sunLight.shadow.normalBias = params.shadow.normalBias
 
-    spotTarget = new THREE.Object3D()
-    spotTarget.position.copy(target)
-    spotLight.target = spotTarget
+    const { halfExtent, near, far } = params.shadow
+    const camera = sunLight.shadow.camera
+    camera.left = -halfExtent
+    camera.right = halfExtent
+    camera.top = halfExtent
+    camera.bottom = -halfExtent
+    camera.near = near
+    camera.far = far
+    camera.updateProjectionMatrix()
 
-    // Stable directional fill — no shadow map of its own, so it can't
-    // introduce a second source of shadow acne/strobing. Purely lifts the
-    // room's general readability; the spot remains the only shadow caster
-    // and the only thing that "looks like" the narrative light source.
-    keyLight = new THREE.DirectionalLight(params.key.color, params.key.intensity)
-    keyLight.position.set(...params.key.position)
-    keyLight.castShadow = false
+    sunTarget = new THREE.Object3D()
+    sunTarget.position.copy(floorTarget)
+    sunLight.target = sunTarget
 
-    fillLight = new THREE.DirectionalLight(params.fill.color, params.fill.intensity)
+    // Both non-shadowing, so neither can introduce a second shadow source —
+    // the sun owns every shadow in this room.
+    bounceLight = new THREE.DirectionalLight(params.bounce.color, params.bounce.skylitIntensity)
+    bounceLight.position.set(...params.bounce.position)
+    bounceLight.castShadow = false
+
+    fillLight = new THREE.DirectionalLight(params.fill.color, params.fill.skylitIntensity)
     fillLight.position.set(...params.fill.position)
     fillLight.castShadow = false
 
     hemisphereLight = new THREE.HemisphereLight(
-      params.hemisphere.sky,
-      params.hemisphere.ground,
-      params.hemisphere.intensity,
+      params.sky.sky,
+      params.sky.ground,
+      params.sky.skylitIntensity,
     )
 
-    beam = buildBeam(params, origin, target)
-    floorPool = buildFloorPool(params, origin, target)
-    dust = buildDust(params, origin, target)
+    // The volumetrics now run down the sun's own shaft, from the middle of
+    // the opening to where the light lands, instead of from a hole in the
+    // wall to a mark on the floor.
+    const shaftOrigin = new THREE.Vector3(OPENING.centerX, OPENING.crownHeight, OPENING.centerZ)
+    beam = buildBeam(params, shaftOrigin, floorTarget)
+    dust = buildDust(params, shaftOrigin, floorTarget)
 
-    group.add(
-      spotLight,
-      spotTarget,
-      keyLight,
-      fillLight,
-      hemisphereLight,
-      beam,
-      floorPool,
-      dust,
-    )
+    group.add(sunLight, sunTarget, bounceLight, fillLight, hemisphereLight, beam, dust)
 
-    // Start fully dark — the ignition ramp (below) takes over from the
-    // very first frame, but this avoids even a one-frame flash of full
-    // brightness before that first `useFrame` call lands.
+    // Start in the skylit state rather than at full sun, so there is never a
+    // frame of the lit room before the first `useFrame` lands.
     setIgnition(0)
   }
 
   /**
-   * Scroll-driven dark-to-light reveal: `factor` 0 = near-total darkness
-   * (only `ambient.darkIntensity`'s faint edge-outlining tint), 1 = the
-   * room's full established brightness. Scales every light's intensity
-   * and every volumetric element's opacity proportionally from their
-   * `lightingParams` values — not just the beam/dust (as an earlier,
-   * now-superseded approach-fade did), since a real "ignition" needs the
-   * spot, key, and fill lights themselves to visibly brighten too, not
-   * just the atmospheric extras. Driven by a direct property mutation
-   * from `VolumetricLightingRig`'s `useFrame`, not React state, per
-   * technical-architecture.md §7.
+   * Moves the room from SKYLIT (`factor` 0) to SUNLIT (1).
+   *
+   * Not a dark-to-light ramp any more. At 0 the court is open and the sky is
+   * coming through it: the room is fully readable, just flatter, cooler and
+   * without a shaft. At 1 the sun has come round into the opening. Every
+   * light interpolates between two real values rather than being multiplied
+   * toward zero, which is why nothing is ever black at the start now.
+   *
+   * Driven by direct property mutation from `VolumetricLightingRig`'s
+   * `useFrame`, not React state, per technical-architecture.md §7.
    */
   function setIgnition(factor) {
-    if (spotLight) spotLight.intensity = params.spot.intensity * factor
-    if (keyLight) keyLight.intensity = params.key.intensity * factor
-    if (fillLight) fillLight.intensity = THREE.MathUtils.lerp(params.fill.darkIntensity, params.fill.intensity, factor)
-    if (hemisphereLight) {
-      hemisphereLight.intensity = THREE.MathUtils.lerp(
-        params.hemisphere.darkIntensity,
-        params.hemisphere.intensity,
-        factor,
-      )
+    const lerp = THREE.MathUtils.lerp
+    if (sunLight) sunLight.intensity = lerp(params.sun.skylitIntensity, params.sun.intensity, factor)
+    if (bounceLight) {
+      bounceLight.intensity = lerp(params.bounce.skylitIntensity, params.bounce.intensity, factor)
     }
-    if (beam) beam.material.uniforms.uOpacity.value = params.beam.opacity * factor
+    if (fillLight) fillLight.intensity = lerp(params.fill.skylitIntensity, params.fill.intensity, factor)
+    if (hemisphereLight) {
+      hemisphereLight.intensity = lerp(params.sky.skylitIntensity, params.sky.intensity, factor)
+    }
+    // The shaft and its dust are the one thing that genuinely is absent until
+    // the sun arrives — there is no beam in the air without a beam.
+    if (beam) beam.material.uniforms.uOpacity.value = params.shaft.opacity * factor
     if (dust) dust.material.uniforms.uOpacity.value = params.dust.opacity * factor
-    if (floorPool) floorPool.material.uniforms.uOpacity.value = params.floorPool.opacity * factor
   }
 
   /** Advances the dust field's GPU drift animation — see `buildDust`. */
@@ -592,16 +562,13 @@ export function createVolumetricLighting(params = lightingParams) {
   }
 
   function update() {
-    // Still a no-op — scroll-coupling now happens through `setIgnition`
-    // and `setTime`, called directly from `VolumetricLightingRig`'s
-    // `useFrame`, not through this generic hook.
+    // Still a no-op — scroll-coupling happens through `setIgnition` and
+    // `setTime`, called directly from `VolumetricLightingRig`'s `useFrame`.
   }
 
   function dispose() {
     beam?.geometry.dispose()
     beam?.material.dispose()
-    floorPool?.geometry.dispose()
-    floorPool?.material.dispose()
     dust?.geometry.dispose()
     dust?.material.dispose()
     group.clear()

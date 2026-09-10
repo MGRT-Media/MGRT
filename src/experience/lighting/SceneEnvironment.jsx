@@ -28,7 +28,24 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
  * — at 1.0 the environment alone lights the whole space flat and every darkness
  * decision made so far is undone.
  */
-const ENVIRONMENT_INTENSITY = 0.12
+/**
+ * 0.12 -> 0.38.
+ *
+ * The old value's reasoning was sound for the room it was written for: "this
+ * is a nocturnal room, and IBL is here to give the stone something to
+ * reflect, not to raise the exposure." That room no longer exists. There is
+ * now a 10 x 11 hole in the roof, and a real interior open to the sky gathers
+ * a great deal of light off its own surfaces from every direction — that is
+ * precisely what an environment term models, and at 0.12 the room was
+ * pretending it had no sky.
+ *
+ * Still far below the 1.0 of a lit product shot, and deliberately so: this is
+ * the term that lifts shadow OUT of black without flattening, but push it far
+ * enough and it does flatten, which is the failure the brief names. The
+ * analytic sun remains several times larger, so shape still comes from
+ * direction rather than from ambient.
+ */
+const ENVIRONMENT_INTENSITY = 0.38
 
 export default function SceneEnvironment() {
   const { gl, scene } = useThree()
