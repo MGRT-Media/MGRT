@@ -1,11 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
-import {
-  CAMPAIGNS_SWAP_DISTANCE,
-  CAMPAIGNS_SWAP_POSE,
-  campaignsRailDistance,
-} from '../timeline/cameraPath.js'
+import { HERO_LOOKAT, HERO_T, heroDistanceForAspect, heroPositionAt } from '../timeline/cameraPath.js'
+import { isHeroCaptureWindow } from '../timeline/heroSequence.js'
 import { useExteriorLayer } from './layers.js'
 import { MODEL_URLS, cloneNode, measure, useModel, useTreatedMaterials } from '../models/modelAssets.js'
 
@@ -185,8 +182,26 @@ const VISIBLE_HEIGHT_FRACTION =
 // the direct view and vanished from the billboard's copy.
 const MAX_TARGET_WIDTH = 3072
 
-const swapPosition = new THREE.Vector3().fromArray(CAMPAIGNS_SWAP_POSE.position)
-const swapFacing = new THREE.Vector3().fromArray(CAMPAIGNS_SWAP_POSE.facing)
+/**
+ * The pose the hand-over happens from — now the MGRT hero rather than Act 3's
+ * old backwards rail.
+ *
+ * Everything downstream is built from these two vectors: the board's centre
+ * and yaw, the render-to-texture camera, `BILLBOARD_PLACEMENT`, and through
+ * that the whole exterior, which lays itself out against the placement rather
+ * than against world coordinates. Repointing this pair therefore moves the
+ * board AND the world it stands in as one piece, with their relative design
+ * untouched — which is exactly what the reveal needs and why nothing here had
+ * to be re-authored.
+ *
+ * Taken at 16:9. The board is a fixed object in the world, so it cannot track
+ * the viewport the way the hero camera does; what makes the hand-over hold at
+ * every aspect instead is that the hero is capped closer than the distance at
+ * which this board stops covering the frame — see `HERO_MAX_DISTANCE`.
+ */
+const heroCameraPosition = heroPositionAt(heroDistanceForAspect(16 / 9))
+const swapPosition = heroCameraPosition.clone()
+const swapFacing = HERO_LOOKAT.clone().sub(heroCameraPosition).normalize()
 
 const billboardCenter = swapPosition.clone().addScaledVector(swapFacing, BILLBOARD_VIEW_DISTANCE)
 // A PlaneGeometry faces +Z; this yaw turns it to face back along the
@@ -270,7 +285,7 @@ const LAMP_WASH_RISE = 6
 // the billboard is still on screen, which would leave the surface showing a
 // frozen frame. A camera-based lead-in cannot get out of step with the
 // camera.
-const RTT_LEAD_DISTANCE = 4
+
 
 const LAMP_COUNT = 3
 const LAMP_DROP = 0.45
@@ -441,6 +456,8 @@ export default function Billboard() {
     })
   }, [gl])
 
+  const captured = useRef(null)
+
   const interiorCamera = useMemo(() => {
     // Aimed square at the surface, NOT along the main camera's view axis —
     // the one thing the tilt genuinely forces. The seamless hand-over rests
@@ -481,22 +498,44 @@ export default function Billboard() {
   useEffect(() => () => renderTarget.dispose(), [renderTarget])
 
   useFrame(({ camera }) => {
-    const railDistance = campaignsRailDistance(camera.position)
+
 
     // Zero added cost outside Act 3: no extra scene pass at all during
     // Intro, Film or Digital. The lead-in means the surface is already
     // showing a current frame by the time it can first be seen, in either
     // scroll direction.
-    if (railDistance < CAMPAIGNS_SWAP_DISTANCE - RTT_LEAD_DISTANCE) return
+    /**
+     * Captured ONCE, not re-rendered every frame.
+     *
+     * The old scheme kept a live copy of the room on the surface because the
+     * camera was retreating down the room and the view behind it kept
+     * changing. Nothing changes here: the board carries one still composition
+     * — the wall, square on, exactly as the hero framed it — and once the
+     * camera starts pulling back that image has to stay locked to the BOARD.
+     * Re-rendering it from the moving camera would keep it locked to the
+     * SCREEN instead, so the picture would appear to zoom in as the board
+     * shrank, and the object would never resolve as a printed surface.
+     *
+     * Taken DURING the hero hold, which is the only correct moment. The camera
+     * is frozen on the canonical hero pose there, so what lands in the render
+     * target is the exact final interior frame the billboard has to impersonate
+     * an instant later — not an approximation of it taken on the way in. It is
+     * also invisible, because the board is still on a layer the camera is not
+     * looking at.
+     *
+     * One extra scene render for the whole sequence. That also removes the
+     * per-frame second scene pass Act 3 used to cost, which is the single
+     * biggest thing this phase gives back to Safari.
+     */
+    if (!isHeroCaptureWindow()) return
+    if (captured.current === camera.aspect) return
+    captured.current = camera.aspect
 
     // Zero at the swap, easing up afterwards — see LAMP_WASH_LEVEL. Keyed
     // off the camera too, so it is still exactly zero at the frame the
     // hand-over actually happens on rather than at the frame progress says
     // it should.
-    faceMaterial.current?.color.setScalar(
-      LAMP_WASH_LEVEL *
-        THREE.MathUtils.smoothstep(railDistance, CAMPAIGNS_SWAP_DISTANCE, CAMPAIGNS_SWAP_DISTANCE + LAMP_WASH_RISE),
-    )
+
 
     gl.setRenderTarget(renderTarget)
     gl.render(scene, interiorCamera)

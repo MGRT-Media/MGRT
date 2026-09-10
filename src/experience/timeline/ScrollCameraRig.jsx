@@ -3,6 +3,8 @@ import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import { scrollProgress, scrollLockWobble } from './ScrollTimelineProvider.jsx'
 import { sampleCameraPath, sampleCameraPathInto, setHeroAspect } from './cameraPath.js'
+import { HERO_ARRIVAL_EPSILON, advanceHeroSequence, isHeroFrozen } from './heroSequence.js'
+import { HERO_T } from './filmActBeats.js'
 
 // Lowered from 3.5 (both were previously equal) per explicit request to
 // give the camera more perceived "weight and inertia" as it settles, and
@@ -29,6 +31,8 @@ const forwardScratch = new THREE.Vector3()
 // per-frame path does not use the allocating sampler.
 const pathPositionScratch = new THREE.Vector3()
 const pathLookAtScratch = new THREE.Vector3()
+const heroPoseScratch = new THREE.Vector3()
+const HERO_SAMPLE_SCRATCH = { value: 0 }
 
 function computeTargetQuaternion(outQuaternion, eye, lookAtPoint, up) {
   scratchMatrix.lookAt(eye, lookAtPoint, up)
@@ -89,14 +93,38 @@ export default function ScrollCameraRig() {
     if (camera.aspect !== heroAspect.current) {
       heroAspect.current = camera.aspect
       setHeroAspect(camera.aspect)
+      // The canonical hero pose for this viewport, cached so arrival can be
+      // measured every frame without re-walking the path.
+      heroPoseScratch.fromArray(sampleCameraPath(HERO_T).position)
     }
 
-    sampleCameraPathInto(scrollProgress.value, pathPositionScratch, pathLookAtScratch)
+    // Sample the hero pose once per frame so arrival can be measured against
+    // it, then let the machine choose the progress actually rendered.
+    const arrived = dampedPosition.current.distanceTo(heroPoseScratch) < HERO_ARRIVAL_EPSILON
+    HERO_SAMPLE_SCRATCH.value = advanceHeroSequence(scrollProgress.value, arrived, performance.now())
+
+    /**
+     * The sequence decides what to draw — not raw scroll. See
+     * `heroSequence.js`: while travelling it clamps at the hero, during the
+     * hold it pins there, and the reveal runs on its own clock.
+     *
+     * Arrival is reported from here because this is the only place that knows
+     * where the damped camera actually is; the machine cannot see it.
+     */
+    sampleCameraPathInto(HERO_SAMPLE_SCRATCH.value, pathPositionScratch, pathLookAtScratch)
 
     const pos = dampedPosition.current
-    pos.x = THREE.MathUtils.damp(pos.x, pathPositionScratch.x, POSITION_DAMP_LAMBDA, delta)
-    pos.y = THREE.MathUtils.damp(pos.y, pathPositionScratch.y, POSITION_DAMP_LAMBDA, delta)
-    pos.z = THREE.MathUtils.damp(pos.z, pathPositionScratch.z, POSITION_DAMP_LAMBDA, delta)
+    if (isHeroFrozen()) {
+      // Written verbatim, not damped. Damping only ever ASYMPTOTES toward its
+      // target, so a damped hold still creeps by a hair every frame — enough
+      // to read as drift over a second and a half. Copying the pose outright
+      // is what makes the frame bit-identical for the whole hold.
+      pos.copy(pathPositionScratch)
+    } else {
+      pos.x = THREE.MathUtils.damp(pos.x, pathPositionScratch.x, POSITION_DAMP_LAMBDA, delta)
+      pos.y = THREE.MathUtils.damp(pos.y, pathPositionScratch.y, POSITION_DAMP_LAMBDA, delta)
+      pos.z = THREE.MathUtils.damp(pos.z, pathPositionScratch.z, POSITION_DAMP_LAMBDA, delta)
+    }
 
     // Orientation is derived from the path's OWN eye/target pair, not from
     // the damped eye — a real bug fix, not a refactor. Feeding the damped
@@ -122,7 +150,7 @@ export default function ScrollCameraRig() {
     // Frame-rate-independent slerp factor with the same exponential shape
     // as THREE.MathUtils.damp, so rotation and position share one
     // consistent "catch-up" feel despite using different lambdas/math.
-    const rotationAlpha = 1 - Math.exp(-ROTATION_DAMP_LAMBDA * delta)
+    const rotationAlpha = isHeroFrozen() ? 1 : 1 - Math.exp(-ROTATION_DAMP_LAMBDA * delta)
     dampedQuaternion.current.slerp(targetQuaternion, rotationAlpha)
     camera.quaternion.copy(dampedQuaternion.current)
 

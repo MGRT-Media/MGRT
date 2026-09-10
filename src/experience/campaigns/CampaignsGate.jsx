@@ -1,6 +1,6 @@
 import { Suspense, lazy, useEffect, useState } from 'react'
 import { scrollProgress } from '../timeline/ScrollTimelineProvider.jsx'
-import { CAMPAIGNS_SWAP_T } from '../timeline/filmActBeats.js'
+import { HERO_T } from './../timeline/cameraPath.js'
 
 /**
  * Holds Act 3 out of the initial load.
@@ -58,7 +58,7 @@ export default function CampaignsGate() {
     if (armed) return undefined
     let handle = 0
     const check = () => {
-      if (scrollProgress.value >= CAMPAIGNS_SWAP_T - PRELOAD_LEAD) {
+      if (scrollProgress.value >= HERO_T - PRELOAD_LEAD) {
         setArmed(true)
         return
       }

@@ -1,6 +1,6 @@
 import { useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
-import { CAMPAIGNS_SWAP_DISTANCE, campaignsRailDistance } from '../timeline/cameraPath.js'
+import { isExteriorActive } from '../timeline/heroSequence.js'
 import { EXTERIOR_LAYER } from './layers.js'
 
 // The exterior needs a far plane deep enough to contain its ground plane,
@@ -41,7 +41,25 @@ export default function CampaignsLayerSwitch() {
     // Keyed off where the camera ACTUALLY is, not off scroll progress — see
     // `campaignsRailDistance`'s own comment for why the two are not
     // interchangeable here and what keying off progress broke.
-    const exterior = campaignsRailDistance(camera.position) >= CAMPAIGNS_SWAP_DISTANCE
+    /**
+     * The hand-over point: the exact instant the wordmark is full-frame.
+     *
+     * Keyed to the hero rather than to a distance along the old rail, because
+     * that is the one frame where the wall and the billboard are showing the
+     * identical image — the board sits where the wall was, at the same depth
+     * and the same angle, carrying a render taken from this very eye point.
+     * Swapping here means the only thing that changes is which object is
+     * drawing those pixels, which is why there is nothing to see: no cut, no
+     * fade, no scale pop, nothing to cover.
+     *
+     * Owned by the state machine, NOT by a progress threshold. The test used
+     * to be `renderedProgress >= HERO_T`, which fired on the first frame of
+     * the hold — because the machine pins progress to exactly `HERO_T` there —
+     * so the viewer watched the billboard for the whole 1.5 seconds and the
+     * pull-back had nothing left to reveal. The interior now stays up for the
+     * entire hold and the exterior appears only as the pull-back starts.
+     */
+    const exterior = isExteriorActive()
     if (exterior === showingExterior.current) return
     showingExterior.current = exterior
 

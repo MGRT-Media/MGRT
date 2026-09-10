@@ -17,6 +17,7 @@ import {
   FILM_FOCUS_T,
   INTRO_ALIGN_T,
   MONITOR_SNAP_T,
+  HERO_T,
 } from './filmActBeats.js'
 
 /**
@@ -727,13 +728,15 @@ const HERO_FILL_FRACTION = 0.92
  * The furthest the camera may stand off the wall, and this is an OCCLUSION
  * limit rather than a collision one.
  *
- * Measured against the real ring at the true glyph width: past 10.25 units
+ * Two limits meet here and the tighter one wins.
+ *
+ * Measured against the real ring at the true glyph width, past 10.25 units
  * the sightlines from the
  * camera to the outer letters start clipping the columns at (0, -9.5) and
  * (-2.75, -8.76), so the colonnade begins crossing the wordmark. The camera
  * has plenty of physical room beyond that — it is the READ that fails first.
  */
-const HERO_MAX_DISTANCE = 10.25
+const HERO_MAX_DISTANCE = 8.6
 /** Closest approach, so a very wide viewport cannot push into the wall. */
 const HERO_MIN_DISTANCE = 3.4
 
@@ -748,6 +751,12 @@ const HERO_MIN_DISTANCE = 3.4
  * allow. Clamping at `HERO_MAX_DISTANCE` is the deliberate choice there: the
  * frame keeps a clean, unobstructed view of the wall rather than a complete
  * wordmark seen through a colonnade.
+ *
+ * 8.6 rather than that 10.25 because the billboard swap needs the board to
+ * OVERFILL the frame at the hero, and the board is 7.8 tall — at a 45-degree
+ * vertical FOV it stops covering the frame at 9.42 units. 8.6 keeps an 8%
+ * margin at the narrowest viewports, which is what lets the hand-over stay
+ * hidden on a phone as well as on a desktop.
  */
 export function heroDistanceForAspect(aspect) {
   const halfFovY = THREE.MathUtils.degToRad(45 / 2)
@@ -802,28 +811,49 @@ export const HERO_LOOKAT = HERO_CENTER.clone()
  */
 const HERO_PRE_DOLLY_LEAD = 1.3
 
-/**
- * Where the hero lands, and why it is not at the end of the timeline.
- *
- * The wordmark filling the frame is a BEAT, not a destination. Parking it at
- * t = 1 made it the end of the website: the camera arrived, stopped dead, and
- * there was nowhere left to go. Landing it at 0.90 leaves a tenth of the
- * timeline past it, which the creep below spends drifting almost
- * imperceptibly forward — the shot stays alive, and the billboard reveal has
- * somewhere to begin.
- */
-export const HERO_T = 0.9
+// `HERO_T` lives in `filmActBeats.js` with the other beats — see the note
+// there on the import cycle that forced the move. Re-exported so the modules
+// already reading it from here keep working.
+export { HERO_T }
 
 /**
- * How far the camera keeps moving after the hero, over the last tenth of the
- * scroll. Small enough to be barely perceptible — the point is that the frame
- * is still breathing, not that it travels anywhere.
+ * Where the billboard stands, measured from the camera at the hero.
+ *
+ * The face is 7.8 tall, so at a 45-degree vertical FOV it exactly fills the
+ * frame at 9.42 units and overfills anywhere nearer. 7.85 is that distance
+ * with a 20% margin — enough that the edges stay outside the frame through the
+ * first stretch of the pull-back, which is the ambiguity the reveal depends on.
+ *
+ * Capped rather than fixed, and the cap is what makes the swap invisible: on
+ * any landscape viewport the hero already stands closer than 7.85, so the
+ * billboard is placed at EXACTLY the distance the wall was. Same depth, same
+ * perspective, same depth-of-field — there is nothing left for the swap to
+ * give away. Only on square and portrait viewports, where the hero has to
+ * stand further back than the billboard may sit, does it move nearer.
  */
-const HERO_CREEP = 0.22
+const BILLBOARD_MAX_STANDOFF = 7.85
+
+export function billboardDistanceForAspect(aspect) {
+  return Math.min(heroDistanceForAspect(aspect), BILLBOARD_MAX_STANDOFF)
+}
+
+/**
+ * The pull-back, in units back from the hero along the same axis.
+ *
+ * `REVEAL` is where the billboard's edges are well inside the frame and the
+ * exterior has established itself; `IMPACT` reproduces the stand-off the
+ * approved Act 3 composition framed the board from (~34.5 units), so the
+ * settled shot is the one that was already signed off.
+ */
+const PULLBACK_EDGE = 3.4
+const PULLBACK_REVEAL = 13.0
+const PULLBACK_IMPACT = 28.7
 
 const heroPreDollyKeyframe = { t: 0.876, position: heroPositionAt(0), lookAt: HERO_LOOKAT }
 const heroKeyframe = { t: HERO_T, position: heroPositionAt(0), lookAt: HERO_LOOKAT }
-const heroCreepKeyframe = { t: 1, position: heroPositionAt(0), lookAt: HERO_LOOKAT }
+const pullbackEdgeKeyframe = { t: 0.935, position: heroPositionAt(0), lookAt: HERO_LOOKAT }
+const pullbackRevealKeyframe = { t: 0.972, position: heroPositionAt(0), lookAt: HERO_LOOKAT }
+const impactKeyframe = { t: 1, position: heroPositionAt(0), lookAt: HERO_LOOKAT }
 
 /**
  * Keyframe times are spaced by ARC LENGTH, not evenly.
@@ -843,7 +873,12 @@ const heroTraversalKeyframes = [
   { t: 0.826, position: new THREE.Vector3(-1.52, 3.2, -9.3), lookAt: new THREE.Vector3(-1.72, 3.2, -18.49) },
   heroPreDollyKeyframe,
   heroKeyframe,
-  heroCreepKeyframe,
+  // The pull-back. Same axis, same look-at, same level — the move reverses
+  // direction but nothing else about it changes, so it reads as one camera
+  // continuing rather than a second one taking over.
+  pullbackEdgeKeyframe,
+  pullbackRevealKeyframe,
+  impactKeyframe,
 ]
 
 /**
@@ -863,9 +898,33 @@ export function setHeroAspect(aspect) {
   const distance = heroDistanceForAspect(aspect)
   heroKeyframe.position.copy(heroPositionAt(distance))
   heroPreDollyKeyframe.position.copy(heroPositionAt(distance + HERO_PRE_DOLLY_LEAD))
-  // Creeps very slightly closer, so the beat continues to move rather than
-  // arriving and stopping.
-  heroCreepKeyframe.position.copy(heroPositionAt(Math.max(distance - HERO_CREEP, HERO_MIN_DISTANCE)))
+  pullbackEdgeKeyframe.position.copy(heroPositionAt(distance + PULLBACK_EDGE))
+  pullbackRevealKeyframe.position.copy(heroPositionAt(distance + PULLBACK_REVEAL))
+  impactKeyframe.position.copy(heroPositionAt(distance + PULLBACK_IMPACT))
+}
+
+/**
+ * Billboard pose for the current viewport: centred on the camera's own view
+ * axis at the hero, square to it.
+ *
+ * Derived here rather than in `Billboard.jsx` because it is a function of the
+ * hero framing, and the hero framing lives in this module. Anything that has
+ * to line up with the swap — the board, the render-to-texture camera, the
+ * exterior block — reads it from one place.
+ */
+export function billboardPose(aspect) {
+  const distance = billboardDistanceForAspect(aspect)
+  const camera = heroPositionAt(heroDistanceForAspect(aspect))
+  // The camera looks from `camera` toward HERO_LOOKAT; the board sits that far
+  // along the same line and faces back.
+  const forward = HERO_LOOKAT.clone().sub(camera).normalize()
+  return {
+    position: camera.clone().addScaledVector(forward, distance),
+    // Face the camera: a quad's own normal is +Z, so this is the yaw that
+    // turns it back up the view axis.
+    rotationY: Math.atan2(-forward.x, -forward.z),
+    distance,
+  }
 }
 
 setHeroAspect(16 / 9)
@@ -964,7 +1023,7 @@ const VERTICAL_LOCK_ZONE_END_INDEX = VERTICAL_LOCK_ZONE_START_INDEX + 2 // MONIT
  * `glideEase` below.
  */
 const GLIDE_ZONE_START_INDEX = KEYFRAMES.findIndex((k) => k.t === MONITOR_SNAP_T)
-const GLIDE_ZONE_END_INDEX = KEYFRAMES.indexOf(heroKeyframe)
+const GLIDE_ZONE_END_INDEX = KEYFRAMES.length - 1
 
 /**
  * The velocity profile of the whole traversal, applied once.
@@ -981,6 +1040,30 @@ const GLIDE_ZONE_END_INDEX = KEYFRAMES.indexOf(heroKeyframe)
  */
 function glideEase(u) {
   return u * u * u * (u * (u * 6 - 15) + 10)
+}
+
+/**
+ * Maps raw scroll progress onto a position along the path.
+ *
+ * Two ranges meeting at the hero: the approach eased into it and the pull-back
+ * eased out of it, both `smootherstep` so the camera arrives and leaves with
+ * zero velocity and zero acceleration.
+ *
+ * There is deliberately NO plateau here any more. A progress plateau and a
+ * real-time countdown were two mechanisms competing to own the same pause, and
+ * the plateau could never guarantee duration anyway — it pins WHERE the camera
+ * is, never HOW LONG. `ScrollTimelineProvider`'s hero countdown is now the
+ * single source of truth for the beat; this function's only job is to arrive
+ * on the exact hero pose smoothly and leave it smoothly.
+ */
+function applyHeroEasing(p) {
+  if (p <= MONITOR_SNAP_T) return p
+  if (p < HERO_T) {
+    const u = (p - MONITOR_SNAP_T) / (HERO_T - MONITOR_SNAP_T)
+    return MONITOR_SNAP_T + (HERO_T - MONITOR_SNAP_T) * glideEase(u)
+  }
+  const u = (p - HERO_T) / (1 - HERO_T)
+  return HERO_T + (1 - HERO_T) * glideEase(u)
 }
 
 /**
@@ -1048,10 +1131,12 @@ export function sampleCameraPathInto(progress, outPosition, outLookAt) {
 
   // Shape the traversal once, before the segment search, so the ease spans the
   // whole move rather than each leg of it — see `glideEase`.
-  if (p > MONITOR_SNAP_T && p < HERO_T) {
-    const span = HERO_T - MONITOR_SNAP_T
-    p = MONITOR_SNAP_T + span * glideEase((p - MONITOR_SNAP_T) / span)
-  }
+  // Approach ease into the hero, pull-back ease out of it — see
+  // `applyHeroEasing`. Both are `smootherstep`, so the camera reaches the hero
+  // at zero velocity AND zero acceleration and leaves it the same way. The
+  // PAUSE itself is not here: `ScrollTimelineProvider`'s hero countdown owns
+  // it, in real time.
+  p = applyHeroEasing(p)
 
   let i = 0
   while (i < KEYFRAMES.length - 2 && p > KEYFRAMES[i + 1].t) i += 1

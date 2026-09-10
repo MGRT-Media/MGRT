@@ -92,6 +92,52 @@ export const DIGITAL_IGNITE_RISE = 0.1
 // Snap 2/3 — within the requested 1.5-2s range.
 export const SCROLL_LOCK_HOLD_MS = 1750
 
+/**
+ * Where the MGRT hero lands on the timeline.
+ *
+ * Defined HERE rather than in `cameraPath.js`, where it started, because
+ * `ScrollTimelineProvider` needs it to catch the crossing — and importing
+ * `cameraPath` from there closes a real cycle:
+ * ScrollTimelineProvider -> cameraPath -> Environment -> VolumetricLightingRig
+ * -> ScrollTimelineProvider. That cycle left `PILLAR_RING_RADIUS` in the
+ * temporal dead zone and the whole scene failed to boot. This module imports
+ * nothing, so a constant living here can be read from anywhere.
+ */
+export const HERO_T = 0.9
+
+/**
+ * The MGRT hero beat, in real milliseconds.
+ *
+ * The hero is the one moment in this sequence that has to last a fixed amount
+ * of TIME rather than a fixed amount of scrolling. A progress-based hold — a
+ * plateau in the mapping, or a gate that pins progress while scroll
+ * accumulates — pins where the camera is and can say nothing about how long it
+ * stays there; a single trackpad flick crosses any such band between two
+ * frames. Both were tried and both failed on exactly that.
+ *
+ * So the hero reuses the mechanism Film and Digital already use for the same
+ * problem: catch the crossing, tween progress onto the exact snap point, lock
+ * the scroller, wait on a timer, then continue. Same shape as
+ * `SCROLL_LOCK_HOLD_MS`, different duration and a different ending — this one
+ * advances by itself instead of handing control back.
+ *
+ * INTERNAL ONLY. Nothing about this timer is drawn: no counter, no ring, no
+ * progress bar, no DOM. From the viewer's side the camera simply stops on
+ * MGRT MEDIA, rests, and then the billboard reveal begins.
+ */
+export const HERO_COUNTDOWN_MS = 1500
+
+/**
+ * How long the automatic reveal takes once the countdown expires, in seconds.
+ *
+ * The pull-back covers 28.7 units, so this is the difference between a reveal
+ * and a lurch. Decelerating, so the exterior settles into the approved Impact
+ * framing rather than arriving at speed.
+ */
+export const HERO_REVEAL_SECONDS = 2.6
+export const HERO_REVEAL_EASE = 'power2.inOut'
+
+
 // How far (in normalized 0-1 progress) the LIVE scroll position must
 // drift from the pinned snap point while locked before it counts as a
 // deliberate override attempt and breaks the lock early, per explicit
