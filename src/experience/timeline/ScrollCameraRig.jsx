@@ -2,7 +2,7 @@ import { useRef } from 'react'
 import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import { scrollProgress, scrollLockWobble } from './ScrollTimelineProvider.jsx'
-import { sampleCameraPath, sampleCameraPathInto } from './cameraPath.js'
+import { sampleCameraPath, sampleCameraPathInto, setHeroAspect } from './cameraPath.js'
 
 // Lowered from 3.5 (both were previously equal) per explicit request to
 // give the camera more perceived "weight and inertia" as it settles, and
@@ -79,7 +79,18 @@ export default function ScrollCameraRig() {
     ),
   )
 
+  const heroAspect = useRef(0)
+
   useFrame(({ camera }, delta) => {
+    // The MGRT hero frames the wordmark by WIDTH, so its stand-off depends on
+    // the viewport's aspect — see `heroDistanceForAspect`. Recomputed only when
+    // the aspect actually changes rather than every frame, since it walks the
+    // wall's plan curve.
+    if (camera.aspect !== heroAspect.current) {
+      heroAspect.current = camera.aspect
+      setHeroAspect(camera.aspect)
+    }
+
     sampleCameraPathInto(scrollProgress.value, pathPositionScratch, pathLookAtScratch)
 
     const pos = dampedPosition.current

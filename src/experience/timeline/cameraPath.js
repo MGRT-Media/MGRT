@@ -2,6 +2,11 @@ import * as THREE from 'three'
 import { MONITOR_ANCHOR } from '../digital/Monitor.jsx'
 import { CAMERA_ANCHOR } from '../film/CinemaCamera.jsx'
 import { BEAM_CENTER } from '../digital/plinthAnchor.js'
+import {
+  WALL_INSCRIPTION,
+  WALL_INSCRIPTION_CENTER,
+  WALL_INSCRIPTION_NORMAL,
+} from '../architecture/wallInscription.js'
 import { PILLAR_COUNT, PILLAR_RING_CENTER, PILLAR_RING_RADIUS, PILLAR_SHAFT_RADIUS } from '../Environment.jsx'
 import {
   CAMPAIGNS_GATE_T,
@@ -680,6 +685,191 @@ export const CAMPAIGNS_SWAP_POSE = {
   facing: CAMPAIGNS_FACING.toArray(),
 }
 
+/* ------------------------------------------------------------------ */
+/* Digital -> MGRT hero: the interior traversal                         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The wall the room is travelling toward.
+ *
+ * Read from `WALL_INSCRIPTION` rather than restated, so the hero framing
+ * tracks the wordmark if it is ever re-laid-out. The dolly axis is the wall's
+ * plan normal with its vertical component dropped: the inscription's surface
+ * tips up by about a degree, and following that exactly would put the camera
+ * fractionally above its own look-at and reintroduce the pitch this project
+ * keeps at zero for level moves.
+ */
+const HERO_CENTER = new THREE.Vector3(...WALL_INSCRIPTION_CENTER)
+const HERO_AXIS = new THREE.Vector3(WALL_INSCRIPTION_NORMAL[0], 0, WALL_INSCRIPTION_NORMAL[2]).normalize()
+
+/**
+ * Half the width of the widest line of the wordmark, in world units.
+ *
+ * 0.96 of the band, not the 0.9 that `LINES` asks the canvas for. That figure
+ * is the text's ADVANCE width; the painted ink runs wider than its advance
+ * once the tracking and the final glyph's side bearing are counted. Framing
+ * against 0.9 put the wordmark at a measured 96% of the frame with its outer
+ * letters almost touching the edges — this is the correction, taken off the
+ * rendered frame rather than off the spec.
+ */
+const HERO_HALF_WIDTH = (WALL_INSCRIPTION.width * 0.96) / 2
+
+/**
+ * How much of the frame's width the wordmark is asked to occupy.
+ *
+ * Same construction as `MONITOR_SNAP_FILL_FRACTION` and
+ * `LENS_DIVE_FILL_FRACTION`: the fraction scales the half-FOV, and the
+ * distance falls out of it. 0.92 leaves a little air either side.
+ */
+const HERO_FILL_FRACTION = 0.92
+
+/**
+ * The furthest the camera may stand off the wall, and this is an OCCLUSION
+ * limit rather than a collision one.
+ *
+ * Measured against the real ring at the true glyph width: past 10.25 units
+ * the sightlines from the
+ * camera to the outer letters start clipping the columns at (0, -9.5) and
+ * (-2.75, -8.76), so the colonnade begins crossing the wordmark. The camera
+ * has plenty of physical room beyond that — it is the READ that fails first.
+ */
+const HERO_MAX_DISTANCE = 10.25
+/** Closest approach, so a very wide viewport cannot push into the wall. */
+const HERO_MIN_DISTANCE = 3.4
+
+/**
+ * Distance from the wall for the hero frame, solved for the live aspect.
+ *
+ * The wordmark is roughly 4.2:1. A landscape viewport is far squarer than
+ * that, so WIDTH is always the binding constraint and the distance is solved
+ * from the horizontal half-FOV. That also means the requirement grows sharply
+ * as the viewport narrows — and past a point it cannot be met at all, because
+ * the distance needed to fit the wordmark is further back than the columns
+ * allow. Clamping at `HERO_MAX_DISTANCE` is the deliberate choice there: the
+ * frame keeps a clean, unobstructed view of the wall rather than a complete
+ * wordmark seen through a colonnade.
+ */
+export function heroDistanceForAspect(aspect) {
+  const halfFovY = THREE.MathUtils.degToRad(45 / 2)
+  const halfFovX = Math.atan(Math.tan(halfFovY) * Math.max(aspect, 0.2))
+  const required = HERO_HALF_WIDTH / Math.tan(halfFovX * HERO_FILL_FRACTION)
+  return THREE.MathUtils.clamp(required, HERO_MIN_DISTANCE, HERO_MAX_DISTANCE)
+}
+
+/** Camera position for the hero frame at a given stand-off. */
+export function heroPositionAt(distance) {
+  return new THREE.Vector3(
+    HERO_CENTER.x + HERO_AXIS.x * distance,
+    HERO_CENTER.y,
+    HERO_CENTER.z + HERO_AXIS.z * distance,
+  )
+}
+
+export const HERO_LOOKAT = HERO_CENTER.clone()
+
+/**
+ * The traversal from the monitor to the wall.
+ *
+ * **Route.** The straight line from the Digital endpoint to the wall runs
+ * through the monitor, so the camera has to go around the ensemble. It goes
+ * round the SHADED side, and the first attempt did the opposite: a near
+ * vertical crane straight up off the monitor and then forward. That cleared
+ * everything by a mile and read as a drone taking off. What replaced it eases
+ * back off the screen, trucks left across the open floor BEHIND both props —
+ * the only band where the monitor and the camera asset are not side by side —
+ * and then runs the length of the room, gaining height the whole way.
+ *
+ * The +X side was tried and abandoned: the corridor between the monitor at
+ * x 1.4 and the ring column at (2.75, -8.76) is narrow enough that every
+ * variant traded prop clearance for pillar clearance, and the widest of them
+ * put the spline through the column.
+ *
+ * **Height is spread across the whole move** — 1.195 to 3.6 over about
+ * eighteen units of travel, an average climb of well under ten degrees — so
+ * the rise reads as a pedestal riding along with the dolly rather than as a
+ * lift.
+ *
+ * **The camera stays level throughout.** Every look-at below sits at its own
+ * keyframe's height, so pitch is zero the whole way and the wordmark is met
+ * head-on at its own eyeline rather than being tilted up to. Yaw is what
+ * carries the discovery: the frame leaves the monitor, swings onto the
+ * colonnade, picks up the wall obliquely, and only squares up over the last
+ * two keyframes, where the move becomes a pure dolly along `HERO_AXIS`.
+ *
+ * **Clearances are measured against the real spline**, not the polyline —
+ * a Catmull-Rom bows outside its control points, and an earlier route that
+ * was clear as a polyline passed 0.10 from the camera asset once curved.
+ */
+const HERO_PRE_DOLLY_LEAD = 1.3
+
+/**
+ * Where the hero lands, and why it is not at the end of the timeline.
+ *
+ * The wordmark filling the frame is a BEAT, not a destination. Parking it at
+ * t = 1 made it the end of the website: the camera arrived, stopped dead, and
+ * there was nowhere left to go. Landing it at 0.90 leaves a tenth of the
+ * timeline past it, which the creep below spends drifting almost
+ * imperceptibly forward — the shot stays alive, and the billboard reveal has
+ * somewhere to begin.
+ */
+export const HERO_T = 0.9
+
+/**
+ * How far the camera keeps moving after the hero, over the last tenth of the
+ * scroll. Small enough to be barely perceptible — the point is that the frame
+ * is still breathing, not that it travels anywhere.
+ */
+const HERO_CREEP = 0.22
+
+const heroPreDollyKeyframe = { t: 0.876, position: heroPositionAt(0), lookAt: HERO_LOOKAT }
+const heroKeyframe = { t: HERO_T, position: heroPositionAt(0), lookAt: HERO_LOOKAT }
+const heroCreepKeyframe = { t: 1, position: heroPositionAt(0), lookAt: HERO_LOOKAT }
+
+/**
+ * Keyframe times are spaced by ARC LENGTH, not evenly.
+ *
+ * Inside the glide the segments interpolate linearly in their own local
+ * progress (see `sampleCameraPathInto`), so the time a segment is given is
+ * what sets the speed along it. Even spacing over unevenly sized legs would
+ * make the camera hurry through the long run down the room and dawdle across
+ * the short turn out of the monitor. These fractions are the cumulative
+ * distance along the route, so the cruise holds one steady speed and every
+ * change of pace comes from the ease rather than from the geometry.
+ */
+const heroTraversalKeyframes = [
+  { t: 0.63, position: new THREE.Vector3(1.5, 1.45, -1.3), lookAt: new THREE.Vector3(0.6, 1.45, -3.5) },
+  { t: 0.685, position: new THREE.Vector3(-1.3, 2.0, -1.9), lookAt: new THREE.Vector3(-3.5, 2.0, -9.0) },
+  { t: 0.754, position: new THREE.Vector3(-1.78, 2.6, -5.5), lookAt: new THREE.Vector3(-1.95, 2.6, -15.0) },
+  { t: 0.826, position: new THREE.Vector3(-1.52, 3.2, -9.3), lookAt: new THREE.Vector3(-1.72, 3.2, -18.49) },
+  heroPreDollyKeyframe,
+  heroKeyframe,
+  heroCreepKeyframe,
+]
+
+/**
+ * Re-solves the hero stand-off for the current viewport and writes it into the
+ * last two keyframes.
+ *
+ * Mutation rather than a rebuilt array on purpose: `sampleCameraPathInto` is
+ * called every frame and reads these objects directly, so moving the two
+ * vectors is the whole update — no reallocation, nothing to invalidate, and
+ * the allocation-free sampling path stays allocation-free.
+ *
+ * Only the last two move, and they move ALONG `HERO_AXIS` together, so the
+ * final stretch stays a pure dolly on the wall normal at every aspect ratio.
+ * `ScrollCameraRig` calls this when the camera's aspect actually changes.
+ */
+export function setHeroAspect(aspect) {
+  const distance = heroDistanceForAspect(aspect)
+  heroKeyframe.position.copy(heroPositionAt(distance))
+  heroPreDollyKeyframe.position.copy(heroPositionAt(distance + HERO_PRE_DOLLY_LEAD))
+  // Creeps very slightly closer, so the beat continues to move rather than
+  // arriving and stopping.
+  heroCreepKeyframe.position.copy(heroPositionAt(Math.max(distance - HERO_CREEP, HERO_MIN_DISTANCE)))
+}
+
+setHeroAspect(16 / 9)
+
 const KEYFRAMES = [
   ...orbitKeyframes, // Antipodal start (t: 0) through the exterior alignment point (t: 0.12) — already on-axis and looking at the lens
   { t: 0.135, position: GATE_POSITION, lookAt: LENS_LOOKAT }, // Through the gate — radius pulls in from the orbit to the ring itself, same axis, same look direction
@@ -688,10 +878,11 @@ const KEYFRAMES = [
   { t: FILM_FOCUS_T, position: LENS_DIVE_POSITION, lookAt: LENS_LOOKAT }, // Snap 2 — Cinema Lens
   { t: HANDOFF_PULLBACK_T, position: HANDOFF_PULLBACK_POSITION, lookAt: HANDOFF_PULLBACK_LOOKAT }, // Film -> Digital hand-off: quick pull-back, vertically locked to lensY
   { t: MONITOR_SNAP_T, position: MONITOR_ALIGNED_POSITION, lookAt: MONITOR_ALIGNED_LOOKAT }, // Snap 3 — Digital Monitor
-  { t: CAMPAIGNS_GATE_T, ...CAMPAIGNS_GATE_FRAME }, // Act 3 stage 1 — back out through the pillar ring
-  { t: CAMPAIGNS_ROOM_T, ...CAMPAIGNS_ROOM_FRAME }, // Act 3 stage 2 — room + ring read as one structure
-  { t: CAMPAIGNS_SWAP_T, ...CAMPAIGNS_SWAP_FRAME }, // Act 3 stage 3a — live interior hands over to the billboard surface
-  { t: CAMPAIGNS_REVEAL_T, ...CAMPAIGNS_REVEAL_FRAME }, // Act 3 stage 3b — billboard, highway, environment
+  // Digital -> MGRT hero. This replaces the old Act 3 opening, which backed
+  // straight out of the room along a tilted rail; the rail machinery below is
+  // still exported because `Billboard.jsx` derives its render-to-texture
+  // camera from it, and re-deriving that belongs to the reveal phase.
+  ...heroTraversalKeyframes,
 ]
 
 // Index of the LAST ORBIT POINT within KEYFRAMES — since §4BD's fix makes
@@ -749,8 +940,48 @@ const VERTICAL_LOCK_ZONE_END_INDEX = VERTICAL_LOCK_ZONE_START_INDEX + 2 // MONIT
 // precisely the view direction: a bowed position path against a linear
 // look-at path is a rotation, which is the one thing this act must not
 // have. See `CAMPAIGNS_FACING`'s comment above for the full derivation.
-const CAMPAIGNS_LOCK_ZONE_START_INDEX = VERTICAL_LOCK_ZONE_END_INDEX // MONITOR_ALIGNED_POSITION's index
-const CAMPAIGNS_LOCK_ZONE_END_INDEX = CAMPAIGNS_LOCK_ZONE_START_INDEX + 4 // CAMPAIGNS_REVEAL_FRAME's index
+/**
+ * The glide: the Digital keyframe through to the hero.
+ *
+ * This replaces Act 3's old linear-interpolation zone, which existed to keep
+ * the straight backwards pull-back straight. That rail is gone and the
+ * requirement inverted — this stretch is a curved route around architecture,
+ * and forcing `lerpVectors` across it turned the waypoints into corners.
+ *
+ * The zone does two things, and the second matters more than the first:
+ *
+ *  - position comes from the Catmull-Rom curve, so the route is a curve
+ *    through the waypoints rather than a polyline between them;
+ *  - segment progress is used RAW rather than through `smoothstep`.
+ *
+ * That second point is the difference between a camera move and six camera
+ * moves. Everywhere else in this path, per-segment `smoothstep` is exactly
+ * right: each keyframe is a beat the camera settles on, and meeting them at
+ * zero velocity is the intent. Applied to a continuous traversal it means the
+ * camera stops dead at every waypoint and sets off again — six ease-in-outs
+ * back to back, which reads as lurching, not gliding. Inside the glide the
+ * segments run at constant local speed and the whole move is shaped once, by
+ * `glideEase` below.
+ */
+const GLIDE_ZONE_START_INDEX = KEYFRAMES.findIndex((k) => k.t === MONITOR_SNAP_T)
+const GLIDE_ZONE_END_INDEX = KEYFRAMES.indexOf(heroKeyframe)
+
+/**
+ * The velocity profile of the whole traversal, applied once.
+ *
+ * `smootherstep` rather than `smoothstep`: it is zero in both the first AND
+ * second derivative at each end, so the camera leaves the monitor with no
+ * jerk and arrives at the hero with none either. `smoothstep` only flattens
+ * velocity, which leaves a perceptible kick at the moment the move starts —
+ * the exact tell that separates an operated camera from an interpolated one.
+ *
+ * The long tail is the brief's "progressive deceleration": most of the last
+ * third of the scroll distance is spent covering very little ground, so the
+ * wordmark settles into frame instead of hitting its mark.
+ */
+function glideEase(u) {
+  return u * u * u * (u * (u * 6 - 15) + 10)
+}
 
 /**
  * The camera's spatial trajectory as one continuous spline threading
@@ -813,20 +1044,30 @@ const POSITION_SEGMENT_COUNT = KEYFRAMES.length - 1
  * tests, same curve. Only the destination changed.
  */
 export function sampleCameraPathInto(progress, outPosition, outLookAt) {
-  const p = THREE.MathUtils.clamp(progress, 0, 1)
+  let p = THREE.MathUtils.clamp(progress, 0, 1)
+
+  // Shape the traversal once, before the segment search, so the ease spans the
+  // whole move rather than each leg of it — see `glideEase`.
+  if (p > MONITOR_SNAP_T && p < HERO_T) {
+    const span = HERO_T - MONITOR_SNAP_T
+    p = MONITOR_SNAP_T + span * glideEase((p - MONITOR_SNAP_T) / span)
+  }
 
   let i = 0
   while (i < KEYFRAMES.length - 2 && p > KEYFRAMES[i + 1].t) i += 1
   const a = KEYFRAMES[i]
   const b = KEYFRAMES[i + 1]
   const rawSegmentT = b.t === a.t ? 0 : (p - a.t) / (b.t - a.t)
-  const segmentT = THREE.MathUtils.smoothstep(rawSegmentT, 0, 1)
 
   const inStraightZone = i >= STRAIGHT_ZONE_START_INDEX && i < STRAIGHT_ZONE_END_INDEX
   const inVerticalLockZone = i >= VERTICAL_LOCK_ZONE_START_INDEX && i < VERTICAL_LOCK_ZONE_END_INDEX
-  const inCampaignsLockZone = i >= CAMPAIGNS_LOCK_ZONE_START_INDEX && i < CAMPAIGNS_LOCK_ZONE_END_INDEX
+  const inGlideZone = i >= GLIDE_ZONE_START_INDEX && i < GLIDE_ZONE_END_INDEX
 
-  if (inStraightZone || inVerticalLockZone || inCampaignsLockZone) {
+  // Raw inside the glide (one continuous move), eased per segment everywhere
+  // else (each keyframe is a beat to settle on).
+  const segmentT = inGlideZone ? rawSegmentT : THREE.MathUtils.smoothstep(rawSegmentT, 0, 1)
+
+  if (inStraightZone || inVerticalLockZone) {
     outPosition.lerpVectors(a.position, b.position, segmentT)
   } else {
     // `getPoint`'s second argument is an optional target — passing it is what

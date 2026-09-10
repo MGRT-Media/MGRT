@@ -90,6 +90,56 @@ export const WALL_INSCRIPTION = {
   standoff: 0.012,
 }
 
+/**
+ * Where the wordmark sits in the world, and which way it faces.
+ *
+ * Solved from the same spec the geometry is built from, so the camera that
+ * frames it and the mesh itself can never disagree. `cameraPath.js` reads both
+ * to place the hero shot: deriving the framing from the wordmark means a
+ * re-layout of the inscription moves the camera with it rather than silently
+ * mis-framing.
+ *
+ * The centre is offset along the wall by `offsetAlongWall`, so it is NOT the
+ * shell's apex — it has to be marched along the plan curve exactly the way the
+ * geometry marches it.
+ */
+function solveInscriptionPlacement(spec = WALL_INSCRIPTION) {
+  const theta = (() => {
+    // Same arc march as the geometry, for the band's centre only.
+    const step = spec.offsetAlongWall < 0 ? -0.0004 : 0.0004
+    let t = spec.centerTheta
+    let previous = planPoint(t)
+    let arc = 0
+    while (Math.abs(arc) < Math.abs(spec.offsetAlongWall)) {
+      t += step
+      const p = planPoint(t)
+      arc += Math.sign(step) * Math.hypot(p.x - previous.x, p.z - previous.z)
+      previous = p
+    }
+    return t
+  })()
+
+  const p = planPoint(theta)
+  const radius = Math.hypot(p.x, p.z) || 1
+  const deviation = wallDeviation(theta, spec.centerY) - spec.standoff
+  const center = [
+    p.x + (p.x / radius) * deviation,
+    spec.centerY,
+    p.z + (p.z / radius) * deviation,
+  ]
+  // Inward normal: the wall faces the room, so it points back along its own
+  // plan radius toward the centre line.
+  const normal = [-p.x / radius, 0, -p.z / radius]
+  return { center, normal }
+}
+
+const placement = solveInscriptionPlacement()
+
+/** World position of the wordmark's centre. */
+export const WALL_INSCRIPTION_CENTER = placement.center
+/** Inward-facing surface normal at that point, horizontal. */
+export const WALL_INSCRIPTION_NORMAL = placement.normal
+
 const SEGMENTS_ACROSS = 64
 const SEGMENTS_DOWN = 6
 
