@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { HERO_LOOKAT, HERO_T, heroDistanceForAspect, heroPositionAt } from '../timeline/cameraPath.js'
-import { isHeroCaptureWindow } from '../timeline/heroSequence.js'
+import { isHeroCaptureWindow, renderedProgress } from '../timeline/heroSequence.js'
 import { useExteriorLayer } from './layers.js'
 import { MODEL_URLS, cloneNode, measure, useModel, useTreatedMaterials } from '../models/modelAssets.js'
 
@@ -117,7 +117,23 @@ const BILLBOARD_HEIGHT = 7.8
 // a board facing the road points. Standing where it aims is what makes it
 // look flatter; there is no placement that is both in front of it and well
 // off its axis.
-const BILLBOARD_YAW_OFFSET = THREE.MathUtils.degToRad(-22)
+/**
+ * 0, and that is the fix for the match-frame shift rather than a style change.
+ *
+ * The board used to sit 22 degrees off square. That put the camera's eye OFF
+ * the quad's normal, so reproducing the view needed an off-axis frustum —
+ * the `QUAD_CENTRE_X` / `setViewOffset` construction below. That maths was
+ * derived against the old swap pose and does not survive being repointed at
+ * the hero: the residual is a horizontal offset, which is exactly the leftward
+ * jump at the hand-over.
+ *
+ * Square-on removes the problem instead of correcting it. The eye now lies on
+ * the quad's normal through its centre, `QUAD_CENTRE_X` falls to zero, the
+ * frustum becomes symmetric and UV (0.5, 0.5) maps to screen centre by
+ * construction. It is also what the sequence asks for on its own terms — the
+ * pull-back is meant to begin square-on with no yaw.
+ */
+const BILLBOARD_YAW_OFFSET = 0
 // Pulled in to hold frame coverage against the turn, with the aspect
 // guarantee relaxed from ~2.0 to ~1.85 in the same move — still every
 // ordinary desktop, laptop and phone ratio.
@@ -276,7 +292,12 @@ const FRAME_THICKNESS = 0.35
 // By the time the wash is fully up the board is small in frame, so it reads
 // as lamps that were always on rather than lamps coming on.
 const LAMP_WASH_LEVEL = 0.11
-const LAMP_WASH_RISE = 6
+/**
+ * How much progress the wash takes to come up, now the rail it used to be
+ * measured along is gone. The reveal spans 0.9 to 1.0, so this brings the
+ * lamps in over roughly the first third of the pull-back.
+ */
+const LAMP_WASH_RISE = 0.035
 
 // How far before the swap the interior pass starts running, in rail units.
 // Measured on the camera rather than on scroll progress for the same reason
@@ -531,12 +552,6 @@ export default function Billboard() {
     if (captured.current === camera.aspect) return
     captured.current = camera.aspect
 
-    // Zero at the swap, easing up afterwards — see LAMP_WASH_LEVEL. Keyed
-    // off the camera too, so it is still exactly zero at the frame the
-    // hand-over actually happens on rather than at the frame progress says
-    // it should.
-
-
     gl.setRenderTarget(renderTarget)
     gl.render(scene, interiorCamera)
     gl.setRenderTarget(null)
@@ -546,45 +561,28 @@ export default function Billboard() {
 
   return (
     <group ref={applyExteriorLayer} position={[cx, cy, cz]} rotation={[0, billboardRotationY, 0]}>
-      {/* The image surface.
-          `emissiveMap` carries the render, not `map`: the pixels arrive
-          already lit by the interior render that produced them, so they
-          have to reach the frame buffer unmodified — which is exactly what
-          an emissive term does, and is why this was a `meshBasicMaterial`
-          until the lamps arrived. But a basic material cannot receive
-          light at all, so the up-lighters below had nothing to fall on. A
-          standard material with a black-ish `color` and the SAME texture in
-          `map` keeps the emissive path pixel-identical while adding a
-          diffuse term worth only a few percent — enough for the lamps to
-          lay a real, subtle wash across the lower board, far too little to
-          disturb the swap, where the surface has to match the room exactly.
-          Tone mapping is deliberately left ON: Three skips it when
-          rendering into a render target, so the texture arrives
-          untone-mapped, and disabling it here too left the billboard
-          brighter and flatter than the room it must be indistinguishable
-          from — caught by comparing frames either side of the swap, not by
-          inspection. Every interior material therefore reaches the frame
-          buffer tone-mapped exactly once, whichever side of the swap it
-          arrives from — which is a contract the interior has to keep too:
-          see `screenVideoMaterial.js`, the one surface in the room that
-          writes its pixels raw. `fog={false}` keeps the reveal legible: at full
-          pull-back the scene fog would wash the room away just as it
-          becomes readable, and a lit billboard reading brighter than its
-          surroundings is what a real one does anyway. It costs nothing at
-          the swap, only 9 units out. */}
+      {/* The image surface — UNLIT, and that is the fix for the grey cast.
+          It was a `meshStandardMaterial` so the up-lighters below had
+          something to fall on, with a near-black `color` keeping the diffuse
+          term tiny. But a standard material also receives the ENVIRONMENT, and
+          `scene.environment` is the sky HDRI at 0.40 — and the specular part
+          of an IBL does not scale with `color`. It depends only on roughness
+          and metalness, so it laid a uniform reflected sheen across the board
+          that no amount of darkening the colour could remove. That sheen is
+          the "thin grey film": lower contrast, flatter, washed out, appearing
+          the instant the swap happens.
+          A basic material cannot receive light, environment or otherwise, so
+          the captured pixels reach the frame buffer exactly as rendered.
+          `toneMapped` is deliberately left ON: three skips tone mapping for
+          materials whose destination is a render target, so the texture holds
+          linear scene values and `OutputPass` maps them once — the same single
+          mapping the direct view gets. No double conversion in either path.
+          The cost is that the lamps no longer wash the image, which is the
+          intended trade: the structure stays physically lit, the display
+          reproduces the frame. */}
       <mesh>
         <planeGeometry args={[BILLBOARD_WIDTH, BILLBOARD_HEIGHT]} />
-        <meshStandardMaterial
-          ref={faceMaterial}
-          map={renderTarget.texture}
-          color="#000000"
-          emissive="#ffffff"
-          emissiveMap={renderTarget.texture}
-          emissiveIntensity={1}
-          roughness={0.92}
-          metalness={0}
-          fog={false}
-        />
+        <meshBasicMaterial map={renderTarget.texture} fog={false} />
       </mesh>
       {/* Structural frame, set slightly behind the face so it reads as a
           surround rather than z-fighting with it. Outside the face's own

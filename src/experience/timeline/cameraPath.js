@@ -849,11 +849,42 @@ const PULLBACK_EDGE = 3.4
 const PULLBACK_REVEAL = 13.0
 const PULLBACK_IMPACT = 28.7
 
+/**
+ * How far the pull-back drifts SIDEWAYS, and why it drifts at all.
+ *
+ * A straight retreat leaves the camera square in front of the board at the
+ * end, which reads as a product shot rather than a place — the highway is
+ * behind the viewer's shoulder and never enters the composition. Trucking
+ * toward the road as the camera retreats puts it between the two, so the
+ * settled frame can hold the board on one side and the highway on the other.
+ *
+ * Toward -X, which is the road's side of the board in the exterior's own
+ * layout. Zero at the first waypoint on purpose: the reveal has to begin
+ * SQUARE-ON or the illusion breaks — a lateral move at the swap would slide
+ * the hero across the frame and give the game away before the edges appear.
+ * The drift only opens up once the board's frame is already entering shot.
+ *
+ * Note this moves the CAMERA, never the board. The billboard is a fixed
+ * object with a fixed texture; everything the viewer sees change is parallax
+ * from their own movement.
+ */
+const PULLBACK_LATERAL_EDGE = 0
+const PULLBACK_LATERAL_REVEAL = 3.2
+const PULLBACK_LATERAL_IMPACT = 12.5
+
+/** The board's own right-to-left axis in plan, for the truck above. */
+const HERO_LATERAL = new THREE.Vector3(-HERO_AXIS.z, 0, HERO_AXIS.x).normalize()
+
+/** Camera position at a given stand-off plus a sideways offset. */
+function pullbackPositionAt(distance, lateral) {
+  return heroPositionAt(distance).addScaledVector(HERO_LATERAL, lateral)
+}
+
 const heroPreDollyKeyframe = { t: 0.876, position: heroPositionAt(0), lookAt: HERO_LOOKAT }
 const heroKeyframe = { t: HERO_T, position: heroPositionAt(0), lookAt: HERO_LOOKAT }
 const pullbackEdgeKeyframe = { t: 0.935, position: heroPositionAt(0), lookAt: HERO_LOOKAT }
-const pullbackRevealKeyframe = { t: 0.972, position: heroPositionAt(0), lookAt: HERO_LOOKAT }
-const impactKeyframe = { t: 1, position: heroPositionAt(0), lookAt: HERO_LOOKAT }
+const pullbackRevealKeyframe = { t: 0.972, position: heroPositionAt(0), lookAt: HERO_LOOKAT.clone() }
+const impactKeyframe = { t: 1, position: heroPositionAt(0), lookAt: HERO_LOOKAT.clone() }
 
 /**
  * Keyframe times are spaced by ARC LENGTH, not evenly.
@@ -898,9 +929,21 @@ export function setHeroAspect(aspect) {
   const distance = heroDistanceForAspect(aspect)
   heroKeyframe.position.copy(heroPositionAt(distance))
   heroPreDollyKeyframe.position.copy(heroPositionAt(distance + HERO_PRE_DOLLY_LEAD))
-  pullbackEdgeKeyframe.position.copy(heroPositionAt(distance + PULLBACK_EDGE))
-  pullbackRevealKeyframe.position.copy(heroPositionAt(distance + PULLBACK_REVEAL))
-  impactKeyframe.position.copy(heroPositionAt(distance + PULLBACK_IMPACT))
+  pullbackEdgeKeyframe.position.copy(
+    pullbackPositionAt(distance + PULLBACK_EDGE, PULLBACK_LATERAL_EDGE),
+  )
+  pullbackRevealKeyframe.position.copy(
+    pullbackPositionAt(distance + PULLBACK_REVEAL, PULLBACK_LATERAL_REVEAL),
+  )
+  impactKeyframe.position.copy(
+    pullbackPositionAt(distance + PULLBACK_IMPACT, PULLBACK_LATERAL_IMPACT),
+  )
+  // The look-at opens with the move: still locked on the board while the
+  // camera is square to it, then easing toward a point between the board and
+  // the road so the settled frame holds both. Kept well short of the lateral
+  // offset itself, so the board never slides out of frame.
+  pullbackRevealKeyframe.lookAt.copy(HERO_LOOKAT).addScaledVector(HERO_LATERAL, 0.9)
+  impactKeyframe.lookAt.copy(HERO_LOOKAT).addScaledVector(HERO_LATERAL, 4.6)
 }
 
 /**
