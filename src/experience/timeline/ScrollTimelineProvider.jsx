@@ -629,18 +629,61 @@ export function ScrollSpacer() {
     // own listeners (below) take over entirely; this listener goes
     // permanently quiet from then on (until/unless a reverse play resets
     // it, per `playIntroCinematic`'s own `onComplete`).
+    /**
+     * The start of the experience is a HARD MINIMUM, and only forward input
+     * may leave it.
+     *
+     * These listeners used to fire `playIntroCinematic` on any wheel or touch
+     * event at all — they never looked at the delta. So scrolling UP at the
+     * very beginning started the whole experience, which is backwards: there
+     * is nothing behind progress 0 to travel toward.
+     *
+     * The guard is a DIRECTION-AND-BOUNDARY test, not a "first interaction"
+     * one. It lives on the condition rather than on a played-once flag, so it
+     * keeps working every time the viewer returns all the way to the start —
+     * a reverse play resets `introCinematicPlayed`, and the same rule applies
+     * again from then on.
+     *
+     * Every event is still swallowed with `preventDefault`, including rejected
+     * upward ones. That matters: without it a rejected gesture would fall
+     * through to native and Lenis scrolling, which would move the page even
+     * though the experience refused the input — and Lenis would carry the
+     * momentum into a drift once the direction changed. Swallowing it means a
+     * backward gesture at the boundary accumulates nothing at all.
+     */
+    const isForwardWheel = (event) => event.deltaY > 0
+
     const onIntroTriggerWheel = (event) => {
       if (currentChapter !== 'intro' || introCinematicPlayed) return
       event.preventDefault()
+      if (!isForwardWheel(event)) return
       playIntroCinematic(INTRO_ALIGN_T)
     }
+
+    /**
+     * Touch has no delta, so direction comes from the gesture itself. Dragging
+     * a finger UP pulls the content up — the touch equivalent of scrolling
+     * down, and therefore forward. The threshold keeps a stray pixel of
+     * movement during a tap from counting as a swipe.
+     */
+    let introTouchStartY = null
+    const INTRO_TOUCH_FORWARD_PX = 6
+
+    const onIntroTouchStart = (event) => {
+      introTouchStartY = event.touches[0]?.clientY ?? null
+    }
+
     const onIntroTriggerTouchMove = (event) => {
       if (currentChapter !== 'intro' || introCinematicPlayed) return
       event.preventDefault()
+      const currentY = event.touches[0]?.clientY
+      if (introTouchStartY === null || currentY === undefined) return
+      if (introTouchStartY - currentY <= INTRO_TOUCH_FORWARD_PX) return
       playIntroCinematic(INTRO_ALIGN_T)
     }
 
     window.addEventListener('wheel', onIntroTriggerWheel, { capture: true, passive: false })
+    window.addEventListener('touchstart', onIntroTouchStart, { capture: true, passive: true })
     window.addEventListener('touchmove', onIntroTriggerTouchMove, { capture: true, passive: false })
 
     // --- Chapter mode input (Film and beyond) ---
@@ -794,6 +837,7 @@ export function ScrollSpacer() {
       window.removeEventListener('wheel', onLensHoldWheel, { capture: true })
       window.removeEventListener('touchmove', onLensHoldWheel, { capture: true })
       window.removeEventListener('wheel', onIntroTriggerWheel, { capture: true })
+      window.removeEventListener('touchstart', onIntroTouchStart, { capture: true })
       window.removeEventListener('touchmove', onIntroTriggerTouchMove, { capture: true })
       window.removeEventListener('wheel', onChapterWheel, { capture: true })
       window.removeEventListener('touchstart', onChapterTouchStart, { capture: true })

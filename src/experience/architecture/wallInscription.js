@@ -271,6 +271,78 @@ const BEVEL_TEXELS = 7
 /** How steeply the chamfer turns away from the wall. */
 const RELIEF_STRENGTH = 3.2
 
+/**
+ * Scanned brass for the lettering.
+ *
+ * The inlay used to be a flat tint — one colour, one roughness — which is
+ * exactly why it read as "a metal" rather than as brass: a real alloy surface
+ * is never uniform, and it is the variation in its polish, not its hue, that
+ * makes the eye accept it. `brass_pan_01` supplies both.
+ *
+ * Only two of the set's five maps are here, and the omissions are deliberate:
+ *
+ *  - the **normal** map is not used, because that slot is already carrying the
+ *    chamfer, and the chamfer is what makes the letters legible at all — it
+ *    is the whole reveal mechanism (see the module note). Surface grain would
+ *    be a poor trade for the letterforms;
+ *  - **AO** does nothing worth its download here. It attenuates ambient only,
+ *    and these are centimetre-scale letters with no cavities to occlude;
+ *  - **metalness** is a constant 1 instead of a map. The source map varies
+ *    because the pan it was scanned from has non-metal parts; an inlay is
+ *    brass everywhere, so the map would be wrong as well as redundant.
+ *
+ * Downscaled from the 2K source — the wordmark is a small part of the frame
+ * even at the hero, and 2K of pan for two lines of type is not a trade this
+ * project makes. 248KB for the pair.
+ */
+const BRASS_BASE = '/textures/brass'
+
+/**
+ * Which PART of the scan to use, as a UV crop.
+ *
+ * This is a photograph of a whole pan, not a brass swatch — one large bowl,
+ * and a dark red handle off to one side. Tiling the sheet was the obvious
+ * first move and it was wrong: every repeat dragged the handle's maroon in
+ * with it, and the lettering came out mottled red like polished stone rather
+ * than metal.
+ *
+ * So the atlas is cropped to the bowl's interior instead of repeated. That
+ * region is continuous brass — patina, wear and a slow shift in polish, with
+ * none of the object's own colour breaks. Stretched once across the band it
+ * gives the letters low-frequency variation, which is the whole reason for
+ * using a scan; tiling it would only reintroduce the seam it was cropped to
+ * avoid, since a crop out of a photograph does not wrap.
+ */
+const BRASS_OFFSET = [0.08, 0.08]
+const BRASS_REPEAT = [0.42, 0.38]
+
+/** Fire-and-forget, like the scanned stone: nothing suspends on it. */
+function loadBrassMaps(material) {
+  const loader = new THREE.TextureLoader()
+  const apply = (slot, file, colorSpace) => {
+    loader.load(
+      `${BRASS_BASE}/${file}`,
+      (texture) => {
+        // Clamped, not repeating: this is a crop, and wrapping it would fold
+        // the far side of the pan back into the letters.
+        texture.wrapS = THREE.ClampToEdgeWrapping
+        texture.wrapT = THREE.ClampToEdgeWrapping
+        texture.offset.set(BRASS_OFFSET[0], BRASS_OFFSET[1])
+        texture.repeat.set(BRASS_REPEAT[0], BRASS_REPEAT[1])
+        texture.colorSpace = colorSpace ?? THREE.NoColorSpace
+        texture.anisotropy = 8
+        material[slot] = texture
+        material.needsUpdate = true
+      },
+      undefined,
+      // A missing file leaves the flat tint in place rather than a black inlay.
+      () => {},
+    )
+  }
+  apply('map', 'albedo.jpg', THREE.SRGBColorSpace)
+  apply('roughnessMap', 'roughness.jpg')
+}
+
 /** Where the cutout's edge falls within that chamfer. */
 const ALPHA_TEST = 0.55
 
@@ -472,17 +544,22 @@ export function createWallInscriptionMaterial(spec = WALL_INSCRIPTION) {
     .then(repaint)
     .catch(() => {})
 
-  return new THREE.MeshStandardMaterial({
-    // Tarnished bronze. Dark for a metal, so the letters never outrun the
-    // restraint of the room even at the top of the ramp.
-    color: new THREE.Color('#8d7350'),
+  const material = new THREE.MeshStandardMaterial({
+    // A tint over the scan rather than the brass itself now — held slightly
+    // under white so the lettering keeps the room's restraint at the top of
+    // the ignition ramp instead of flaring.
+    color: new THREE.Color('#d8cdb8'),
     metalness: 1,
-    // Low enough that `key` lands as a defined highlight along each chamfer
-    // rather than a wash, which is what carries legibility at this distance.
+    // The scan drives this once it lands; until then this is the fallback, and
+    // it stays low enough that `key` reads as a defined highlight along each
+    // chamfer rather than a wash.
     roughness: 0.28,
     normalMap,
     normalScale: new THREE.Vector2(1, 1),
     alphaMap,
     alphaTest: ALPHA_TEST,
   })
+
+  loadBrassMaps(material)
+  return material
 }

@@ -6,7 +6,9 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
 import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js'
 import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js'
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
-import { CAMPAIGNS_SWAP_DISTANCE, campaignsRailDistance } from '../timeline/cameraPath.js'
+import { CAMPAIGNS_SWAP_DISTANCE, campaignsRailDistance, HERO_LOOKAT } from '../timeline/cameraPath.js'
+import { renderedProgress } from '../timeline/heroSequence.js'
+import { HERO_T } from '../timeline/filmActBeats.js'
 import { CAMERA_ANCHOR } from '../film/CinemaCamera.jsx'
 import { MONITOR_ANCHOR } from '../digital/Monitor.jsx'
 import { PILLAR_RING_CENTER, PILLAR_RING_RADIUS } from '../Environment.jsx'
@@ -103,6 +105,32 @@ const FOCUS_DAMP_LAMBDA = 1.9
 
 const FILM_SUBJECT = new THREE.Vector3().fromArray(CAMERA_ANCHOR.lensFrontFieldPosition)
 const DIGITAL_SUBJECT = new THREE.Vector3().fromArray(MONITOR_ANCHOR.screenWorldPosition)
+
+/**
+ * The MGRT wordmark — the focus subject for the hero and the whole billboard
+ * reveal.
+ *
+ * Without it this shot had no subject at all. The focus target is a blend of
+ * the Film/Digital props and the colonnade's near arc, weighted by how far
+ * outside the ring the camera is; at the hero the camera is 9.18 from the
+ * ring's axis, so the blend resolves to `pillarDistance` — 3.68 — while the
+ * wall it is looking at is 5.81 away. The hero was focused on a colonnade
+ * that is not in the frame, and `pillarDistance` grows as the camera pulls
+ * back, which is exactly the sharp-soft-sharp breathing.
+ *
+ * One subject serves both sides of the hand-over: the billboard stands on the
+ * wall's own plane, so camera-to-wall and camera-to-billboard are the same
+ * number. Focus therefore tracks the real subject distance continuously
+ * through the swap, with nothing to jump.
+ */
+const HERO_SUBJECT = HERO_LOOKAT.clone()
+
+/**
+ * How the hero subject takes over. Fully in by the time the camera is square
+ * on the wall, so the rack happens during the approach — where a focus pull
+ * belongs — and not during the hold or the reveal, which must both be steady.
+ */
+const HERO_FOCUS_START = 0.82
 
 /**
  * Depth of field must be OFF at the Campaigns hand-over, and this is not a
@@ -243,7 +271,16 @@ export default function DepthOfField() {
       RING_FOCUS_INNER_RADIUS,
       RING_FOCUS_OUTER_RADIUS,
     )
-    const targetDistance = THREE.MathUtils.lerp(subjectDistance, pillarDistance, outsideRing)
+    const approachDistance = THREE.MathUtils.lerp(subjectDistance, pillarDistance, outsideRing)
+
+    // Hand the subject over to MGRT as the hero composition arrives, and keep
+    // it there for the hold and the entire pull-back.
+    const heroWeight = THREE.MathUtils.smoothstep(renderedProgress.value, HERO_FOCUS_START, HERO_T)
+    const targetDistance = THREE.MathUtils.lerp(
+      approachDistance,
+      activeCamera.position.distanceTo(HERO_SUBJECT),
+      heroWeight,
+    )
 
     focusDistance.current =
       focusDistance.current === null

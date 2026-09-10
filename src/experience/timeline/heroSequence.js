@@ -61,8 +61,17 @@ const ARRIVAL_EPSILON = 0.02
  */
 const REVERSE_CANCEL_DRIFT = 0.035
 
+/** How far below the hero counts as a genuine re-approach, re-arming the beat. */
+const REARM_BELOW = 0.12
+
 const state = {
   phase: HERO_STATE.TRAVEL,
+  /**
+   * True once the forward beat has played. Reverse must not replay it, and
+   * scrolling forward again straight afterwards must not stall at the hero —
+   * so this both suppresses the hold and lets a re-entry skip to the reveal.
+   */
+  holdConsumed: false,
   holdStartedAt: 0,
   revealStartedAt: 0,
   /** What the rig should sample the path at this frame. */
@@ -124,11 +133,21 @@ export function advanceHeroSequence(rawProgress, arrived, now = performance.now(
     case HERO_STATE.TRAVEL: {
       // The clamp. Scroll may run past the hero; the CAMERA may not.
       state.progress = Math.min(rawProgress, HERO_T)
+      // Far enough back that a fresh approach is clearly intended, so the beat
+      // is available again on a genuine re-watch.
+      if (rawProgress < HERO_T - REARM_BELOW) state.holdConsumed = false
       if (rawProgress >= HERO_T && arrived) {
-        state.phase = HERO_STATE.HERO_HOLD
-        // Set exactly once, on the transition — never per frame, so repeated
-        // renders cannot restart the clock.
-        state.holdStartedAt = now
+        if (state.holdConsumed) {
+          // Already seen it. Go straight on rather than stalling at the hero
+          // with nothing to advance the sequence.
+          state.phase = HERO_STATE.REVEAL
+          state.revealStartedAt = now
+        } else {
+          state.phase = HERO_STATE.HERO_HOLD
+          // Set exactly once, on the transition — never per frame, so repeated
+          // renders cannot restart the clock.
+          state.holdStartedAt = now
+        }
       }
       break
     }
@@ -142,6 +161,7 @@ export function advanceHeroSequence(rawProgress, arrived, now = performance.now(
         state.phase = HERO_STATE.TRAVEL
         break
       }
+      state.holdConsumed = true
       if (now - state.holdStartedAt >= HERO_HOLD_MS) {
         state.phase = HERO_STATE.REVEAL
         state.revealStartedAt = now
@@ -155,7 +175,14 @@ export function advanceHeroSequence(rawProgress, arrived, now = performance.now(
       const t = THREE.MathUtils.clamp((now - state.revealStartedAt) / (HERO_REVEAL_SECONDS * 1000), 0, 1)
       const eased = t * t * (3 - 2 * t)
       state.progress = THREE.MathUtils.lerp(HERO_T, 1, eased)
-      if (rawProgress < HERO_T - REVERSE_CANCEL_DRIFT) {
+      // Reverse leaves at EXACTLY the hero, not a margin short of it. A margin
+      // here was the rough reverse: `IMPACT`/`REVEAL` pin progress at HERO_T
+      // while scroll runs down through the margin, so the camera stalls, and
+      // then jumps to `raw` the moment the phase flips. Swapping on the exact
+      // crossing keeps progress continuous through the hand-over — the frame
+      // either side is the canonical hero, and velocity carries straight
+      // through it.
+      if (rawProgress < HERO_T) {
         state.phase = HERO_STATE.TRAVEL
         break
       }
@@ -167,7 +194,8 @@ export function advanceHeroSequence(rawProgress, arrived, now = performance.now(
       // Settled. Scroll drives again so the viewer can travel back out, and
       // dropping below the hero re-arms the whole sequence for a rewatch.
       state.progress = Math.max(rawProgress, HERO_T)
-      if (rawProgress < HERO_T - REVERSE_CANCEL_DRIFT) state.phase = HERO_STATE.TRAVEL
+      // Same exact crossing as `REVEAL` — see the note there.
+      if (rawProgress < HERO_T) state.phase = HERO_STATE.TRAVEL
       break
     }
   }
