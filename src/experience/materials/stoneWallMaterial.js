@@ -365,7 +365,24 @@ async function upgradeToScannedStone(material, set, repeat, normalScale) {
   // measured reflectance — bright cream stone — where the generated one was
   // artificially dark, so the caller picks a tint for the scan rather than
   // this function guessing a correction on top of it.
-  material.aoMapIntensity = 1
+  /**
+   * 1.0 -> 0.7.
+   *
+   * `aoMap` attenuates ambient and environment light only, so it acts almost
+   * entirely on surfaces the sun does NOT reach — precisely the surfaces the
+   * brief says must keep their material information. Measured off the files,
+   * the columns' occlusion channel runs 7-255: at full strength its deepest
+   * pores receive essentially none of the indirect light, so shaded stone
+   * collapsed to a featureless dark surface exactly where the scan had the
+   * most to say.
+   *
+   * Backing it off keeps the contact darkening that seats the geometry while
+   * leaving the crevices enough light to read as stone. This is a correction
+   * for the room now having real indirect illumination to occlude — under the
+   * previous near-black interior there was almost nothing for the AO to take
+   * away, so 1.0 cost nothing and now costs the shadows their texture.
+   */
+  material.aoMapIntensity = 0.7
   // Scanned normals are calibrated; the generated ones needed exaggerating.
   material.normalScale.set(Math.min(normalScale[0], 1), Math.min(normalScale[1], 1))
   material.needsUpdate = true

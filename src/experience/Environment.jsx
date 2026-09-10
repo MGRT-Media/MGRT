@@ -2,10 +2,12 @@ import * as THREE from 'three'
 import { useMemo } from 'react'
 import VolumetricLightingRig from './lighting/VolumetricLightingRig.jsx'
 import SceneEnvironment from './lighting/SceneEnvironment.jsx'
+import SunsetSky from './lighting/SunsetSky.jsx'
 import { buildColumnGeometry } from './architecture/columnGeometry.js'
 import { buildColumnCollar, buildWallSkirt } from './architecture/contactDebris.js'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { createStoneWallMaterial, stoneRepeatForSize } from './materials/stoneWallMaterial.js'
+import { applyStoneMacroVariation } from './materials/stoneMacroVariation.js'
 import {
   buildGalleryShellGeometry,
   buildRoofOpeningRimGeometry,
@@ -170,6 +172,13 @@ function useFloorGeometry() {
     }
     position.needsUpdate = true
     geometry.computeVertexNormals()
+    // The mesh rotates this plane flat, so local (x, y, z) becomes world
+    // (x, z, -y) — passing that keeps the floor's weathering continuous with
+    // the walls it meets rather than running in a different direction.
+    applyStoneMacroVariation(geometry, {
+      seed: 31,
+      toWorld: (x, y, z) => [x, z, -y],
+    })
     return geometry
   }, [])
 }
@@ -237,6 +246,10 @@ export default function Environment() {
       const geometry = buildColumnGeometry(HALL_HEIGHT, i, PILLAR_SHAFT_RADIUS)
       geometry.rotateY(columnYaw(i))
       geometry.translate(x, 0, z)
+      // After the translate, so each column samples the field at where it
+      // actually stands — twelve columns cut from one quarry, not twelve
+      // copies of the same stone.
+      applyStoneMacroVariation(geometry, { seed: 11, range: [0.82, 1.14] })
       byMaterial[i % 3].push(geometry)
     })
     return byMaterial.map((group) => mergeGeometries(group, false))
@@ -252,7 +265,7 @@ export default function Environment() {
   }, [])
   const wallSkirtGeometry = useMemo(() => buildWallSkirt(), [])
   const floorGeometry = useFloorGeometry()
-  const shellGeometry = useMemo(() => buildGalleryShellGeometry(), [])
+  const shellGeometry = useMemo(() => applyStoneMacroVariation(buildGalleryShellGeometry(), { seed: 11 }), [])
   const roofRimGeometry = useMemo(() => buildRoofOpeningRimGeometry(), [])
   const inscriptionGeometry = useMemo(() => buildWallInscriptionGeometry(), [])
   const inscriptionMaterial = useMemo(() => createWallInscriptionMaterial(), [])
@@ -271,6 +284,8 @@ export default function Environment() {
       [1.4, 1.4],
       { scanned: 'walls' },
     )
+    // Macro weathering, baked into the geometry — see `stoneMacroVariation`.
+    material.vertexColors = true
     return material
   }, [])
   /**
@@ -287,6 +302,11 @@ export default function Environment() {
       scanned: 'walls',
     })
     material.side = THREE.DoubleSide
+    // The rim carries per-vertex shading for the recessed courses of the
+    // break — see `REVEAL_PROFILE`'s `shade`. Multiplies the scan rather than
+    // replacing it, so the stone is the same stone, just darker down in the
+    // crevices where light does not reach.
+    material.vertexColors = true
     return material
   }, [])
 
@@ -299,9 +319,23 @@ export default function Environment() {
     // darkest tier, and the scanned concrete is already a dark worn brown of
     // its own. Multiplying the two put the floor at near-black.
     () =>
-      createStoneWallMaterial('#b0aca4', stoneRepeatForSize(HALL_WIDTH, HALL_DEPTH), [0.45, 0.45], {
-        scanned: 'floors',
-      }),
+      (() => {
+        // normalScale 0.45 -> 0.8. The old value existed because "a floor lit
+        // at a grazing angle exaggerates its own normal map badly" — and that
+        // was true of the wall lamp it was tuned against, which raked across
+        // the floor at a few degrees. The sun now arrives at 68, close to the
+        // angle a scanned normal map is captured and lit for, so the
+        // suppression is no longer buying anything and is costing the floor
+        // its texture in exactly the sunlit areas meant to show it.
+        const material = createStoneWallMaterial(
+          '#b0aca4',
+          stoneRepeatForSize(HALL_WIDTH, HALL_DEPTH),
+          [0.8, 0.8],
+          { scanned: 'floors' },
+        )
+        material.vertexColors = true
+        return material
+      })(),
     [],
   )
   // Columns use the drum bond, not ashlar — see `stoneAt`. `repeat` is
@@ -339,7 +373,11 @@ export default function Environment() {
       createStoneWallMaterial('#5d5952', [1, 5.5], [1.6, 1.6], { bond: 'drum', erosion: 0.8, stain: 0.85, scanned: 'columns' }),
       createStoneWallMaterial('#565049', [1, 6.0], [1.8, 1.8], { bond: 'drum', erosion: 1.0, stain: 1.0, scanned: 'columns' }),
       createStoneWallMaterial('#66605a', [1, 5.0], [1.45, 1.45], { bond: 'drum', erosion: 0.6, stain: 0.7, scanned: 'columns' }),
-    ],
+    ].map((material) => {
+      // Macro weathering, baked per column — see `stoneMacroVariation`.
+      material.vertexColors = true
+      return material
+    }),
     [],
   )
 
@@ -358,6 +396,11 @@ export default function Environment() {
     <group>
       <SceneEnvironment />
       <VolumetricLightingRig />
+
+      {/* What the court opens onto — see `SunsetSky`. Without it the opening
+          is a hole onto the clear colour, and the source of the room's light
+          is the darkest thing in the frame. */}
+      <SunsetSky />
 
       {/* Floor — darkest tier, relieved rather than flat (see useFloorGeometry) */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} geometry={floorGeometry} material={floorMaterial} receiveShadow />

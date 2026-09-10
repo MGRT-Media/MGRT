@@ -1,7 +1,8 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import * as THREE from 'three'
 import { useThree } from '@react-three/fiber'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
+import { loadSkyTexture, SKY_ROTATION_Y } from './skyEnvironment.js'
 
 /**
  * Image-based lighting for the room's stone.
@@ -47,10 +48,30 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
  */
 const ENVIRONMENT_INTENSITY = 0.38
 
+/**
+ * The HDRI is a real photograph of a sky, and it is a good deal brighter than
+ * the generated room it replaces — mean luminance 0.78 across the sphere,
+ * measured off the file. Carried at the same 0.38 the `RoomEnvironment` used
+ * and the room lifts noticeably and flattens, which is the failure the brief
+ * names. This is the correction for the source being brighter, not a change
+ * of intent: the analytic sun stays several times larger than the environment
+ * term, so shape still comes from direction.
+ */
+const HDRI_ENVIRONMENT_INTENSITY = 0.40
+
 export default function SceneEnvironment() {
   const { gl, scene } = useThree()
+  const [sky, setSky] = useState(null)
 
-  const environment = useMemo(() => {
+  /**
+   * The immediate environment, generated in code so it costs no download.
+   *
+   * This is what lights the room while the HDRI is still on the wire. It is
+   * not a placeholder in the sense of being wrong — it is the environment this
+   * scene shipped with, and if the HDRI never arrives the room stays exactly
+   * as it was rather than losing its environment term entirely.
+   */
+  const generated = useMemo(() => {
     // PMREM prefilters the environment into the roughness-indexed mip chain a
     // standard material samples. Without it the map cannot be used as an
     // environment at all — roughness would have nothing to blur toward.
@@ -61,13 +82,39 @@ export default function SceneEnvironment() {
   }, [gl])
 
   useEffect(() => {
-    scene.environment = environment
-    scene.environmentIntensity = ENVIRONMENT_INTENSITY
+    let cancelled = false
+    loadSkyTexture()
+      .then((texture) => {
+        if (cancelled) return
+        // The same prefilter, from the photograph instead of the generated
+        // box. The equirect source itself stays resident because `SunsetSky`
+        // is drawing with it; this cube is the only extra allocation.
+        const generator = new THREE.PMREMGenerator(gl)
+        const prefiltered = generator.fromEquirectangular(texture).texture
+        generator.dispose()
+        setSky(prefiltered)
+      })
+      .catch(() => {
+        // Keep the generated environment. A missing sky must not unlight the room.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [gl])
+
+  useEffect(() => {
+    scene.environment = sky ?? generated
+    scene.environmentIntensity = sky ? HDRI_ENVIRONMENT_INTENSITY : ENVIRONMENT_INTENSITY
+    // Reflections have to agree with the sky the room can actually see through
+    // the court — see `SKY_ROTATION_Y`.
+    scene.environmentRotation = new THREE.Euler(0, sky ? SKY_ROTATION_Y : 0, 0)
     return () => {
       scene.environment = null
-      environment.dispose()
     }
-  }, [scene, environment])
+  }, [scene, generated, sky])
+
+  useEffect(() => () => generated.dispose(), [generated])
+  useEffect(() => () => sky?.dispose(), [sky])
 
   return null
 }

@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { mergeVertices, toCreasedNormals } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 
 /**
  * The gallery shell — one continuous swept surface that replaces the five
@@ -140,37 +141,303 @@ const MOUTH_SHOULDER = 0.66
  * where Film and Digital already stand. Those values are READ from the ring,
  * never the other way round — nothing here moves a pillar.
  */
+/**
+ * How far the wall continues BELOW the floor plane.
+ *
+ * The shell's plan curve is bowed by `WALL_DEVIATION`, so its base wanders up
+ * to 0.104 units OUTSIDE the floor's own edge — the floor is a flat
+ * `HALL_WIDTH` x `HALL_DEPTH` plane, the wall is a wobbled superellipse, and
+ * where the wobble pushes outward the two stop short of each other. That
+ * hairline was always there and never mattered, because behind it was an
+ * unlit void that rendered the same black as the shadowed floor. Putting a
+ * bright sky behind the room turned it into a lit crack running along the
+ * bottom of the wall.
+ *
+ * Dropping the bottom row below zero seals it by overlap rather than by
+ * fitting two edges together, which is the same reason `contactDebris.js`
+ * starts its geometry at `-BURY`: an exact join between a displaced floor and
+ * a bowed wall cannot be made watertight, and does not need to be. Nothing
+ * about the room changes — the floor is opaque and sits on top, so every
+ * millimetre of this is buried. The wall's position, the footprint and the
+ * floor are all untouched.
+ */
+const SHELL_APRON = 0.35
+
+const RADIAL_SEGMENTS = 260
+// 72 -> 108. Purely a sampling change: the swept surface is identical, but the
+// roof opening's long edges are curves that cross this grid diagonally, and at
+// 72 rows each step in v moved the cut by ~0.14 units, which reads as a
+// staircase along an edge that has bright sky behind it.
+const HEIGHT_SEGMENTS = 108
+
+/**
+ * How far the wall may wander off its ideal sweep, in world units.
+ *
+ * A superellipse swept perfectly is still a machined surface: every
+ * horizontal section is the same curve, so raking light produces an even,
+ * mathematically smooth gradient, and the eye reads "extruded shape". Real
+ * walls of this age are out of true — they bow, lean and settle by a few
+ * centimetres over their height. This is small enough to be invisible as
+ * shape and large enough to break that gradient, which is where the
+ * machined read actually lives.
+ *
+ * It is deliberately a low-frequency field, not surface noise: fine
+ * roughness is the stone material's job, and doubling it in geometry only
+ * produces the busy, sparkly result the brief rules out.
+ */
+const WALL_DEVIATION = 0.16
+
 const ROOF_OPENING = {
   centerX: 0,
   centerZ: -4,
   halfWidth: 5.0,
   halfLength: 5.5,
-  // Superellipse, as with the room's own plan: high enough to read as a
-  // rectangle, low enough that the corners are radiused rather than mitred.
+  /**
+   * The CONSTRUCTED shape underneath the damage.
+   *
+   * This is still a superellipse, and deliberately: the hole is in a built
+   * roof, so straight runs of surviving edge are correct and are what keep it
+   * from reading as a cave mouth. The break below is what turns those runs
+   * into an opening that collapsed rather than one that was cut.
+   */
   exponent: 6,
-  /** Depth of the roof slab the opening is cut through. */
+  /** Nominal slab depth. Varied per-angle by `roofEdgeThickness`. */
   thickness: 0.55,
-  /** Width of the flat top surface left either side of the cut. */
+  /** Nominal width of the flat roof top left beside the break. */
   coping: 0.32,
 }
 
 /**
- * Edge irregularity — smooth, deterministic, and small.
+ * Where the ceiling gave way.
  *
- * An exact superellipse would read as laser-cut. This is the same restraint
- * as `WALL_DEVIATION`: enough to break the machined line, far too little to
- * be read as a shape of its own.
+ * The first version of this opening was a superellipse with a small smooth
+ * wobble on its threshold, and it read exactly as the brief describes — a
+ * rectangular skylight with noise on it. Two separate things were wrong, and
+ * they needed different fixes:
+ *
+ *  1. The SILHOUETTE was a rectangle. Noise on a rectangle is still a
+ *     rectangle: the eye locks onto the four corners and the long parallel
+ *     runs, and no amount of high-frequency detail hides them.
+ *  2. The CUT was quantised to the mesh. Cells were kept or dropped whole, so
+ *     the boundary staircased along grid lines 0.2-0.4 units across — the
+ *     blocky read, and the one that survives any change to the shape.
+ *
+ * This list fixes the first. Each entry is a real event rather than a
+ * frequency: a place where a piece of the ceiling came down, given a position
+ * on the perimeter, an angular size and a depth. Positive depth takes stone
+ * away (the hole grows there), negative leaves a tongue of surviving slab
+ * projecting into the opening. They are placed, not sampled — three big ones
+ * of clearly different sizes, so the shape has a coherent story of failure
+ * with a few large forms, and the runs between them stay comparatively
+ * straight and read as the original built edge.
+ *
+ * `phi` is measured with `atan2(dx, dz)`: 0 is +Z, +PI/2 is +X. The
+ * superellipse's own corners sit near +/-0.74 and +/-2.40, so the three
+ * outward breaks are aimed at three of the four corners — which is what
+ * removes the 90-degree reads — while the fourth is left comparatively intact
+ * and only chipped, because a ruin that has failed identically in four places
+ * looks designed.
  */
-function roofOpeningEdge(x, z) {
-  return 1 + 0.05 * Math.sin(x * 1.7 + z * 0.9) + 0.03 * Math.sin(z * 2.3 - x * 1.1)
+const ROOF_BREAKS = [
+  // The main collapse: takes the +X/+Z corner out entirely.
+  { phi: 0.82, width: 0.62, depth: 0.26 },
+  // A second, smaller failure at the opposite corner.
+  { phi: -2.28, width: 0.46, depth: 0.15 },
+  // A shallow scallop off the third corner.
+  { phi: 2.52, width: 0.34, depth: 0.09 },
+  // Surviving slab still projecting into the hole, mid-run.
+  { phi: 1.52, width: 0.26, depth: -0.10 },
+  { phi: -0.30, width: 0.20, depth: -0.06 },
+  // A chip where the fourth corner is otherwise intact.
+  { phi: -1.70, width: 0.17, depth: 0.07 },
+]
+
+/** Shortest signed angular distance, so breaks wrap correctly at +/-PI. */
+function angleDelta(a, b) {
+  let d = a - b
+  while (d > Math.PI) d -= Math.PI * 2
+  while (d < -Math.PI) d += Math.PI * 2
+  return d
 }
 
-/** Is this point in plan inside the opening? */
-function insideRoofOpening(x, z) {
-  const dx = Math.abs(x - ROOF_OPENING.centerX) / ROOF_OPENING.halfWidth
-  const dz = Math.abs(z - ROOF_OPENING.centerZ) / ROOF_OPENING.halfLength
+/** Deterministic PRNG, matching `contactDebris.js`'s generator. */
+function mulberry32(seed) {
+  let a = seed >>> 0
+  return () => {
+    a = (a + 0x6d2b79f5) | 0
+    let t = Math.imul(a ^ (a >>> 15), 1 | a)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+/**
+ * The broken perimeter, as a ring of control points.
+ *
+ * The previous version summed three smooth harmonics and a few Gaussians. It
+ * was asymmetric and it was not a rectangle, but everything about it was
+ * infinitely differentiable, so every edge arrived as a soft curve and the
+ * whole opening read as eroded putty rather than fractured stone. Rock does
+ * not break that way. It breaks along planes, leaving straight runs that meet
+ * at angles.
+ *
+ * So the outline is now a closed POLYGON interpolated linearly, not a smooth
+ * field. Every control point is a corner by construction, and the corners are
+ * where the fractures read. Two kinds of run alternate:
+ *
+ *  - **intact** — a long angular step with the radius barely moving, which is
+ *    the original built edge still standing;
+ *  - **shattered** — a cluster of short steps with large radius swings, which
+ *    is where a piece came away and left chips, recesses and protruding
+ *    tongues of slab.
+ *
+ * The alternation is random but the STEP SIZES are drawn from two very
+ * different distributions, and that is what keeps it from reading as noise:
+ * evenly spaced perturbation always looks procedural no matter how it is
+ * weighted, whereas long quiet runs punctuated by dense damage reads as
+ * history. Seeded, so the ruin is the same ruin on every load.
+ *
+ * Thickness and erosion are carried on the same points rather than computed
+ * from separate functions, so the slab gets thinner exactly where the edge is
+ * chipped — one event, one place, three consequences.
+ */
+function buildFracturePerimeter() {
+  const rand = mulberry32(0x4d475254)
+  const points = []
+  let phi = -Math.PI
+  let shattered = false
+
+  while (phi < Math.PI) {
+    phi += shattered ? 0.05 + rand() * 0.09 : 0.20 + rand() * 0.28
+    const radius = shattered
+      ? 1 + (rand() - 0.42) * 0.30
+      : 1 + (rand() - 0.5) * 0.07
+    points.push({
+      phi,
+      radius,
+      // Thinnest where the stone is most broken.
+      thickness: shattered ? 0.42 + rand() * 0.55 : 0.85 + rand() * 0.55,
+      erosion: shattered ? 0.9 + rand() * 0.9 : 0.35 + rand() * 0.5,
+    })
+    if (rand() < (shattered ? 0.30 : 0.20)) shattered = !shattered
+  }
+
+  // Close the ring: the last point wraps to the first, so the interpolation
+  // below never has a discontinuity at +/-PI.
+  points.push({ ...points[0], phi: points[0].phi + Math.PI * 2 })
+  return points
+}
+
+const FRACTURE_PERIMETER = buildFracturePerimeter()
+
+/**
+ * Linear interpolation around that ring — linear, deliberately, because the
+ * kinks between segments ARE the fractures. Smooth interpolation here would
+ * put the rounded edges straight back.
+ */
+function fractureAt(phi) {
+  let a = phi
+  const first = FRACTURE_PERIMETER[0].phi
+  while (a < first) a += Math.PI * 2
+  while (a > first + Math.PI * 2) a -= Math.PI * 2
+
+  for (let i = 0; i < FRACTURE_PERIMETER.length - 1; i += 1) {
+    const p0 = FRACTURE_PERIMETER[i]
+    const p1 = FRACTURE_PERIMETER[i + 1]
+    if (a >= p0.phi && a <= p1.phi) {
+      const t = (a - p0.phi) / (p1.phi - p0.phi || 1)
+      return {
+        radius: p0.radius + (p1.radius - p0.radius) * t,
+        thickness: p0.thickness + (p1.thickness - p0.thickness) * t,
+        erosion: p0.erosion + (p1.erosion - p0.erosion) * t,
+      }
+    }
+  }
+  return FRACTURE_PERIMETER[0]
+}
+
+/**
+ * The opening's radius at angle `phi`, as a multiple of the built superellipse.
+ *
+ * The fractured polygon carries the small and medium damage; the placed breaks
+ * on top of it carry the few large collapses that give the opening its overall
+ * asymmetry. Clamped so no amount of accumulated damage can close the aperture
+ * or run it into the haunches — the sunlight composition depends on this hole
+ * staying roughly the size it is.
+ */
+function roofSilhouette(phi) {
+  let r = fractureAt(phi).radius
+  for (const brk of ROOF_BREAKS) {
+    const d = angleDelta(phi, brk.phi) / brk.width
+    r += brk.depth * Math.exp(-d * d)
+  }
+  return THREE.MathUtils.clamp(r, 0.74, 1.32)
+}
+
+/**
+ * Signed distance-like field: negative inside the opening, positive in stone.
+ *
+ * Expressed as `superellipse radius - silhouette radius` rather than as the
+ * raw superellipse sum, because the raw sum rises as the sixth power and
+ * interpolates terribly. The cut below finds the edge by interpolating this
+ * field along mesh edges, so it has to be close to linear near zero or the
+ * smooth boundary is smooth in the wrong place.
+ */
+function roofOpeningField(x, z) {
+  const dx = x - ROOF_OPENING.centerX
+  const dz = z - ROOF_OPENING.centerZ
   const n = ROOF_OPENING.exponent
-  return Math.pow(dx, n) + Math.pow(dz, n) < roofOpeningEdge(x, z)
+  const q =
+    Math.pow(Math.abs(dx) / ROOF_OPENING.halfWidth, n) +
+    Math.pow(Math.abs(dz) / ROOF_OPENING.halfLength, n)
+  return Math.pow(q, 1 / n) - roofSilhouette(Math.atan2(dx, dz))
+}
+
+/**
+ * Depth of the slab at this point on the perimeter.
+ *
+ * Carried by the fractured ring rather than by a harmonic, so it steps at the
+ * fractures instead of undulating between them. A slab of even depth all the
+ * way round was one of the strongest "cut, not broken" cues in the previous
+ * version.
+ */
+function roofEdgeThickness(phi) {
+  return ROOF_OPENING.thickness * fractureAt(phi).thickness
+}
+
+/** Width of the surviving roof top beside the break. */
+function roofCopingWidth(phi) {
+  return ROOF_OPENING.coping * (0.5 + fractureAt(phi).thickness * 0.8)
+}
+
+/**
+ * The exposed inner face, from the ceiling's underside (t = 0) to the top of
+ * the slab (t = 1) — now read as BEDDING COURSES rather than as one weathered
+ * curve.
+ *
+ * `out` is a radial offset away from the opening's centre, so positive widens
+ * the hole at that height. Alternating signs cut the face into ledges and
+ * recesses: a stone roof is laid in courses and breaks along them, so the
+ * thickness a collapse exposes is layered, not a single smooth belly. Three
+ * shallow steps do the whole job — this is the "larger believable rock forms"
+ * the brief asks for rather than displacement detail, which the material's own
+ * normal map already supplies.
+ *
+ * `shade` darkens the recessed courses through vertex colour, so the crevices
+ * read as crevices even before a light reaches them. Scaled per-angle by
+ * `roofEdgeErosion`, which now steps at the fractures.
+ */
+const REVEAL_PROFILE = [
+  { t: 0, out: 0, shade: 0.55 },
+  { t: 0.17, out: -0.08, shade: 0.42 },
+  { t: 0.33, out: 0.06, shade: 0.85 },
+  { t: 0.51, out: -0.04, shade: 0.5 },
+  { t: 0.72, out: 0.12, shade: 1 },
+  { t: 1, out: 0.03, shade: 0.9 },
+]
+
+function roofEdgeErosion(phi) {
+  return fractureAt(phi).erosion
 }
 
 /**
@@ -209,41 +476,41 @@ function shellPoint(theta, v) {
 }
 
 /**
- * Whether the cell centred at (theta, v) falls in the roof opening.
+ * The opening field sampled at every GRID VERTEX of the vault.
  *
- * The `v > SPLIT` guard is the structural guarantee, not an optimisation:
- * below the springing this surface is vertical WALL, and the opening must
- * never be able to reach it however it is later resized.
+ * Sampled per vertex rather than per cell, and that is the whole trick behind
+ * the smooth edge: two neighbouring cells that share a mesh edge read the same
+ * two values at its ends, so both place the boundary crossing at the identical
+ * point along it. The cut is then continuous across the whole opening by
+ * construction, with no welding, no seam tolerance and no extra resolution.
+ *
+ * Rows below the springing are left null: the opening is in the vault, and
+ * this is the guarantee that it can never reach the vertical wall.
  */
-function cellInRoofOpening(theta, v) {
-  if (v <= SPLIT) return false
-  const point = shellPoint(theta, v)
-  return insideRoofOpening(point.x, point.z)
+function sampleRoofField() {
+  const field = []
+  for (let iy = 0; iy <= HEIGHT_SEGMENTS; iy += 1) {
+    const v = iy / HEIGHT_SEGMENTS
+    if (v < SPLIT) {
+      field.push(null)
+      continue
+    }
+    const row = new Float64Array(RADIAL_SEGMENTS + 1)
+    for (let ix = 0; ix <= RADIAL_SEGMENTS; ix += 1) {
+      const theta = -Math.PI + (ix / RADIAL_SEGMENTS) * Math.PI * 2
+      const point = shellPoint(theta, v)
+      row[ix] = roofOpeningField(point.x, point.z)
+    }
+    field.push(row)
+  }
+  return field
 }
 
-const RADIAL_SEGMENTS = 260
-// 72 -> 108. Purely a sampling change: the swept surface is identical, but the
-// roof opening's long edges are curves that cross this grid diagonally, and at
-// 72 rows each step in v moved the cut by ~0.14 units, which reads as a
-// staircase along an edge that has bright sky behind it.
-const HEIGHT_SEGMENTS = 108
-
-/**
- * How far the wall may wander off its ideal sweep, in world units.
- *
- * A superellipse swept perfectly is still a machined surface: every
- * horizontal section is the same curve, so raking light produces an even,
- * mathematically smooth gradient, and the eye reads "extruded shape". Real
- * walls of this age are out of true — they bow, lean and settle by a few
- * centimetres over their height. This is small enough to be invisible as
- * shape and large enough to break that gradient, which is where the
- * machined read actually lives.
- *
- * It is deliberately a low-frequency field, not surface noise: fine
- * roughness is the stone material's job, and doubling it in geometry only
- * produces the busy, sparkly result the brief rules out.
- */
-const WALL_DEVIATION = 0.16
+/** Field value at a grid vertex; +1 (solid stone) anywhere the opening cannot reach. */
+function fieldAt(field, iy, ix) {
+  const row = field[iy]
+  return row ? row[ix] : 1
+}
 
 /** Deterministic hash, matching `stoneWallMaterial.js`'s approach. */
 function hash2D(x, y) {
@@ -342,7 +609,12 @@ export function buildGalleryShellGeometry() {
     const v = iy / HEIGHT_SEGMENTS
     // Vertical wall below the springing, quarter-sine vault above it — see
     // `shellSection`, which the roof opening reads from the same source.
-    const { y, xScale, zScale } = shellSection(v)
+    const { y: sectionY, xScale, zScale } = shellSection(v)
+    // The lowest row alone is carried under the floor — see `SHELL_APRON`.
+    // Only its own position moves; every row above it is untouched, and the
+    // UV follows the new height so the stone simply continues down rather
+    // than stretching over the buried band.
+    const y = iy === 0 ? -SHELL_APRON : sectionY
 
     const row = []
     for (let ix = 0; ix <= RADIAL_SEGMENTS; ix += 1) {
@@ -365,6 +637,37 @@ export function buildGalleryShellGeometry() {
   }
 
   const indices = []
+  const field = sampleRoofField()
+
+  /**
+   * Boundary crossings, cached by the MESH EDGE they sit on rather than by the
+   * cell that asked for one. Both cells sharing an edge get the same vertex
+   * index back, so the two halves of the cut meet exactly instead of merely
+   * nearly — which is what would otherwise show as a hairline crack with sky
+   * behind it.
+   */
+  const crossings = new Map()
+  const crossingOn = (ia, ib, key) => {
+    const cached = crossings.get(key)
+    if (cached !== undefined) return cached
+    const fa = fieldAt(field, ia.iy, ia.ix)
+    const fb = fieldAt(field, ib.iy, ib.ix)
+    const t = THREE.MathUtils.clamp(fa / (fa - fb), 0, 1)
+    const a = grid[ia.iy][ia.ix] * 3
+    const b = grid[ib.iy][ib.ix] * 3
+    const index = positions.length / 3
+    positions.push(
+      positions[a] + (positions[b] - positions[a]) * t,
+      positions[a + 1] + (positions[b + 1] - positions[a + 1]) * t,
+      positions[a + 2] + (positions[b + 2] - positions[a + 2]) * t,
+    )
+    const au = grid[ia.iy][ia.ix] * 2
+    const bu = grid[ib.iy][ib.ix] * 2
+    uvs.push(uvs[au] + (uvs[bu] - uvs[au]) * t, uvs[au + 1] + (uvs[bu + 1] - uvs[au + 1]) * t)
+    crossings.set(key, index)
+    return index
+  }
+
   for (let iy = 0; iy < HEIGHT_SEGMENTS; iy += 1) {
     for (let ix = 0; ix < RADIAL_SEGMENTS; ix += 1) {
       // Cell centre, used for the opening tests.
@@ -387,17 +690,62 @@ export function buildGalleryShellGeometry() {
         if (Math.abs(theta) < OPENING_HALF_ANGLE * taper) continue
       }
 
-      // Roof opening — the court. Cut last of the three because it is the
-      // only one tested against a plan footprint rather than against the
-      // surface's own parameters; see `ROOF_OPENING`.
-      if (cellInRoofOpening(theta, vMid)) continue
-
       const a = grid[iy][ix]
       const b = grid[iy][ix + 1]
       const c = grid[iy + 1][ix + 1]
       const d = grid[iy + 1][ix]
-      // Inward-facing winding.
-      indices.push(a, d, b, b, d, c)
+
+      /**
+       * Roof opening — the court, cut by marching squares rather than by
+       * dropping whole cells.
+       *
+       * The other two openings above discard a cell if its CENTRE is inside
+       * them, which is fine for a hole in a wall the camera passes at speed.
+       * It was not fine here: this edge is held in frame against bright sky
+       * for the whole opening orbit, and quantising it to the mesh staircased
+       * it in 0.2-0.4 unit steps — the blocky read the brief calls out. So
+       * this one clips each cell to the exact isoline instead, keeping the
+       * polygon on the stone side. The corners it keeps are existing grid
+       * vertices; only the crossings are new, so the cut costs a handful of
+       * vertices around the perimeter rather than any global subdivision.
+       */
+      const corners = [
+        { ix, iy, index: a },
+        { ix: ix + 1, iy, index: b },
+        { ix: ix + 1, iy: iy + 1, index: c },
+        { ix, iy: iy + 1, index: d },
+      ]
+      const values = corners.map((corner) => fieldAt(field, corner.iy, corner.ix))
+      const inside = values.map((value) => value < 0)
+      const insideCount = inside.filter(Boolean).length
+
+      if (insideCount === 4) continue
+
+      if (insideCount === 0) {
+        // Untouched cell — inward-facing winding, as everywhere else.
+        indices.push(a, d, b, b, d, c)
+        continue
+      }
+
+      // Straddles the edge: Sutherland-Hodgman against `field >= 0`.
+      const edgeKeys = [
+        `h:${ix}:${iy}`,
+        `v:${ix + 1}:${iy}`,
+        `h:${ix}:${iy + 1}`,
+        `v:${ix}:${iy}`,
+      ]
+      const polygon = []
+      for (let k = 0; k < 4; k += 1) {
+        const next = (k + 1) % 4
+        if (!inside[k]) polygon.push(corners[k].index)
+        if (inside[k] !== inside[next]) {
+          polygon.push(crossingOn(corners[k], corners[next], edgeKeys[k]))
+        }
+      }
+      // Fan, wound to match the untouched cells above.
+      for (let k = 1; k + 1 < polygon.length; k += 1) {
+        indices.push(polygon[0], polygon[k + 1], polygon[k])
+      }
     }
   }
 
@@ -426,7 +774,7 @@ export function buildGalleryShellGeometry() {
     // spans x ~ 0 by construction (it stitches +theta to its mirror), so the
     // footprint only has to be asked about z.
     const theta = -Math.PI + ((ix + 0.5) / RADIAL_SEGMENTS) * Math.PI * 2
-    if (insideRoofOpening(0, planPoint(theta).z * shellSection(1).zScale)) continue
+    if (roofOpeningField(0, planPoint(theta).z * shellSection(1).zScale) < 0) continue
     // Wound to face down, into the room.
     indices.push(left, right, leftNext, leftNext, right, rightNext)
   }
@@ -470,99 +818,178 @@ export function buildGalleryShellGeometry() {
  * cheaper than threading state between the two, and it cannot drift out of
  * step with the surface it belongs to.
  */
+/**
+ * The rim of the hole, as a list of segments lying exactly on the cut.
+ *
+ * Extracted from the same field on the same lattice the shell cut uses, so
+ * every endpoint lands on a shell crossing exactly rather than merely nearly.
+ * Exported because the light shaft is built from it too: a beam that is
+ * genuinely the shape of the hole can only come from the hole's own geometry,
+ * and deriving it twice would let the two drift apart.
+ *
+ * Returned unordered. Neither consumer needs a walked loop — the rim extrudes
+ * each segment into a slab face, the shaft extrudes each into a wall of the
+ * light prism, and the union of those is the surface either way.
+ */
+export function roofOpeningBoundarySegments() {
+  const field = sampleRoofField()
+  const thetaAt = (ix) => -Math.PI + (ix / RADIAL_SEGMENTS) * Math.PI * 2
+
+  const crossing = (ia, ib) => {
+    const fa = fieldAt(field, ia.iy, ia.ix)
+    const fb = fieldAt(field, ib.iy, ib.ix)
+    const t = THREE.MathUtils.clamp(fa / (fa - fb), 0, 1)
+    const pa = shellPoint(thetaAt(ia.ix), ia.iy / HEIGHT_SEGMENTS)
+    const pb = shellPoint(thetaAt(ib.ix), ib.iy / HEIGHT_SEGMENTS)
+    return {
+      x: pa.x + (pb.x - pa.x) * t,
+      y: pa.y + (pb.y - pa.y) * t,
+      z: pa.z + (pb.z - pa.z) * t,
+    }
+  }
+
+  const segments = []
+  for (let iy = 0; iy < HEIGHT_SEGMENTS; iy += 1) {
+    for (let ix = 0; ix < RADIAL_SEGMENTS; ix += 1) {
+      const corners = [
+        { ix, iy },
+        { ix: ix + 1, iy },
+        { ix: ix + 1, iy: iy + 1 },
+        { ix, iy: iy + 1 },
+      ]
+      const inside = corners.map((c) => fieldAt(field, c.iy, c.ix) < 0)
+      const count = inside.filter(Boolean).length
+      if (count === 0 || count === 4) continue
+
+      const hits = []
+      for (let k = 0; k < 4; k += 1) {
+        const next = (k + 1) % 4
+        if (inside[k] !== inside[next]) hits.push(crossing(corners[k], corners[next]))
+      }
+      // Two crossings is the ordinary case; four is a saddle cell, rare enough
+      // at this density that pairing them in the order found is sufficient.
+      for (let k = 0; k + 1 < hits.length; k += 2) segments.push([hits[k], hits[k + 1]])
+    }
+  }
+  return segments
+}
+
+/** Is this point in plan inside the opening? Used to seed dust inside the shaft. */
+export function isInsideRoofOpening(x, z) {
+  return roofOpeningField(x, z) < 0
+}
+
+/** Plan bounds of the opening, for rejection-sampling inside it. */
+export const ROOF_OPENING_BOUNDS = {
+  minX: ROOF_OPENING.centerX - ROOF_OPENING.halfWidth * 1.35,
+  maxX: ROOF_OPENING.centerX + ROOF_OPENING.halfWidth * 1.35,
+  minZ: ROOF_OPENING.centerZ - ROOF_OPENING.halfLength * 1.35,
+  maxZ: ROOF_OPENING.centerZ + ROOF_OPENING.halfLength * 1.35,
+}
+
 export function buildRoofOpeningRimGeometry() {
   const positions = []
   const uvs = []
+  const colors = []
   const indices = []
 
-  const thetaAt = (ix) => -Math.PI + (ix / RADIAL_SEGMENTS) * Math.PI * 2
-  const cellOpen = (iy, ix) => {
-    if (iy < 0 || iy >= HEIGHT_SEGMENTS) {
-      // Above the top row is the crown band, which is cut on the same test.
-      if (iy >= HEIGHT_SEGMENTS) {
-        const theta = -Math.PI + ((ix + 0.5) / RADIAL_SEGMENTS) * Math.PI * 2
-        return insideRoofOpening(0, planPoint(theta).z * shellSection(1).zScale)
-      }
-      return false
-    }
-    const wrapped = (ix + RADIAL_SEGMENTS) % RADIAL_SEGMENTS
-    return cellInRoofOpening(thetaAt(wrapped + 0.5), (iy + 0.5) / HEIGHT_SEGMENTS)
-  }
+  const segments = roofOpeningBoundarySegments()
 
-  /** Outward direction of the opening's edge in plan, from the footprint's own gradient. */
+  /** Outward normal of the opening in plan, from the field's own gradient. */
   const outwardAt = (x, z) => {
     const h = 0.05
-    const f = (px, pz) => {
-      const dx = Math.abs(px - ROOF_OPENING.centerX) / ROOF_OPENING.halfWidth
-      const dz = Math.abs(pz - ROOF_OPENING.centerZ) / ROOF_OPENING.halfLength
-      return Math.pow(dx, ROOF_OPENING.exponent) + Math.pow(dz, ROOF_OPENING.exponent)
-    }
-    const gx = f(x + h, z) - f(x - h, z)
-    const gz = f(x, z + h) - f(x, z - h)
+    const gx = roofOpeningField(x + h, z) - roofOpeningField(x - h, z)
+    const gz = roofOpeningField(x, z + h) - roofOpeningField(x, z - h)
     const length = Math.hypot(gx, gz) || 1
     return { x: gx / length, z: gz / length }
   }
 
   /**
-   * UVs are world-scale, as everywhere else in this room, so the stone lands
-   * at the same block size on the cut face as on the surfaces either side of
-   * it. `x + z` is the horizontal run along the edge: the long edges of the
-   * opening run in Z (x barely moves) and the short ones in X (z barely
-   * moves), so the sum tracks distance along either without needing to know
-   * which edge this is.
+   * One ring of the slab's exposed face per segment: the eroded inner wall
+   * from the ceiling's underside up through the stone, then the flat top
+   * beside the break.
+   *
+   * UVs are world-scale, as everywhere else in this room, so the newly exposed
+   * stone lands at the same block size as the ceiling it was broken out of.
+   * `x + z` is the run along the edge — the opening's long sides run in Z and
+   * its ends in X, so the sum tracks distance along either without the ring
+   * needing to know which it is on.
    */
-  const emitBand = (p0, p1, riseFrom, riseTo, spread, flat) => {
-    const base = positions.length / 3
-    for (const [point, from, to] of [
-      [p0, riseFrom, riseTo],
-      [p1, riseFrom, riseTo],
-    ]) {
-      const out = spread ? outwardAt(point.x, point.z) : { x: 0, z: 0 }
-      const far = { x: point.x + out.x * spread, z: point.z + out.z * spread }
-      positions.push(point.x, point.y + from, point.z)
-      positions.push(far.x, point.y + to, far.z)
-      if (flat) {
-        uvs.push(point.x, point.z, far.x, far.z)
-      } else {
-        uvs.push(point.x + point.z, point.y + from, far.x + far.z, point.y + to)
+  const ringFor = (point) => {
+    const phi = Math.atan2(point.x - ROOF_OPENING.centerX, point.z - ROOF_OPENING.centerZ)
+    const out = outwardAt(point.x, point.z)
+    const thickness = roofEdgeThickness(phi)
+    const erosion = roofEdgeErosion(phi)
+    const ring = REVEAL_PROFILE.map((step) => {
+      const spread = step.out * erosion
+      return {
+        x: point.x + out.x * spread,
+        y: point.y + thickness * step.t,
+        z: point.z + out.z * spread,
+        shade: step.shade,
+        flat: false,
       }
-    }
-    // base+0/1 are the near edge's bottom/top, base+2/3 the far edge's.
-    indices.push(base, base + 1, base + 2, base + 1, base + 3, base + 2)
+    })
+    const top = ring[ring.length - 1]
+    const coping = roofCopingWidth(phi)
+    ring.push({
+      x: top.x + out.x * coping,
+      y: top.y,
+      z: top.z + out.z * coping,
+      // The roof top is the most weathered surface here and catches the sky
+      // directly, so it is the one part that is never darkened.
+      shade: 1,
+      flat: true,
+    })
+    return ring
   }
 
-  for (let iy = 0; iy < HEIGHT_SEGMENTS; iy += 1) {
-    for (let ix = 0; ix < RADIAL_SEGMENTS; ix += 1) {
-      if (!cellOpen(iy, ix)) continue
-
-      const v0 = iy / HEIGHT_SEGMENTS
-      const v1 = (iy + 1) / HEIGHT_SEGMENTS
-      const t0 = thetaAt(ix)
-      const t1 = thetaAt(ix + 1)
-
-      // Each neighbour that is NOT part of the opening means the grid edge
-      // between them is a boundary of the hole, and that edge is where the
-      // slab's cut face has to appear.
-      const edges = []
-      if (!cellOpen(iy, ix - 1)) edges.push([shellPoint(t0, v0), shellPoint(t0, v1)])
-      if (!cellOpen(iy, ix + 1)) edges.push([shellPoint(t1, v0), shellPoint(t1, v1)])
-      if (!cellOpen(iy - 1, ix)) edges.push([shellPoint(t0, v0), shellPoint(t1, v0)])
-      if (!cellOpen(iy + 1, ix)) edges.push([shellPoint(t0, v1), shellPoint(t1, v1)])
-
-      for (const [a, b] of edges) {
-        // The reveal: straight up through the slab.
-        emitBand(a, b, 0, ROOF_OPENING.thickness, 0, false)
-        // The coping: the flat roof surface at the top of that cut.
-        emitBand(a, b, ROOF_OPENING.thickness, ROOF_OPENING.thickness, ROOF_OPENING.coping, true)
+  for (const [a, b] of segments) {
+    const ringA = ringFor(a)
+    const ringB = ringFor(b)
+    const base = positions.length / 3
+    for (const ring of [ringA, ringB]) {
+      for (const point of ring) {
+        positions.push(point.x, point.y, point.z)
+        uvs.push(point.flat ? point.x : point.x + point.z, point.flat ? point.z : point.y)
+        colors.push(point.shade, point.shade, point.shade)
       }
+    }
+    const n = ringA.length
+    for (let k = 0; k + 1 < n; k += 1) {
+      const a0 = base + k
+      const a1 = base + k + 1
+      const b0 = base + n + k
+      const b1 = base + n + k + 1
+      indices.push(a0, a1, b0, a1, b1, b0)
     }
   }
 
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
   geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
   geometry.setIndex(indices)
-  geometry.computeVertexNormals()
-  geometry.computeBoundingSphere()
-  return geometry
+
+  /**
+   * Welded, then CREASED — and the second step is what this pass added.
+   *
+   * Each segment builds its own ring, so neighbouring rings arrive as separate
+   * vertices at identical positions. Left that way, `computeVertexNormals`
+   * gives every quad its own flat normal and the edge shades as a faceted
+   * sawtooth. Welding and averaging fixes that, but it fixes it everywhere:
+   * the previous version smoothed the fractures along with everything else,
+   * which is exactly why the opening read as rounded and manufactured.
+   *
+   * `toCreasedNormals` splits the difference the way stone actually does.
+   * Below the crease angle, normals average and the surface reads worn;
+   * above it, they stay hard and the break reads as a break. 48 degrees sits
+   * under the angle between the bedding courses in `REVEAL_PROFILE` and over
+   * the gentle variation along a run, so the ledges keep their edges while the
+   * runs between them stay smooth.
+   */
+  const welded = mergeVertices(geometry, 1e-4)
+  const creased = toCreasedNormals(welded, THREE.MathUtils.degToRad(48))
+  creased.computeBoundingSphere()
+  return creased
 }

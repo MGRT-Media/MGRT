@@ -1,5 +1,10 @@
 import * as THREE from 'three'
-import { GALLERY_SHELL } from '../architecture/galleryShellGeometry.js'
+import {
+  GALLERY_SHELL,
+  ROOF_OPENING_BOUNDS,
+  isInsideRoofOpening,
+  roofOpeningBoundarySegments,
+} from '../architecture/galleryShellGeometry.js'
 
 /**
  * The composition anchor — the point on the floor the production ensemble is
@@ -98,16 +103,43 @@ export const lightingParams = {
   sky: {
     /** Open daylight coming straight down through the court. */
     sky: '#93b0d4',
-    /** Warm, off the stone floor it has already hit. */
-    ground: '#a8865c',
+    /**
+     * The floor-bounce term, and the main piece of indirect lighting here.
+     *
+     * A hemisphere light blends sky above to ground below by surface normal,
+     * so a downward-facing surface receives 100% of this colour and nothing
+     * else. That is exactly what light returning off a sunlit stone floor
+     * does, and it is why the ceiling either side of the court was the
+     * blackest thing in frame before this pass: the ground term was too dark
+     * and too grey to stand for a floor with sunlight on it. Warmed and lifted
+     * from '#a8865c'.
+     *
+     * It carries the vertical surfaces too — a column face sits at the 50/50
+     * mix of sky and ground — so this is half of what keeps a shaded shaft
+     * readable.
+     */
+    ground: '#c9a273',
+    /**
+     * The same term before the sun arrives. Cool and near-neutral, because at
+     * ignition 0 there is no sun in the room and so nothing warm for the floor
+     * to be bouncing. `setIgnition` crossfades between the two, so the warmth
+     * arrives with the light that justifies it instead of being painted on
+     * from the first frame.
+     */
+    groundSkylit: '#6f6d68',
     /**
      * With the sun in the room the sky is no longer carrying it, and this has
      * to come DOWN as the sun comes up or there is no shade for the sunlight
      * to alternate with. Measured against the sun rather than chosen: at 1.35
      * the lit and unlit floor were within a few percent of each other and the
      * patch did not read at all.
+     *
+     * 0.95 -> 1.25 for the indirect pass. This is the broad normal-varying
+     * term, so it lifts shade without flattening the way a flat ambient would:
+     * every surface still receives a different amount depending on which way
+     * it faces.
      */
-    intensity: 0.95,
+    intensity: 1.25,
     /**
      * At progress 0 this is very nearly the whole room, so it is the number
      * that decides whether the opening frame is legible on a bright screen.
@@ -128,9 +160,28 @@ export const lightingParams = {
    */
   bounce: {
     color: '#ffd9a8',
-    intensity: 0.65,
+    /** 0.65 -> 0.95, alongside the re-aim below. */
+    intensity: 0.95,
     skylitIntensity: 0.08,
-    position: [3, 6, 5],
+    /**
+     * How far BELOW the floor this stands, and what it aims at.
+     *
+     * It used to sit at [3, 6, 5] — above the room, shining down — and that
+     * was simply the wrong shape for what it is meant to be. Light bouncing
+     * off a sunlit floor travels UPWARD. A warm light placed overhead is just
+     * a second sun: it lit the surfaces the real sun was already lighting and
+     * left the ceiling and every downward-facing surface untouched, which is
+     * why those went black.
+     *
+     * It now stands under the sunlit patch — position derived from
+     * `sunFloorTarget()` so it tracks the sun rather than being typed in — and
+     * aims up into the room. That gives the indirect light a DIRECTION, which
+     * is the one thing the hemisphere term cannot provide: surfaces facing the
+     * sunlit floor come up, surfaces facing away stay down, and the shade
+     * keeps its modelling instead of turning into flat ambient.
+     */
+    depth: 4.5,
+    aim: [0, 2.5, -4],
   },
   /**
    * Cool sky fill from the shaded flank, non-shadowing so it can never
@@ -187,18 +238,47 @@ export const lightingParams = {
    */
   shaft: {
     color: '#ffe8c6',
-    opacity: 0.05,
-    angle: 0.3,
-    lengthFraction: 0.72,
-    radialSegments: 24,
+    /**
+     * Very low, and it has to be. The volume is now the true shape of the
+     * aperture, and that aperture is 10 x 11 over a room only 20 wide — so
+     * unlike the old cone, the lit volume genuinely occupies most of the
+     * interior and covers most of the frame from almost anywhere the camera
+     * stands. Tuned down by eye against the real frames: at 0.10 it washed the
+     * back wall and ceiling into haze, at 0.035 it still flattened them. The
+     * shell is deliberately almost subliminal here — it establishes where the
+     * light is, and the DUST is what makes it visible, which is the way round
+     * the brief asks for.
+     */
+    opacity: 0.022,
+    /**
+     * How far down the sun vector the visible volume is drawn, as a fraction
+     * of the throw from the opening to the floor. Held under 1 so the shaft
+     * dies into the air rather than terminating on the floor in a hard edge —
+     * the real patch of light on the ground is the sun's own shadow-mapped
+     * pool, and the volume only has to explain how it got there.
+     */
+    lengthFraction: 0.95,
   },
   dust: {
     color: '#fff6e8',
+    /**
+     * Unchanged at 720. The field is now confined to the shaft instead of
+     * being spread through a cone across the room, so the same count reads as
+     * a good deal denser where it matters and absent where it should be.
+     */
     count: 720,
-    sizeSmall: 0.022,
-    sizeLarge: 0.075,
-    opacity: 0.26,
-    topBias: 2.4,
+    sizeSmall: 0.02,
+    sizeLarge: 0.062,
+    /**
+     * 0.26 -> 0.2. Confining the field concentrated it; holding the old
+     * per-mote value made the shaft sparkle, which is the "fireflies" read.
+     * Density comes from overlap, not from making each speck brighter.
+     */
+    opacity: 0.2,
+    /** Skews the field toward the opening — see `buildDust`. */
+    topBias: 1.7,
+    /** Peak continuous rise, for the heaviest motes only. 0.05 -> 0.018. */
+    drift: 0.018,
   },
 }
 
@@ -232,33 +312,63 @@ export function sunFloorTarget(params = lightingParams) {
   )
 }
 
-/** Perpendicular basis for offsetting points around the beam's own axis. */
-function buildRadialBasis(axis) {
-  const arbitrary = Math.abs(axis.y) < 0.99 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0)
-  const u = new THREE.Vector3().crossVectors(axis, arbitrary).normalize()
-  const v = new THREE.Vector3().crossVectors(axis, u).normalize()
-  return { u, v }
-}
-
 /**
- * The visible light beam: a single open-ended cone, apex at the light
- * source, extending only `beam.lengthFraction` of the way toward the
- * floor target — see the comment on that param for why. Additive,
- * `depthWrite: false`, `DoubleSide` so it reads as a soft volume from any
- * angle without needing a depth-texture pass or raymarching.
+ * The visible shaft — the actual shape of the hole, extruded along the sun.
+ *
+ * This replaces a cone. The cone was honest about being a placeholder: it was
+ * built from a half-angle and a length because the old light was a SpotLight,
+ * which really does emit a cone. Nothing about this room emits a cone any
+ * more. Sunlight is parallel, so the volume it lights is a PRISM — the hole's
+ * own outline, swept along the sun vector, with parallel sides that do not
+ * spread. A cone hanging under a 10 x 11 irregular opening reads as a stage
+ * effect precisely because its silhouette has nothing to do with the aperture
+ * it claims to come from.
+ *
+ * Built by extruding `roofOpeningBoundarySegments()` — the same segments the
+ * stone rim is built from, so the light and the hole are the same shape by
+ * construction and cannot drift apart. Alignment with the DirectionalLight is
+ * likewise structural rather than tuned: the extrusion direction IS the sun
+ * vector.
+ *
+ * Additive, `depthWrite: false`, `DoubleSide`, so it reads as a soft volume
+ * from any angle without a depth prepass or raymarching. The fragment shader
+ * does the work that keeps it from being a solid slab:
+ *
+ *  - it fades out along the shaft, so the light dies into the room rather
+ *    than ending;
+ *  - it fades toward EDGE-ON viewing via the fresnel-style term, which is the
+ *    detail that stops the prism reading as glass. A volume of illuminated
+ *    haze is brightest where you look through the most of it — down its
+ *    length — and nearly invisible where you look across its skin.
  */
-function buildBeam(params, origin, target) {
-  const axisVec = target.clone().sub(origin)
-  const fullLength = axisVec.length()
-  const axis = axisVec.clone().normalize()
+function buildShaft(params, direction, length) {
+  const segments = roofOpeningBoundarySegments()
+  const positions = []
+  const travel = []
+  const indices = []
 
-  const beamLength = fullLength * params.shaft.lengthFraction
-  const radius = Math.tan(params.shaft.angle) * beamLength
+  for (const [a, b] of segments) {
+    const base = positions.length / 3
+    positions.push(a.x, a.y, a.z, b.x, b.y, b.z)
+    travel.push(0, 0)
+    positions.push(
+      a.x + direction.x * length,
+      a.y + direction.y * length,
+      a.z + direction.z * length,
+      b.x + direction.x * length,
+      b.y + direction.y * length,
+      b.z + direction.z * length,
+    )
+    travel.push(1, 1)
+    indices.push(base, base + 1, base + 2, base + 1, base + 3, base + 2)
+  }
 
-  const geometry = new THREE.ConeGeometry(radius, beamLength, params.shaft.radialSegments, 1, true)
-  // Apex defaults to local +height/2; shift so the apex sits at the local
-  // origin and the (open) base trails off along local -Y.
-  geometry.translate(0, -beamLength / 2, 0)
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setAttribute('aTravel', new THREE.Float32BufferAttribute(travel, 1))
+  geometry.setIndex(indices)
+  geometry.computeVertexNormals()
+  geometry.computeBoundingSphere()
 
   const material = new THREE.ShaderMaterial({
     transparent: true,
@@ -270,107 +380,132 @@ function buildBeam(params, origin, target) {
       uOpacity: { value: params.shaft.opacity },
     },
     vertexShader: /* glsl */ `
-      varying float vT;
+      attribute float aTravel;
+      varying float vTravel;
+      varying vec3 vViewNormal;
+      varying vec3 vViewPosition;
       void main() {
-        // Local Y: 0 at the apex (light source), -beamLength at the open
-        // (far) end. vT: 0 at the apex, 1 at the far end.
-        vT = clamp(-position.y / ${beamLength.toFixed(6)}, 0.0, 1.0);
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        vTravel = aTravel;
+        vViewNormal = normalize(normalMatrix * normal);
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        vViewPosition = mv.xyz;
+        gl_Position = projectionMatrix * mv;
       }
     `,
     fragmentShader: /* glsl */ `
       uniform vec3 uColor;
       uniform float uOpacity;
-      varying float vT;
+      varying float vTravel;
+      varying vec3 vViewNormal;
+      varying vec3 vViewPosition;
       void main() {
-        // Fade in just past the apex (avoids a hard point) and fade out
-        // toward the open far end (it's floating in air, not capped, so a
-        // soft trail-off reads as atmospheric rather than truncated).
-        float fade = smoothstep(0.0, 0.15, vT) * (1.0 - smoothstep(0.7, 1.0, vT));
-        gl_FragColor = vec4(uColor, uOpacity * fade);
+        // Along the shaft: a short fade in under the opening so the beam does
+        // not start at a hard line, then a long fall-off into the room.
+        float along = smoothstep(0.0, 0.10, vTravel) * (1.0 - smoothstep(0.45, 1.0, vTravel));
+
+        // Across the shaft: the prism is a hollow shell standing in for a
+        // volume, so each wall is faded by how squarely it is being viewed.
+        //
+        // This started out the other way round — brightest at grazing, on the
+        // reasoning that a ray skimming the wall passes through the most haze.
+        // That is true of a real volume and wrong for this approximation: a
+        // shell has no thickness, so at grazing angles a single quad smears
+        // across a huge run of screen and each one announced itself as a hard
+        // diagonal streak. Squaring it up instead keeps the wedge reading as a
+        // soft body of light and makes the individual quads disappear, which
+        // is what the shell was standing in for in the first place.
+        float facing = abs(dot(normalize(vViewNormal), normalize(-vViewPosition)));
+        float depth = facing * facing;
+
+        gl_FragColor = vec4(uColor, uOpacity * along * depth);
       }
     `,
   })
 
-  const mesh = new THREE.Mesh(geometry, material)
-  mesh.position.copy(origin)
-  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), axis)
-
-  return mesh
+  return new THREE.Mesh(geometry, material)
 }
 
 /**
- * A dust field confined to the full beam volume (origin to floor target —
- * dust can sit lower than the visible beam mesh itself, since individual
- * points don't create the "camera inside a shell" issue a hollow cone
- * does). Base positions are generated once; each point then drifts around
- * its own base position every frame, entirely on the GPU (a per-vertex
- * sine/cosine offset driven by a `uTime` uniform, updated from
- * `VolumetricLightingRig`'s `useFrame`) — a slow, gentle air-current
- * wobble, not a particle simulation with velocity or state. Because the
- * offset is a bounded oscillation around each point's fixed base position
- * (not an accumulating drift), points never need to be wrapped/looped
- * back into bounds — they can't wander out in the first place.
+ * Dust, seeded INSIDE the shaft rather than around an axis.
  *
- * Points are distributed along the beam axis with `dust.topBias` biasing
- * them toward the light source (t = 0) rather than spread uniformly —
- * `Math.random() ** topBias` skews a uniform sample toward 0 for any
- * exponent > 1, so most points cluster near the top while a sparse tail
- * still drifts all the way down to the floor target.
+ * The old field was a cone of points about a line, which had the same problem
+ * as the cone beam: its shape had nothing to do with the aperture. Worse, its
+ * brightness was uniform, so every mote read the same whether it was in the
+ * light or not — which is the thing the brief rules out. Real dust is always
+ * everywhere; what changes is that a sunbeam makes the motes crossing it
+ * visible and leaves the rest invisible.
  *
- * Size and motion both key off that same `t` (0 = top/breach, 1 = floor):
- * small, fast-wobbling specks near the top; larger, heavier ones with a
- * slower wobble plus a slow *continuous* upward drift near the bottom,
- * where the arc pillars and floor are. The continuous drift is the one
- * departure from the "bounded oscillation only" design above — it's kept
- * bounded too, via `mod()` cycling it within a small fixed range, so nothing
- * ever needs unbounded position wrapping (see the vertex shader).
+ * So each point is rejection-sampled to a position genuinely inside the
+ * opening's plan outline, then pushed down the sun vector by a random
+ * distance. The field IS the lit volume. A small lateral jitter lets a few
+ * motes stray just outside it, and `aInside` carries how far in they are so
+ * the shader can dim the strays — that soft boundary is what stops the shaft
+ * looking like a container with particles in it.
+ *
+ * Positions are generated once. Each point then drifts around its own base
+ * position on the GPU (a per-vertex sine/cosine offset driven by `uTime` from
+ * `VolumetricLightingRig`'s `useFrame`) — an air-current wobble, not a
+ * particle simulation with velocity or state. Because the offset is a bounded
+ * oscillation around a fixed base, points can never wander out of bounds and
+ * never need wrapping.
+ *
+ * Size and motion key off depth down the shaft: small, tight specks near the
+ * opening; larger, slower ones near the floor where the columns give them
+ * scale.
  */
-function buildDust(params, origin, target) {
-  const { count, color, opacity, topBias, sizeSmall, sizeLarge } = params.dust
-  const fullLength = target.clone().sub(origin).length()
-  const axis = target.clone().sub(origin).normalize()
-  const { u, v } = buildRadialBasis(axis)
-  const maxRadius = Math.tan(params.shaft.angle) * fullLength
+function buildDust(params, direction, length) {
+  const { count, color, opacity, topBias, sizeSmall, sizeLarge, drift } = params.dust
 
   const positions = new Float32Array(count * 3)
-  // A per-point random phase offset so points don't oscillate in lockstep
-  // (which would read as the whole field pulsing rather than individual
-  // specks drifting independently).
+  // A per-point random phase so points don't oscillate in lockstep, which
+  // would read as the whole field pulsing rather than as independent motes.
   const phases = new Float32Array(count)
   const sizes = new Float32Array(count)
-  // Wobble amplitude/frequency multiplier: >1 for small/high specks (the
-  // request's "high-velocity"), <1 for large/low ones ("slower, heavier").
   const wobbles = new Float32Array(count)
-  // Continuous upward drift speed — near 0 for small/high specks (they
-  // stay in their fast bounded wobble instead), larger for heavy ones.
   const drifts = new Float32Array(count)
+  // 1 well inside the shaft, falling toward 0 for the strays outside it.
+  const insideness = new Float32Array(count)
+
+  const { minX, maxX, minZ, maxZ } = ROOF_OPENING_BOUNDS
 
   for (let i = 0; i < count; i += 1) {
+    // Rejection-sample the opening's real outline. It fills a good fraction of
+    // its own bounding box, so this converges in a couple of tries; the cap
+    // just guarantees termination.
+    let x = 0
+    let z = 0
+    let inside = false
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      x = minX + Math.random() * (maxX - minX)
+      z = minZ + Math.random() * (maxZ - minZ)
+      inside = isInsideRoofOpening(x, z)
+      if (inside) break
+    }
+
+    // Bias toward the opening: `random ** topBias` skews a uniform sample
+    // toward 0, so the field is densest where the light enters and thins into
+    // a long tail down into the room.
     const t = Math.random() ** topBias
-    const center = origin.clone().lerp(target, t)
-    const radiusAtT = THREE.MathUtils.lerp(0.05, maxRadius, t)
-    const r = radiusAtT * Math.sqrt(Math.random()) * 0.85
-    const theta = Math.random() * Math.PI * 2
+    const distance = t * length
 
-    const offset = u
-      .clone()
-      .multiplyScalar(r * Math.cos(theta))
-      .add(v.clone().multiplyScalar(r * Math.sin(theta)))
+    // A little lateral spread so the shaft's edge is a haze boundary rather
+    // than a cut. Strays are dimmed by `aInside` in the shader.
+    const strayX = (Math.random() - 0.5) * 0.9
+    const strayZ = (Math.random() - 0.5) * 0.9
 
-    const point = center.clone().add(offset)
-    positions[i * 3] = point.x
-    positions[i * 3 + 1] = point.y
-    positions[i * 3 + 2] = point.z
+    positions[i * 3] = x + direction.x * distance + strayX
+    positions[i * 3 + 1] = GALLERY_SHELL.roofOpening.crownHeight + direction.y * distance
+    positions[i * 3 + 2] = z + direction.z * distance + strayZ
+
+    insideness[i] = inside ? 1 : 0.25
     phases[i] = Math.random() * Math.PI * 2
 
-    // Jittered so the size/speed split isn't a mechanically sharp line at
-    // a given height — some overlap between "small fast" and "large slow"
-    // reads as more organic.
+    // Jittered so the size/speed split is not a mechanically sharp line at a
+    // given depth — the overlap is what reads as organic.
     const sizeT = THREE.MathUtils.clamp(t + (Math.random() - 0.5) * 0.25, 0, 1)
     sizes[i] = THREE.MathUtils.lerp(sizeSmall, sizeLarge, sizeT)
-    wobbles[i] = THREE.MathUtils.lerp(1.4, 0.4, sizeT)
-    drifts[i] = THREE.MathUtils.lerp(0, 0.05, sizeT)
+    wobbles[i] = THREE.MathUtils.lerp(1.2, 0.35, sizeT)
+    drifts[i] = THREE.MathUtils.lerp(0, drift, sizeT)
   }
 
   const geometry = new THREE.BufferGeometry()
@@ -379,6 +514,7 @@ function buildDust(params, origin, target) {
   geometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1))
   geometry.setAttribute('aWobble', new THREE.BufferAttribute(wobbles, 1))
   geometry.setAttribute('aDrift', new THREE.BufferAttribute(drifts, 1))
+  geometry.setAttribute('aInside', new THREE.BufferAttribute(insideness, 1))
 
   const material = new THREE.ShaderMaterial({
     transparent: true,
@@ -395,40 +531,44 @@ function buildDust(params, origin, target) {
       attribute float aSize;
       attribute float aWobble;
       attribute float aDrift;
+      attribute float aInside;
+      varying float vInside;
       void main() {
-        // Cinematic air-current drift — slow, small-amplitude, and
-        // self-bounded (a sine/cosine wobble around the base position,
-        // scaled per-point by aWobble: >1 for small high specks reads as
-        // "high-velocity," <1 for large low ones reads as "heavier").
-        vec3 pos = position;
-        pos.x += sin(uTime * 0.3 + position.y + aPhase) * 0.05 * aWobble;
-        pos.y += cos(uTime * 0.2 + position.x + aPhase) * 0.03 * aWobble;
-        pos.z += sin(uTime * 0.25 + position.z + aPhase) * 0.04 * aWobble;
+        vInside = aInside;
 
-        // Slow continuous upward drift for heavier particles only
-        // (aDrift ≈ 0 for small ones) — bounded via mod() into a small
-        // cycling range rather than an unbounded climb, so it never needs
-        // separate position-wrapping logic.
+        // An air current, not a snowfall. The frequencies below are a third of
+        // what they were: at the old rate the motes read as falling, which is
+        // the "snow" the brief rules out. Dust in still air barely moves at
+        // all — it is the light changing on it that the eye picks up.
+        vec3 pos = position;
+        pos.x += sin(uTime * 0.10 + position.y + aPhase) * 0.05 * aWobble;
+        pos.y += cos(uTime * 0.07 + position.x + aPhase) * 0.03 * aWobble;
+        pos.z += sin(uTime * 0.09 + position.z + aPhase) * 0.04 * aWobble;
+
+        // A slow continuous rise for the heavier motes only, bounded by mod()
+        // into a small cycling range so it never needs position wrapping.
         float driftRange = 0.6;
         float cyclic = mod(uTime * aDrift + aPhase * driftRange, driftRange) - driftRange * 0.5;
         pos.y += cyclic;
 
         vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
         gl_Position = projectionMatrix * mvPosition;
-        // Perspective size attenuation, matching THREE.PointsMaterial's
-        // own approach (size shrinks with distance from camera).
+        // Perspective attenuation, matching THREE.PointsMaterial's approach.
         gl_PointSize = aSize * (400.0 / -mvPosition.z);
       }
     `,
     fragmentShader: /* glsl */ `
       uniform vec3 uColor;
       uniform float uOpacity;
+      varying float vInside;
       void main() {
-        // Soft circular sprite instead of a hard-edged square point.
+        // A soft round mote. The falloff starts at the centre rather than at
+        // an edge, so these read as out-of-focus specks rather than as discs
+        // with a rim — a hard rim is what makes particles look like sparks.
         float d = distance(gl_PointCoord, vec2(0.5));
-        float fade = 1.0 - smoothstep(0.3, 0.5, d);
+        float fade = 1.0 - smoothstep(0.05, 0.5, d);
         if (fade <= 0.0) discard;
-        gl_FragColor = vec4(uColor, uOpacity * fade);
+        gl_FragColor = vec4(uColor, uOpacity * fade * vInside);
       }
     `,
   })
@@ -455,10 +595,16 @@ export function createVolumetricLighting(params = lightingParams) {
   let sunLight = null
   let sunTarget = null
   let bounceLight = null
+  let bounceTarget = null
   let fillLight = null
   let hemisphereLight = null
   let beam = null
   let dust = null
+
+  // Endpoints of the ground-colour crossfade in `setIgnition`, built once
+  // rather than parsed per frame.
+  const skylitGround = new THREE.Color(params.sky.groundSkylit)
+  const sunlitGround = new THREE.Color(params.sky.ground)
 
   function init() {
     const floorTarget = sunFloorTarget(params)
@@ -501,8 +647,11 @@ export function createVolumetricLighting(params = lightingParams) {
     // Both non-shadowing, so neither can introduce a second shadow source —
     // the sun owns every shadow in this room.
     bounceLight = new THREE.DirectionalLight(params.bounce.color, params.bounce.skylitIntensity)
-    bounceLight.position.set(...params.bounce.position)
+    bounceLight.position.set(floorTarget.x, -params.bounce.depth, floorTarget.z)
     bounceLight.castShadow = false
+    bounceTarget = new THREE.Object3D()
+    bounceTarget.position.set(...params.bounce.aim)
+    bounceLight.target = bounceTarget
 
     fillLight = new THREE.DirectionalLight(params.fill.color, params.fill.skylitIntensity)
     fillLight.position.set(...params.fill.position)
@@ -514,14 +663,15 @@ export function createVolumetricLighting(params = lightingParams) {
       params.sky.skylitIntensity,
     )
 
-    // The volumetrics now run down the sun's own shaft, from the middle of
-    // the opening to where the light lands, instead of from a hole in the
-    // wall to a mark on the floor.
-    const shaftOrigin = new THREE.Vector3(OPENING.centerX, OPENING.crownHeight, OPENING.centerZ)
-    beam = buildBeam(params, shaftOrigin, floorTarget)
-    dust = buildDust(params, shaftOrigin, floorTarget)
+    // Both volumetrics are built from the aperture itself and swept along the
+    // sun vector, so the light in the air, the hole it comes through and the
+    // DirectionalLight casting it are all the same geometry by construction.
+    const down = sunDirection(params).clone().negate()
+    const throwLength = (OPENING.crownHeight / -down.y) * params.shaft.lengthFraction
+    beam = buildShaft(params, down, throwLength)
+    dust = buildDust(params, down, throwLength)
 
-    group.add(sunLight, sunTarget, bounceLight, fillLight, hemisphereLight, beam, dust)
+    group.add(sunLight, sunTarget, bounceLight, bounceTarget, fillLight, hemisphereLight, beam, dust)
 
     // Start in the skylit state rather than at full sun, so there is never a
     // frame of the lit room before the first `useFrame` lands.
@@ -549,6 +699,9 @@ export function createVolumetricLighting(params = lightingParams) {
     if (fillLight) fillLight.intensity = lerp(params.fill.skylitIntensity, params.fill.intensity, factor)
     if (hemisphereLight) {
       hemisphereLight.intensity = lerp(params.sky.skylitIntensity, params.sky.intensity, factor)
+      // The floor only bounces warm light once there is sun on it — see
+      // `sky.groundSkylit`.
+      hemisphereLight.groundColor.copy(skylitGround).lerp(sunlitGround, factor)
     }
     // The shaft and its dust are the one thing that genuinely is absent until
     // the sun arrives — there is no beam in the air without a beam.
