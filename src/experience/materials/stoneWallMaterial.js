@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { trackAssetUpgrade } from '../loading/assetReadiness.js'
 
 /**
  * Procedurally generated old-stone PBR material — albedo, normal, and
@@ -419,9 +420,25 @@ export function createStoneWallMaterial(tintColor, repeat = [6, 3], normalScale 
   //
   // Fire and forget — no await: the caller needs a material this frame, and
   // the swap is a no-op when nothing is installed.
-  if (scanned) upgradeToScannedStone(material, scanned, repeat, normalScale)
+  // Registered with `assetReadiness` so the loading gate can hold the scene
+  // out of sight until the swap has happened, rather than letting it land
+  // on whatever frame the decode finishes. Still fire and forget from this
+  // function's point of view — nothing here awaits it.
+  if (scanned) trackAssetUpgrade(upgradeToScannedStone(material, scanned, repeat, normalScale))
 
   return material
+}
+
+/**
+ * Every file a scanned set is made of, including the availability probe's own
+ * URL (which is `albedo.webp`, so the probe and the map share one request).
+ *
+ * Exported so `criticalAssets.js` can warm exactly these URLs rather than
+ * keeping a second, hand-copied list that would drift the first time a slot
+ * is added or a format changes.
+ */
+export function scannedStoneUrls(set) {
+  return SCANNED_SLOTS.map(({ file }) => `${SCANNED_BASE}/${set}/${file}`)
 }
 
 /** One stone block ≈ `TILE_SIZE` world units — see the module doc comment. */

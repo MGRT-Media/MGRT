@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { trackAssetUpgrade } from '../loading/assetReadiness.js'
 import { planPoint, wallDeviation } from './galleryShellGeometry.js'
 
 /**
@@ -316,10 +317,18 @@ const BRASS_BASE = '/textures/brass'
 const BRASS_OFFSET = [0.08, 0.08]
 const BRASS_REPEAT = [0.42, 0.38]
 
-/** Fire-and-forget, like the scanned stone: nothing suspends on it. */
+/** The two files the inlay is made of — see `criticalAssets.js`. */
+export const BRASS_URLS = [`${BRASS_BASE}/albedo.jpg`, `${BRASS_BASE}/roughness.jpg`]
+
+/**
+ * Fire-and-forget, like the scanned stone: nothing suspends on it. Each load
+ * is registered with `assetReadiness` so the loading gate can wait for the
+ * swap instead of letting the letters change material in full view.
+ */
 function loadBrassMaps(material) {
   const loader = new THREE.TextureLoader()
   const apply = (slot, file, colorSpace) => {
+    trackAssetUpgrade(new Promise((resolve) => {
     loader.load(
       `${BRASS_BASE}/${file}`,
       (texture) => {
@@ -333,11 +342,14 @@ function loadBrassMaps(material) {
         texture.anisotropy = 8
         material[slot] = texture
         material.needsUpdate = true
+        resolve()
       },
       undefined,
-      // A missing file leaves the flat tint in place rather than a black inlay.
-      () => {},
+      // A missing file leaves the flat tint in place rather than a black
+      // inlay — and resolves, so a missing texture cannot stall the gate.
+      () => resolve(),
     )
+    }))
   }
   apply('map', 'albedo.jpg', THREE.SRGBColorSpace)
   apply('roughnessMap', 'roughness.jpg')

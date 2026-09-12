@@ -20,13 +20,40 @@ import { sunDirection } from './volumetricLighting.js'
  * gradient, and `RoomEnvironment`) and upgrade in place when the file lands.
  * That is the same pattern `stoneWallMaterial.js` uses for its scanned maps.
  */
-export const SKY_HDRI_URL = '/environment/evening-road-puresky-2k.hdr'
+/**
+ * The 1K downsample of the 2K original, not a different image — a box average
+ * of the same file, so nothing about the sky's content, colour or sun position
+ * changed. 4.87MB -> 1.28MB, which was over half the critical loading gate.
+ *
+ * Measured rather than assumed before switching: solid-angle-weighted mean
+ * luminance moves by 0.25% (so the environment term lights the room at the
+ * same level), and rendered in this scene against the 2K the largest
+ * difference anywhere is 9/255 on a view pointed straight up through the roof
+ * opening, with no pixel differing by more than 8/255 and 99.6% differing by
+ * 2/255 or less. On the actual opening camera the mean difference is
+ * 0.03/255.
+ *
+ * The resolution was never doing much work here: what the court reveals is
+ * upper sky, which is a smooth gradient, and the environment contribution is
+ * prefiltered through PMREM into low-resolution mips before any material
+ * samples it.
+ */
+export const SKY_HDRI_URL = '/environment/evening-road-puresky-1k.hdr'
 
 /**
  * Where this particular HDRI's sun sits, measured from the file rather than
- * assumed: the brightest texel of the 2048x1024 image is at (1220, 455),
- * which in three's `equirectUv` convention is a horizontal bearing of 0.6026
- * radians and an elevation of 9.9 degrees.
+ * assumed: the brightest texel of the original 2048x1024 image is at
+ * (1220, 455), which in three's `equirectUv` convention is a horizontal
+ * bearing of 0.6026 radians and an elevation of 9.9 degrees.
+ *
+ * Still correct for the 1K above, and re-checked rather than assumed when it
+ * replaced the 2K: a box downsample cannot move the disc, and the
+ * luminance-weighted centroid of the sun agrees to within 0.5-0.9 degrees.
+ * (The single brightest TEXEL appears to jump further, but that is only
+ * because the disc is broad and nearly flat-topped, so which one texel wins is
+ * noise — the centroid is the real figure.) Immaterial in any case: this sun
+ * sits at 9.9 degrees while the room's is at 68, so it is never inside what
+ * the court opening reveals.
  */
 const HDRI_SUN_BEARING = 0.6026
 

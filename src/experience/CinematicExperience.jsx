@@ -6,6 +6,7 @@ import CampaignsGate from './campaigns/CampaignsGate.jsx'
 import Monitor from './digital/Monitor.jsx'
 import CinemaCamera from './film/CinemaCamera.jsx'
 import { lightingParams } from './lighting/volumetricLighting.js'
+import SceneReady from './loading/SceneReady.jsx'
 import DepthOfField from './postprocessing/DepthOfField.jsx'
 import ScrollCameraRig from './timeline/ScrollCameraRig.jsx'
 import { sampleCameraPath } from './timeline/cameraPath.js'
@@ -30,7 +31,7 @@ const SEED_POSITION = sampleCameraPath(0).position
  * `cameraPath.js`'s progress-0 keyframe exactly so there is no visible
  * jump once `ScrollCameraRig` takes over on the first frame.
  */
-export default function CinematicExperience() {
+export default function CinematicExperience({ onReady }) {
   return (
     <Canvas
       className="experience-canvas"
@@ -96,6 +97,10 @@ export default function CinematicExperience() {
       <Suspense fallback={null}>
         <CinemaCamera />
         <Monitor />
+        {/* Inside the boundary deliberately — see `SceneReady`. While the
+            models are still loading this does not exist, so it cannot report
+            a room that is missing two of its objects. */}
+        <SceneReady onReady={onReady} />
       </Suspense>
       {/* Act 3 (Campaigns). The exterior world and the billboard sit on
           their own render layer and are invisible until the camera swaps

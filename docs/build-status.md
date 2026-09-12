@@ -3153,6 +3153,16 @@ Record meaningful implementation changes rather than every minor code edit.
 
 **Assets — 57MB as supplied, 5.7MB shipped.** They were optimised before being committed, because 57MB is not a defensible download for a scroll-driven experience and `technical-architecture.md` requires models be optimised before entering the application. Via `gltf-transform` (build-time only, run through `npx` — not added as a dependency): texture recompression to WebP at 1024, and mesh simplification on the two heaviest. `digital_stone` 28.3MB -> 917KB (300k -> 20k triangles), `film_camera` 18.9MB -> 2.0MB (216k -> 16k). The vehicles arrived as a 7.3MB FBX containing a 43-vehicle car-park layout; three models were extracted, merged, normalised to metres with their wheels on y=0 and their length on +Z, and exported as a single 1.4MB GLB — so the runtime loads one file through `GLTFLoader` and needs no second loader.
 
+> **Status note added 2026-09-12 — the source assets described in this entry are HISTORICAL SOURCE ASSETS and are no longer present in the shipped project.** The raw downloads were kept in `public/models/` alongside their optimised output; an audit confirmed zero code references and they were removed (see the 2026-09-12 change-log entry). The provenance below stays on record because it explains how the *current* models were derived, but none of the files named as sources is a current project dependency:
+>
+> | Historical source asset (removed) | Current shipped model (active) |
+> | --- | --- |
+> | `camera/1930s_movie_camera.glb` | `camera/movie-camera.glb` — optimised from it |
+> | `monitor/old_computer_monitor_and_tv_model..glb` | `monitor/crt-monitor.glb` — optimised from it |
+> | `camera/studio-camera.glb` | `camera/camera-stand.glb` — the tripod was extracted from it |
+> | `monitor/digital-monitor.glb` | superseded — this was the original "whole computer desk" housing described in the Monitor bullet below, replaced by `crt-monitor.glb` |
+> | `monitor/computer_terminal.glb`, `monitor/terminal.glb` | superseded — earlier terminal candidates, replaced for the reason given in `Monitor.jsx` (no separate `Display` mesh) |
+
 - **`models/modelAssets.js` (new)** — one place for the URLs, a `useLoader(GLTFLoader, …)` wrapper (cached by URL across callers, so a model is fetched, parsed and uploaded once), a cloning helper and a measuring helper. Loading suspends, so the model-backed components sit behind a `Suspense` boundary that deliberately excludes `ScrollCameraRig` and `DepthOfField` — the latter owns the render loop, and suspending it would stop the frame.
 - **Monitor** — `PC2` housing and screen taken from a file that is actually a whole computer desk (two machines, two keyboards). Fitted so the MODEL's screen matches `MONITOR_ANCHOR`'s height and sits on `screenFrontZ`, because `cameraPath.js` derives `MONITOR_VIEW_DISTANCE` from that height and it sets both the Digital shot and the whole Campaigns rail. Video unchanged: same material, same ignite ramp, same seamless-loop handling, on this project's own plane so the cover-fit keeps clean 0..1 UVs. The glass pane is kept because `coverTransmittance` is calibrated against it.
 - **Pedestal** — placed to meet the housing's real base rather than a fixed 0.72, so the monitor sits ON the stone. `MONITOR_PLINTH.height` is untouched, since `screenCenterHeight` derives from it.
@@ -3166,6 +3176,50 @@ Record meaningful implementation changes rather than every minor code edit.
 - `gltf-transform optimize` joins meshes by material by default. That silently merged the three vehicles into one node (and the eight street lamps into one row), so `getObjectByName` returned a union of all of them — the first traffic run put every car at truck dimensions with two of the three types missing. Both files are now optimised with `--join false`.
 
 **Verification:** production build clean; live checks at Film (lens filling frame, centred, clip playing), Digital (monitor framed as before, video playing), the wide interior (monitor sitting on the stone), and the Campaigns reveal (traffic, structure, lamps, billboard image intact); no console errors on a clean load. All debug scaffold added and removed within the session; confirmed none remains.
+
+### 2026-09-12 (Asset footprint optimisation — 1K HDRI, unused source GLBs removed)
+
+**Follow-up to the loading gate: ~27.1MB removed from the deploy with no change to the rendered scene.** Nothing about the gate's own architecture, the camera paths, the lighting design or the scene composition was touched.
+
+**HDRI — 4.87MB -> 1.28MB (73.7% reduction).** `evening-road-puresky-2k.hdr` (2048x1024) replaced by `evening-road-puresky-1k.hdr` (1024x512). This is the *same image* box-downsampled, not a different HDRI; no imaging tooling was installed on the machine, so a Radiance RGBE codec was written for the conversion. It validated itself against the existing measurement in `skyEnvironment.js` — it located the brightest texel at (1220, 455), exactly the documented figure.
+
+Measured before switching, not assumed:
+- Solid-angle-weighted mean luminance `0.95415 -> 0.95176`, a **0.25%** change — so the environment term lights the room at the same level. No exposure, `environmentIntensity` or light value was altered to compensate.
+- Sun centroid moves **0.5-0.9 degrees**, so `HDRI_SUN_BEARING = 0.6026` and the derived `SKY_ROTATION_Y` remain correct and unchanged. (The single brightest *texel* appears to move ~3 degrees, but the disc is broad and nearly flat-topped, so which one texel wins is noise.) Immaterial regardless: this HDRI's sun sits at 9.9 degrees while the room's is at 68, so it is never inside what the court opening reveals.
+- **In-scene A/B** — same camera, same frame, swapping only the dome texture and its PMREM, reading the framebuffer back. Per-channel difference on 0-255:
+
+  | View | Mean | Max | >2/255 | >8/255 |
+  | --- | --- | --- | --- | --- |
+  | Opening camera | 0.032 | 4 | 0.00% | 0.000% |
+  | Straight up through the roof opening | 0.317 | 9 | 0.42% | 0.000% |
+  | Oblique at the opening | 0.126 | 12 | 0.19% | 0.002% |
+
+  **No meaningful visible degradation.** Resolution was never doing much work here: the court reveals upper sky, which is a smooth gradient, and the environment contribution is prefiltered through PMREM into low-resolution mips before any material samples it.
+
+**KTX2 investigated and deliberately NOT adopted.** `KTX2Loader` requires the Basis transcoder (`.js` + `.wasm`) served as separate files at a runtime-configured path — the same deployment friction this project already rejected Draco for (see `modelAssets.js`). The standard Basis codecs are LDR, so an HDRI needs either a bespoke RGBM/LogLuv encoding or UASTC HDR, which is recent and unevenly supported, with the HDR paths the least uniform part of the ecosystem across Safari targets. Expected benefit is roughly 1.28MB -> 0.4-0.7MB: about 0.6MB off a 5.14MB gate, for a real pipeline addition. The 1K downsample captured 73.7% of the available saving for a URL change and no new dependency. Revisit only if the texture set grows enough to justify the pipeline for everything.
+
+**Unused GLBs removed — ~23.5MB.** Every model URL in this project is a literal in `MODEL_URLS`; there is no registry, config or dynamically constructed path, so the audit is exhaustive. All six appear in the codebase *only inside doc comments*, as historical notes on which raw asset each shipped model was optimised from. They are **historical source assets — no longer present in the shipped project**, not current dependencies; see the annotated table in the 2026-09-05 entry above for which current model each one produced.
+
+| Removed (historical source asset) | Size |
+| --- | --- |
+| `camera/1930s_movie_camera.glb` | 18.01MB |
+| `monitor/computer_terminal.glb` | 3.77MB |
+| `camera/studio-camera.glb` | 0.83MB |
+| `monitor/old_computer_monitor_and_tv_model..glb` | 0.52MB |
+| `monitor/digital-monitor.glb` | 0.20MB |
+| `monitor/terminal.glb` | 0.20MB |
+
+`digital-monitor.glb` needed the most care: `Monitor.jsx` names it twice, but `MODEL_URLS.monitor` points at `crt-monitor.glb` — the comments are stale prose about a superseded asset.
+
+**Result.** `public/models/` is now **~2MB**, holding only the seven actively referenced GLBs. **Deferred Act 3 models were retained** (`campaign-billboard.glb`, `vehicles.glb`, `street-lights.glb`) — they are fetched on approach by `CampaignsGate`, which is deferral, not disuse.
+
+| | Before | After |
+| --- | --- | --- |
+| Critical loading gate | ~8.9MB | **5.14MB** |
+| `public/models/` | ~25MB | **~2MB** |
+| Total deploy reduction | — | **~27.1MB** |
+
+**Verification:** production build clean; entry chunk unchanged at 5.42kB, so internal-page isolation is intact. Loading-gate behaviour unchanged — cold load still resolves **void -> complete scene**, one state, no staged assembly; return from an internal page still mounts with no second void and no re-download. Only `evening-road-puresky-1k.hdr` is requested, with no remaining request for the 2K file. Act 3 still arms at `HERO_T - 0.14` and loads all three GLBs and all five lazy chunks (200s). **No 404s and no console errors introduced** on any path.
 
 ---
 

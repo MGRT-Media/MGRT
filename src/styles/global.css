@@ -27,7 +27,17 @@ body {
  * progress from that real scroll position rather than the canvas itself
  * moving or resizing.
  */
+/*
+ * Hidden until the loading gate opens — see `pages/Home.jsx`. The fade is
+ * between two identical blacks (this element's own `--color-void` and the
+ * canvas's clear colour, which are the same value), so what actually
+ * cross-fades is the room appearing inside the void rather than a panel
+ * appearing over it. That is why there is no loading screen to dismiss: the
+ * void was never a placeholder for the opening state, it IS the opening state.
+ */
 .app-shell {
+  opacity: 0;
+  transition: opacity 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   position: fixed;
   top: 0;
   left: 0;
@@ -40,6 +50,10 @@ body {
      fixed layer — wheel/touch input must reach it (and Lenis's window
      listeners) rather than being captured by the canvas on top. */
   pointer-events: none;
+}
+
+.app-shell--revealed {
+  opacity: 1;
 }
 
 .experience-canvas {
