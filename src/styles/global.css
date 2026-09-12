@@ -425,7 +425,10 @@ html.lenis-smooth {
 
 @media (max-width: 640px) {
   .site-mark {
-    left: 18px;
+    /* Shifted clear of the mobile menu control, which takes the top-left
+       corner at this width (navigation/GlobalNav.jsx). The mark keeps its
+       corner position on desktop, where the control is not rendered. */
+    left: 56px;
     top: 18px;
     font-size: 13px;
   }
@@ -477,5 +480,338 @@ html.lenis-smooth {
        the flicker itself is motion and reduced-motion visitors should
        still get a still frame of it rather than none. */
     animation: none;
+  }
+}
+
+/* ==========================================================================
+   Global site navigation (navigation/GlobalNav.jsx)
+   --------------------------------------------------------------------------
+   The website's own navigation, distinct from `.section-indicator` above,
+   which navigates the camera rather than the site. Both are small marks at
+   the edge of the frame; neither is a bar. Understated film-title
+   typography: uppercase, widely tracked, off-white, no background, no
+   border, no container.
+   ========================================================================== */
+
+:root {
+  /* This project's one recurring accent (lightingParams.spot.color), as
+     channels so the new navigation can vary alpha from a single token
+     instead of restating the triplet in a dozen rules. */
+  --color-warm-rgb: 255, 241, 220;
+  --nav-edge-x: 32px;
+  --nav-edge-y: 28px;
+  --nav-ease: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.global-nav__link,
+.global-nav__mark {
+  /* Anchors are inline by default, and `transform` does not apply to inline
+     boxes — this is what makes the hover scale below possible. It changes
+     no geometry: these are single-line, `nowrap`, unpadded, and their
+     position is set by the flex parent either way. */
+  display: inline-block;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  text-decoration: none;
+  white-space: nowrap;
+  color: rgba(var(--color-warm-rgb), 0.6);
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.26s var(--nav-ease), transform 0.26s var(--nav-ease);
+}
+
+/* Current page, on internal pages — held slightly brighter than its
+   siblings. Deliberately not a rule, box or dot.
+
+   Declared BEFORE the hover/focus rules on purpose: it carries the same
+   specificity as `:hover`, so when it sat after them the current page's own
+   link was the one link in the bar that could not respond to the cursor. */
+.global-nav__link[aria-current='page'] {
+  color: rgba(var(--color-warm-rgb), 0.92);
+}
+
+/*
+ * Hover: the type brightens and grows very slightly. Nothing else — no
+ * glow, shadow, underline, background or hue shift.
+ *
+ * Two details do the work. The brighten stays inside this project's one
+ * warm accent and only raises its alpha to full, so it reads as "cleaner
+ * white" without becoming a second, cooler white sitting next to the
+ * existing one. And the growth is `transform`, not `font-size`: a transform
+ * is composited and takes the element out of layout entirely, so the
+ * neighbouring links cannot be nudged by it — a font-size hover would
+ * reflow the whole row on every pass of the cursor.
+ *
+ * `scale(1.1)` — the middle of the requested range. At 11px with 0.24em
+ * tracking, the tracking amplifies the change: the word visibly widens
+ * before the letterforms themselves look any larger, which is what keeps it
+ * reading as emphasis rather than as zoom.
+ *
+ * Guarded by `(hover: hover)` so touch devices, where `:hover` sticks after
+ * a tap, never enter this state at all.
+ */
+@media (hover: hover) {
+  .global-nav__link:hover,
+  .global-nav__mark:hover {
+    color: rgba(var(--color-warm-rgb), 1);
+    transform: scale(1.1);
+  }
+}
+
+.global-nav__link:focus-visible,
+.global-nav__mark:focus-visible,
+.global-nav__toggle:focus-visible {
+  outline: 1px solid rgba(var(--color-warm-rgb), 0.6);
+  outline-offset: 4px;
+  color: rgba(var(--color-warm-rgb), 1);
+}
+
+/* Each item grows about its own centre, so the row stays visually balanced
+   around its existing spacing. The two left-anchored items are the
+   exception: they grow rightward from their edge, which keeps the corner
+   alignment they share with `.site-mark` and the menu control fixed. */
+.global-nav__list .global-nav__link {
+  transform-origin: center center;
+}
+
+.global-nav__mark,
+.global-nav__drop .global-nav__link {
+  transform-origin: left center;
+}
+
+/* Touch equivalent: the link brightens while held, and does not scale.
+   A pressed state is feedback, not an animation. */
+.global-nav__link:active {
+  color: rgba(var(--color-warm-rgb), 0.95);
+}
+
+/* The MGRT mark on internal pages. Cormorant matches `.site-mark`, this
+   project's established identity typeface, rather than introducing a
+   second treatment for the same wordmark. */
+.global-nav__mark {
+  font-family: 'Cormorant', Georgia, serif;
+  font-size: 15px;
+  letter-spacing: 0.22em;
+  color: rgba(var(--color-warm-rgb), 0.68);
+}
+
+/* --- Top-right horizontal navigation (desktop) --------------------------- */
+
+.global-nav {
+  position: fixed;
+  top: var(--nav-edge-y);
+  right: var(--nav-edge-x);
+  z-index: 5;
+}
+
+.global-nav__list {
+  display: flex;
+  align-items: center;
+  gap: 34px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* --- Top-left cluster: menu control, page mark, drop-down ---------------- */
+
+.global-nav-lead {
+  position: fixed;
+  top: var(--nav-edge-y);
+  left: var(--nav-edge-x);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  /* The cluster spans whatever the open menu needs; only its actual
+     controls should ever intercept a pointer over the cinematic frame. */
+  pointer-events: none;
+}
+
+.global-nav-lead__row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  pointer-events: auto;
+}
+
+/* Three thin lines. No container, no border, no background — the padding
+   alone carries the 44px touch target, with an equal negative margin so the
+   lines keep their position at the corner. */
+.global-nav__toggle {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  width: 20px;
+  padding: 12px;
+  margin: -12px;
+  box-sizing: content-box;
+  background: none;
+  border: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.global-nav__bar {
+  display: block;
+  width: 20px;
+  height: 1px;
+  background: rgba(var(--color-warm-rgb), 0.72);
+  transition: transform 0.25s var(--nav-ease), opacity 0.18s var(--nav-ease),
+    background-color 0.3s var(--nav-ease);
+}
+
+/* Open state: the outer lines cross, the middle one drops out. The 3px
+   offset is half the 5px gap plus the 1px rule — it carries each outer bar
+   to the centre line before it rotates. */
+.global-nav__toggle--open .global-nav__bar:first-child {
+  transform: translateY(6px) rotate(45deg);
+}
+
+.global-nav__toggle--open .global-nav__bar:nth-child(2) {
+  opacity: 0;
+}
+
+.global-nav__toggle--open .global-nav__bar:last-child {
+  transform: translateY(-6px) rotate(-45deg);
+}
+
+/* --- Mobile drop-down ---------------------------------------------------- */
+
+/*
+ * Not a full-screen menu and not a drawer: three lines of type dropping
+ * beneath the control, with the cinematic frame fully visible behind them.
+ * `visibility` (not `display`) so the reveal can transition, and so the
+ * closed menu leaves the accessibility tree and stops taking pointer events
+ * without being unmounted.
+ */
+.global-nav__drop {
+  display: none;
+  visibility: hidden;
+  margin-top: 22px;
+  pointer-events: none;
+  transition: visibility 0s linear 0.24s;
+}
+
+.global-nav__drop--open {
+  visibility: visible;
+  pointer-events: auto;
+  transition-delay: 0s;
+}
+
+.global-nav__drop-list {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.global-nav__drop-item {
+  opacity: 0;
+  transform: translateY(-5px);
+  transition: opacity 0.22s var(--nav-ease), transform 0.22s var(--nav-ease);
+}
+
+/* Stagger, opening only — on close all three leave together, which keeps
+   dismissal feeling immediate rather than sequenced. */
+.global-nav__drop--open .global-nav__drop-item {
+  opacity: 1;
+  transform: translateY(0);
+  transition-delay: calc(var(--stagger-index) * 45ms);
+}
+
+.global-nav__drop .global-nav__link {
+  /* The menu's own rows carry the touch target; the links inside fill it. */
+  display: block;
+  padding: 4px 0;
+  font-size: 12px;
+}
+
+/* --- Breakpoint ---------------------------------------------------------- */
+
+/*
+ * 640px, the breakpoint every other UI element in this file already uses
+ * (`.section-indicator`, `.fullscreen-toggle`, `.site-mark`). The two
+ * navigations swap with `display`, never opacity, so exactly one of them is
+ * in the document at any width — a screen reader is never offered the same
+ * three links twice.
+ */
+@media (max-width: 640px) {
+  .global-nav {
+    display: none;
+  }
+
+  .global-nav__toggle {
+    display: flex;
+  }
+
+  .global-nav__drop {
+    display: block;
+  }
+
+  .global-nav-lead {
+    top: 18px;
+    left: 18px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .global-nav__link,
+  .global-nav__mark,
+  .global-nav__bar,
+  .global-nav__drop-item {
+    transition-duration: 0.01ms;
+  }
+
+  .global-nav__drop--open .global-nav__drop-item {
+    transition-delay: 0s;
+  }
+
+  /* The hover scale is removed, not merely shortened — an instant jump in
+     size is exactly the motion this preference asks us to drop. The
+     brighten stays, so the affordance survives without it. */
+  @media (hover: hover) {
+    .global-nav__link:hover,
+    .global-nav__mark:hover {
+      transform: none;
+    }
+  }
+}
+
+/* ==========================================================================
+   Internal pages (pages/BlankPage.jsx)
+   --------------------------------------------------------------------------
+   /work, /about and /contact are intentionally blank until each is designed
+   in its own phase. Everything here exists to hold the page identifier
+   legibly against the void; none of it is a layout decision for those pages.
+   ========================================================================== */
+
+.page {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--nav-edge-x);
+  background: var(--color-void);
+}
+
+.page__title {
+  margin: 0;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: rgba(var(--color-warm-rgb), 0.45);
+}
+
+@media (max-width: 640px) {
+  .page {
+    padding: 0 18px;
   }
 }
