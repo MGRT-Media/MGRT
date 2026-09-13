@@ -125,7 +125,7 @@ export const HERO_T = 0.9
  * progress bar, no DOM. From the viewer's side the camera simply stops on
  * MGRT MEDIA, rests, and then the billboard reveal begins.
  */
-export const HERO_COUNTDOWN_MS = 800
+export const HERO_COUNTDOWN_MS = 25
 
 /**
  * How long the automatic reveal takes once the countdown expires, in seconds.
@@ -134,7 +134,7 @@ export const HERO_COUNTDOWN_MS = 800
  * and a lurch. Decelerating, so the exterior settles into the approved Impact
  * framing rather than arriving at speed.
  */
-export const HERO_REVEAL_SECONDS = 2.6
+export const HERO_REVEAL_SECONDS = 1.0
 export const HERO_REVEAL_EASE = 'power2.inOut'
 
 
