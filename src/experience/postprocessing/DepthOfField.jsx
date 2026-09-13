@@ -53,10 +53,25 @@ import { circleOfConfusionGLSL, depthOfFieldUniforms } from './depthOfFieldShare
  */
 
 // Blur ramps with distance from the focal plane at this rate, and is capped
-// here. `maxblur` is in UV units, so 0.0055 is a little over half a percent
-// of frame — a soft edge, not a smear.
-const APERTURE = 0.0009
-const MAX_BLUR = 0.0055
+// here. `maxblur` is in UV units (fractions of frame width).
+//
+// 0.0009 / 0.0055 -> 0.00025 / 0.0016, per explicit direction that the blur was
+// too strong and should be "very subtle, minimal": the room should read as
+// mostly sharp, with only a restrained softening away from the subject. The
+// ceiling is now 0.16% of frame width — about 3px on a 1920px-wide frame — and
+// a wide shot's far wall stays well under it.
+const APERTURE = 0.00025
+const MAX_BLUR = 0.0016
+
+// The sharp zone around the focal plane, as a fraction of the focus distance
+// (a real lens's depth of field grows with focus distance too), clamped so a
+// close-up still has a thin one and a wide shot does not become all sharp.
+// With no band at all, blur began the instant anything left the focal plane,
+// so even the subject's own depth — a column's far side, the monitor's plinth
+// — was softening. See `circleOfConfusion` for how the band's edge is eased.
+const FOCUS_RANGE_FRACTION = 0.4
+const FOCUS_RANGE_MIN = 0.05
+const FOCUS_RANGE_MAX = 3
 
 // A real camera does not hold one stop across a whole sequence. A wide
 // establishing shot is stopped down so the set reads; the operator opens up
@@ -71,9 +86,8 @@ const MAX_BLUR = 0.0055
 // the aperture is untouched, which keeps every close-up beat (focus 0.17-1.8,
 // t 0.2-0.6) exactly as authored. Beyond it the stop closes off as 1/distance,
 // deepening the field just as a real focus puller would for a wide.
-// `MIN_APERTURE_SCALE` floors it so the effect never switches off — at the
-// orbit the near pillars come back to ~12% of the blur ceiling while the far
-// wall still carries ~29%, which is the separation the pass exists for.
+// `MIN_APERTURE_SCALE` floors it so the effect never switches off entirely,
+// which keeps a restrained separation between the subject and the far wall.
 //
 // `MAX_BLUR` is deliberately not scaled: it is the ceiling the close-ups are
 // calibrated against, and at the reduced wide-shot stop nothing in the room is
@@ -219,6 +233,7 @@ class DepthAwareBokehPass extends BokehPass {
       uniform float nearClip;
       uniform float farClip;
       uniform float focus;
+      uniform float focusRange;
       uniform float aspect;
 
       float viewZAt( const in vec2 uv ) {
@@ -228,7 +243,7 @@ class DepthAwareBokehPass extends BokehPass {
       void main() {
         vec3 centre = texture2D( tColor, vUv ).rgb;
         float centreZ = viewZAt( vUv );
-        float radius = abs( circleOfConfusion( centreZ, focus, aperture, maxblur ) );
+        float radius = abs( circleOfConfusion( centreZ, focus, aperture, maxblur, focusRange ) );
         if ( radius < 1e-5 ) {
           gl_FragColor = vec4( centre, 1.0 );
           return;
@@ -248,7 +263,7 @@ class DepthAwareBokehPass extends BokehPass {
           // own blur reaches; a sharp column in front stays out of the wall's
           // blur behind it.
           float nearer = smoothstep( 0.05, 0.3, sampleZ - centreZ );
-          float reach = smoothstep( r * 0.5, r, abs( circleOfConfusion( sampleZ, focus, aperture, maxblur ) ) );
+          float reach = smoothstep( r * 0.5, r, abs( circleOfConfusion( sampleZ, focus, aperture, maxblur, focusRange ) ) );
           float weight = mix( 1.0, reach, nearer );
           sum += texture2D( tColor, uv ).rgb * weight;
           weightSum += weight;
@@ -256,6 +271,7 @@ class DepthAwareBokehPass extends BokehPass {
         gl_FragColor = vec4( sum / weightSum, 1.0 );
       }
     `
+    this.materialBokeh.uniforms.focusRange = { value: 0 }
     this.materialBokeh.needsUpdate = true
   }
 
@@ -443,6 +459,11 @@ export default function DepthOfField() {
     bokeh.uniforms.focus.value = focusDistance.current
     bokeh.uniforms.aperture.value = APERTURE * apertureScale * strength
     bokeh.uniforms.maxblur.value = MAX_BLUR * strength
+    bokeh.uniforms.focusRange.value = THREE.MathUtils.clamp(
+      focusDistance.current * FOCUS_RANGE_FRACTION,
+      FOCUS_RANGE_MIN,
+      FOCUS_RANGE_MAX,
+    )
     // The camera's far plane is not constant — `CampaignsLayerSwitch.jsx`
     // raises it at the swap so the exterior fits. The bokeh shader
     // linearises depth against these, so a stale pair would mis-read every
@@ -455,6 +476,7 @@ export default function DepthOfField() {
     depthOfFieldUniforms.uFocus.value = bokeh.uniforms.focus.value
     depthOfFieldUniforms.uAperture.value = bokeh.uniforms.aperture.value
     depthOfFieldUniforms.uMaxBlur.value = bokeh.uniforms.maxblur.value
+    depthOfFieldUniforms.uFocusRange.value = bokeh.uniforms.focusRange.value
     depthOfFieldUniforms.uSceneDepth.value = bokeh.renderTargetDepth.texture
     depthOfFieldUniforms.uNearClip.value = activeCamera.near
     depthOfFieldUniforms.uFarClip.value = activeCamera.far

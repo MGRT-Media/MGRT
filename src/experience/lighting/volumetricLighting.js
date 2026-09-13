@@ -555,6 +555,7 @@ function buildDust(params, sunLight) {
       uniform float uFocus;
       uniform float uAperture;
       uniform float uMaxBlur;
+      uniform float uFocusRange;
       uniform vec2 uResolution;
       attribute vec3 aPhase;
       attribute float aSize;
@@ -608,7 +609,7 @@ function buildDust(params, sunLight) {
         // blur applies at this depth. Dimmed as it grows, so a defocused mote
         // is a soft disc, not a brighter one.
         float focusedPx = aSize * projectionMatrix[ 1 ][ 1 ] * uResolution.y * 0.5 / max( distance, 0.01 );
-        float blurPx = abs( circleOfConfusion( mvPosition.z, uFocus, uAperture, uMaxBlur ) ) * uResolution.x * 2.0;
+        float blurPx = abs( circleOfConfusion( mvPosition.z, uFocus, uAperture, uMaxBlur, uFocusRange ) ) * uResolution.x * 2.0;
         float shownPx = clamp( sqrt( focusedPx * focusedPx + blurPx * blurPx ), 1.5, 36.0 );
         float spread = max( focusedPx, 0.35 ) / shownPx;
         vDefocus = clamp( blurPx / shownPx, 0.0, 1.0 );
