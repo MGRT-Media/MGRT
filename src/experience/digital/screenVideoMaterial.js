@@ -18,16 +18,14 @@ import * as THREE from 'three'
  * real dimensions are known (`loadedmetadata`), since that's the only
  * piece not known synchronously when the material is created.
  *
- * `lensEffect` (default off) adds two optical touches per explicit
- * request that the Cinema Camera's lens preview "feel like a real
- * cinema camera lens... not a hard geometric shape": a subtle radial
- * barrel distortion (the image bends very slightly toward the rim,
- * exactly like light bending through real curved glass) and a soft
- * vignette (brightness eases down approaching the edge instead of
- * cutting off abruptly). Both only make sense for a genuinely circular
- * view onto glass — `Monitor.jsx`'s flat rectangular screen keeps this
- * off, the default, so its own `<video>` texture is untouched by either
- * effect. Deliberately a uniform toggle rather than two separate shader
+ * `lensEffect` (default off) adds two optical touches for the Cinema
+ * Camera's square Film preview: a subtle barrel distortion (the image bends
+ * very slightly toward the edges, like light through curved glass) and an
+ * alpha fade toward its four straight edges, so the picture dissolves into
+ * whatever is really behind it instead of ending in a dark border. That fade
+ * is why the material is transparent (and skips depth writes) only with
+ * `lensEffect` on. `Monitor.jsx`'s screen keeps this off, the default, so it
+ * stays opaque and its own `<video>` texture is untouched by either effect. Deliberately a uniform toggle rather than two separate shader
  * variants: the only thing that differs between callers is ON/OFF, not
  * the tuning, so a single shared shader with a branch is simpler than
  * maintaining two.
@@ -47,6 +45,11 @@ export function createScreenVideoMaterial(
     // in. See the `#ifdef TONE_MAPPING` at the bottom of the fragment shader
     // for why that matters.
     toneMapped: true,
+    // Straight (not premultiplied) alpha with normal blending: a faded edge
+    // shows the video's own colour at reduced coverage, so it thins out over
+    // the scene rather than darkening into a halo.
+    transparent: lensEffect,
+    depthWrite: !lensEffect,
     uniforms: {
       uIgnite: { value: 0 },
       uMap: { value: videoTexture },
@@ -173,7 +176,10 @@ export function createScreenVideoMaterial(
         vec2 distortedUv = vUv;
         if (uLensEffect > 0.5) {
           float r2 = dot(centered, centered);
-          distortedUv = 0.5 + centered * (1.0 + 0.12 * r2);
+          // Normalised by the corner's own strength (r2 = 0.5), so the
+          // square's corners land exactly on its edge of the video and no
+          // part of it samples past the frame.
+          distortedUv = 0.5 + centered * (1.0 + 0.12 * r2) / (1.0 + 0.12 * 0.5);
         }
 
         // Standard "cover" remap: scale whichever axis needs it so the
@@ -197,32 +203,29 @@ export function createScreenVideoMaterial(
 
         vec3 color = mix(dormantColor, videoColor, uIgnite);
 
-        // Soft vignette: the circular geometry itself already clips the
-        // mesh to a perfect disc (no fragments exist past its edge), but
-        // a perfectly sharp bright-to-nothing cutoff still reads as a
-        // mathematical mask, not an optical falloff — real lenses dim
-        // gradually toward the rim. Fading brightness out just before
-        // that geometric edge (0.4 -> 0.5, in the same 0-0.5 center-to-
-        // rim UV space the distortion above uses) gives the transition a
-        // soft, photographic edge instead of a hard one. Start radius
-        // raised from 0.32 per explicit "slightly smaller" follow-up —
-        // a narrower dark ring, still reaching the same fully-transparent
-        // 0.5 edge.
+        // Edge fade for the square preview, in coverage rather than colour,
+        // so the edges reveal the live scene instead of turning black. Each
+        // axis fades on its own and the two multiply: the fade follows the
+        // four straight edges and keeps the square footprint, where a radial
+        // one would round it off. The centre stays fully opaque, and
+        // smoothstep's zero slope at both ends leaves no line where the fade
+        // begins and no cut where it reaches zero at the edge.
+        float alpha = 1.0;
         if (uLensEffect > 0.5) {
-          float vignette = 1.0 - smoothstep(0.4, 0.5, length(centered));
-          color *= vignette;
+          vec2 edge = 1.0 - smoothstep(vec2(0.42), vec2(0.5), abs(centered));
+          alpha = edge.x * edge.y;
         }
 
         // Three defines TONE_MAPPING only when this material is being drawn
         // to the canvas, never into a render target — so this branch is the
         // direct view, unchanged, and the other is the billboard's copy.
         #ifdef TONE_MAPPING
-          gl_FragColor = vec4(color, 1.0);
+          gl_FragColor = vec4(color, alpha);
         #else
           // Compensated for the cover in front of this screen, without
           // which the correction lands in the wrong place — see
           // uCoverTransmittance.
-          gl_FragColor = vec4(preCompensate(color * uCoverTransmittance) / uCoverTransmittance, 1.0);
+          gl_FragColor = vec4(preCompensate(color * uCoverTransmittance) / uCoverTransmittance, alpha);
         #endif
       }
     `,

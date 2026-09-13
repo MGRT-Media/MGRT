@@ -116,8 +116,13 @@ const LENS_FRONT_LOCAL = { x: -0.028, y: 0.7813, z: 0.0879 }
  *
  * `z` stops short of the 0.25 front plane so the image reads as sitting inside
  * the barrel rather than pasted onto its face.
+ *
+ * Square, per explicit request (it was a disc of radius 0.0354). The side is
+ * that disc's diameter, on the same centre, so the preview keeps its position,
+ * width and framing in the Film dive; its corners still sit well inside the
+ * 11.8 x 10.9cm front plate.
  */
-const LENS_IMAGE_RADIUS = 0.0354
+const FILM_IMAGE_SIZE = 0.0708
 
 /**
  * The camera's visible front face: the flat black plate the visitor walks
@@ -188,7 +193,7 @@ const lensForward = new THREE.Vector3(0, 0, 1).applyAxisAngle(Y_AXIS, totalYawRa
  * lens that used to be here rather than the model that is here now — which is
  * exactly why they must not be "corrected": their values ARE the path.
  *
- * `FILM_IMAGE_LOCAL` / `LENS_IMAGE_RADIUS` above still place the film image on
+ * `FILM_IMAGE_LOCAL` / `FILM_IMAGE_SIZE` above still place the film image on
  * the real model, and are deliberately NOT used here. Where the video is drawn
  * is a rendering concern; where the visitor travels is not.
  */
@@ -546,8 +551,8 @@ export default function CinemaCamera() {
   }, [])
   const videoTexture = useMemo(() => new THREE.VideoTexture(video), [video])
   const lensScreenMaterial = useMemo(
-    // targetAspect 1: the aperture is round, so the image is cover-fitted into
-    // a square and the disc crops it.
+    // targetAspect 1: the preview is square, so the 16:9 clip is cover-fitted
+    // into it — cropped at the sides, centred, never stretched.
     () => createScreenVideoMaterial(videoTexture, 1, { lensEffect: true }),
     [videoTexture],
   )
@@ -652,7 +657,7 @@ export default function CinemaCamera() {
         </group>
 
         {/* Film image, on the camera's visible front face — see
-            `FRONT_FACE_LOCAL` for why it cannot sit at the glass. Position and radius
+            `FRONT_FACE_LOCAL` for why it cannot sit at the glass. Position and size
             come from the same measured constants `CAMERA_ANCHOR` is built
             from, so what the dive frames and what is actually drawn cannot
             drift apart. */}
@@ -661,7 +666,7 @@ export default function CinemaCamera() {
           castShadow={false}
           receiveShadow={false}
         >
-          <circleGeometry args={[LENS_IMAGE_RADIUS, 48]} />
+          <planeGeometry args={[FILM_IMAGE_SIZE, FILM_IMAGE_SIZE]} />
           <primitive object={lensScreenMaterial} attach="material" />
         </mesh>
 
