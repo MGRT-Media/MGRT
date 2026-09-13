@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import { scrollProgress, scrollLockWobble } from './ScrollTimelineProvider.jsx'
 import { sampleCameraPath, sampleCameraPathInto, setHeroAspect } from './cameraPath.js'
-import { HERO_ARRIVAL_EPSILON, advanceHeroSequence, isHeroFrozen } from './heroSequence.js'
+import { HERO_ARRIVAL_EPSILON, advanceHeroSequence, cameraProgress, isHeroFrozen } from './heroSequence.js'
 import { HERO_T } from './filmActBeats.js'
 
 // Lowered from 3.5 (both were previously equal) per explicit request to
@@ -33,6 +33,53 @@ const pathPositionScratch = new THREE.Vector3()
 const pathLookAtScratch = new THREE.Vector3()
 const heroPoseScratch = new THREE.Vector3()
 const HERO_SAMPLE_SCRATCH = { value: 0 }
+const arcSampleScratch = new THREE.Vector3()
+const arcPreviousScratch = new THREE.Vector3()
+const arcLookAtScratch = new THREE.Vector3()
+
+/**
+ * Distance along the camera path, tabulated against progress.
+ *
+ * Position is eased in this space — see the frame loop. Rebuilt whenever the
+ * hero stand-off changes with the viewport, since that moves the keyframes the
+ * table was measured from. Linear between samples; the camera itself is always
+ * placed with `sampleCameraPathInto`, so the table only paces the move and
+ * never bends it.
+ */
+const ARC_SAMPLES = 2048
+const arcLengths = new Float32Array(ARC_SAMPLES + 1)
+
+function rebuildArcLengths() {
+  sampleCameraPathInto(0, arcPreviousScratch, arcLookAtScratch)
+  let total = 0
+  arcLengths[0] = 0
+  for (let i = 1; i <= ARC_SAMPLES; i += 1) {
+    sampleCameraPathInto(i / ARC_SAMPLES, arcSampleScratch, arcLookAtScratch)
+    total += arcSampleScratch.distanceTo(arcPreviousScratch)
+    arcPreviousScratch.copy(arcSampleScratch)
+    arcLengths[i] = total
+  }
+}
+
+function arcLengthAt(progress) {
+  const x = THREE.MathUtils.clamp(progress, 0, 1) * ARC_SAMPLES
+  const i = Math.min(Math.floor(x), ARC_SAMPLES - 1)
+  return THREE.MathUtils.lerp(arcLengths[i], arcLengths[i + 1], x - i)
+}
+
+function progressAtArcLength(length) {
+  if (length <= 0) return 0
+  if (length >= arcLengths[ARC_SAMPLES]) return 1
+  let lo = 0
+  let hi = ARC_SAMPLES
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1
+    if (arcLengths[mid] <= length) lo = mid
+    else hi = mid
+  }
+  const span = arcLengths[hi] - arcLengths[lo]
+  return (lo + (span > 0 ? (length - arcLengths[lo]) / span : 0)) / ARC_SAMPLES
+}
 
 function computeTargetQuaternion(outQuaternion, eye, lookAtPoint, up) {
   scratchMatrix.lookAt(eye, lookAtPoint, up)
@@ -42,7 +89,8 @@ function computeTargetQuaternion(outQuaternion, eye, lookAtPoint, up) {
 /**
  * Drives the camera from the scroll-derived target every frame, but never
  * snaps directly to it. Position: `THREE.MathUtils.damp` (frame-rate
- * independent exponential) per axis, as before. Rotation: no longer a
+ * independent exponential) on distance along the path, so the camera stays
+ * on the authored route — see the note in the frame loop. Rotation: no longer a
  * damped lookAt *point* fed through `camera.lookAt()` every frame — per
  * explicit request that turning to face the lens "felt robotically
  * hinged... like a sharp pivot on a rigid axis" rather than a fluid arc.
@@ -84,6 +132,8 @@ export default function ScrollCameraRig() {
   )
 
   const heroAspect = useRef(0)
+  // How far along the path the camera is — the eased quantity. See below.
+  const arcPosition = useRef(0)
 
   useFrame(({ camera }, delta) => {
     // The MGRT hero frames the wordmark by WIDTH, so its stand-off depends on
@@ -91,8 +141,11 @@ export default function ScrollCameraRig() {
     // the aspect actually changes rather than every frame, since it walks the
     // wall's plan curve.
     if (camera.aspect !== heroAspect.current) {
+      const progressBefore = heroAspect.current === 0 ? 0 : progressAtArcLength(arcPosition.current)
       heroAspect.current = camera.aspect
       setHeroAspect(camera.aspect)
+      rebuildArcLengths()
+      arcPosition.current = arcLengthAt(progressBefore)
       // The canonical hero pose for this viewport, cached so arrival can be
       // measured every frame without re-walking the path.
       heroPoseScratch.fromArray(sampleCameraPath(HERO_T).position)
@@ -113,17 +166,41 @@ export default function ScrollCameraRig() {
      */
     sampleCameraPathInto(HERO_SAMPLE_SCRATCH.value, pathPositionScratch, pathLookAtScratch)
 
+    // Position is damped in DISTANCE ALONG THE PATH, then placed on the path.
+    //
+    // It used to be damped per axis toward the sampled point, which always
+    // takes the straight line to the target. A section jump runs that target
+    // metres ahead of the camera, so wherever the route bends the camera cut
+    // the chord instead. The Digital <-> hero traversal bends hardest right at
+    // the monitor — it backs away from the screen and swings round before
+    // heading down the room — and in reverse that chord ran over the computer
+    // from behind: the room gave way to the screen filling the frame with the
+    // physical monitor never coming into shot. Damping the distance keeps
+    // every frame ON the authored route in either direction, and a reversal
+    // turns round from wherever the camera actually is.
+    //
+    // Distance rather than raw progress because it keeps the old pacing:
+    // per-axis damping moved at `lambda x distance-to-target`, and so does
+    // this. Progress is compressed unevenly along the route (the hero glide is
+    // eased inside the sampler), and damping it bunched the speed into the
+    // middle of the room at more than twice the old peak.
     const pos = dampedPosition.current
+    const targetArc = arcLengthAt(HERO_SAMPLE_SCRATCH.value)
     if (isHeroFrozen()) {
       // Written verbatim, not damped. Damping only ever ASYMPTOTES toward its
       // target, so a damped hold still creeps by a hair every frame — enough
       // to read as drift over a second and a half. Copying the pose outright
       // is what makes the frame bit-identical for the whole hold.
+      arcPosition.current = targetArc
       pos.copy(pathPositionScratch)
+      cameraProgress.value = HERO_SAMPLE_SCRATCH.value
     } else {
-      pos.x = THREE.MathUtils.damp(pos.x, pathPositionScratch.x, POSITION_DAMP_LAMBDA, delta)
-      pos.y = THREE.MathUtils.damp(pos.y, pathPositionScratch.y, POSITION_DAMP_LAMBDA, delta)
-      pos.z = THREE.MathUtils.damp(pos.z, pathPositionScratch.z, POSITION_DAMP_LAMBDA, delta)
+      arcPosition.current = THREE.MathUtils.damp(arcPosition.current, targetArc, POSITION_DAMP_LAMBDA, delta)
+      // Settled: use the target itself, so a stretch of path where only the
+      // aim changes cannot leave the camera parked at the wrong end of it.
+      const settled = Math.abs(targetArc - arcPosition.current) < 1e-4
+      cameraProgress.value = settled ? HERO_SAMPLE_SCRATCH.value : progressAtArcLength(arcPosition.current)
+      sampleCameraPathInto(cameraProgress.value, pos, arcLookAtScratch)
     }
 
     // Orientation is derived from the path's OWN eye/target pair, not from

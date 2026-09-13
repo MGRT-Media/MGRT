@@ -363,6 +363,27 @@ const LENS_DIVE_POSITION = (() => {
  */
 const LENS_DIVE_LOOKAT = LENS_DIVE_POSITION.clone().addScaledVector(LENS_FORWARD, -1)
 
+/**
+ * The descent from outside the pillars to the lens, as one straight line.
+ *
+ * The gate, establish and approach waypoints already sat on the lens axis in
+ * plan, but each carried its own height (1.3 -> 1.3 -> 0.97 -> 0.94 -> 0.795),
+ * so the descent ran level, dropped, levelled and dropped again. Aimed at the
+ * lens throughout, that nodded the view up and down between -3 and -6 degrees
+ * — the rollercoaster. Their heights are now read off the straight line from
+ * the exterior alignment point to the lens stop, which makes the whole leg a
+ * single dolly toward the lens: no rises, no dips, one constant gradient. Both
+ * ends are untouched — the orbit's last point and `LENS_DIVE_POSITION` — and
+ * so is every waypoint's position in plan.
+ */
+const DESCENT_START = orbitPositions[ORBIT_POINT_COUNT - 1]
+const DESCENT_PLAN_LENGTH = Math.hypot(LENS_DIVE_POSITION.x - DESCENT_START.x, LENS_DIVE_POSITION.z - DESCENT_START.z)
+
+function onDescent(point) {
+  const along = Math.hypot(point.x - DESCENT_START.x, point.z - DESCENT_START.z) / DESCENT_PLAN_LENGTH
+  return new THREE.Vector3(point.x, THREE.MathUtils.lerp(DESCENT_START.y, LENS_DIVE_POSITION.y, along), point.z)
+}
+
 // Snap 3 — Digital Monitor (Interface): framed close enough that the web
 // interface fills most of the frame edge-to-edge, per explicit request —
 // the same fill-fraction approach as the lens-dive keyframe above, just
@@ -925,6 +946,9 @@ function pullbackPositionAt(distance, lateral) {
   return heroPositionAt(distance).addScaledVector(HERO_LATERAL, lateral)
 }
 
+/** Set when keyframes move, so the glides re-measure their length. See `GLIDES`. */
+let glideLengthsStale = true
+
 const heroPreDollyKeyframe = { t: 0.876, position: heroPositionAt(0), lookAt: HERO_LOOKAT }
 const heroKeyframe = { t: HERO_T, position: heroPositionAt(0), lookAt: HERO_LOOKAT }
 const pullbackEdgeKeyframe = { t: 0.935, position: heroPositionAt(0), lookAt: HERO_LOOKAT }
@@ -932,21 +956,73 @@ const pullbackRevealKeyframe = { t: 0.972, position: heroPositionAt(0), lookAt: 
 const impactKeyframe = { t: 1, position: heroPositionAt(0), lookAt: HERO_LOOKAT.clone() }
 
 /**
- * Keyframe times are spaced by ARC LENGTH, not evenly.
+ * The route from the monitor to the hero: back away from the screen, swing out
+ * to the left, then run down the room rising to the wordmark's height.
  *
- * Inside the glide the segments interpolate linearly in their own local
- * progress (see `sampleCameraPathInto`), so the time a segment is given is
- * what sets the speed along it. Even spacing over unevenly sized legs would
- * make the camera hurry through the long run down the room and dawdle across
- * the short turn out of the monitor. These fractions are the cumulative
- * distance along the route, so the cruise holds one steady speed and every
- * change of pace comes from the ease rather than from the geometry.
+ * Pace comes from `GLIDES` (distance along the route), so the `t` values here
+ * only order the waypoints.
+ *
+ * The view turns ONE way. The waypoints used to aim at points chosen one by
+ * one, and the yaw went -20 -> -29 -> -16 -> -1 -> -5 degrees: left, right, then
+ * back left as the camera settled — a whip through the middle of the room and
+ * a correction at the end. Each waypoint now looks along a yaw on a single
+ * steady turn from the monitor's -20 to the hero's -4.5, turning fastest
+ * where the camera is travelling fastest and easing at both ends. Level, like
+ * the shots either side.
  */
+function lookAlongYaw(position, yawDegrees, distance) {
+  const yaw = THREE.MathUtils.degToRad(yawDegrees)
+  return new THREE.Vector3(position.x + Math.sin(yaw) * distance, position.y, position.z - Math.cos(yaw) * distance)
+}
+
+/**
+ * The swing out from the monitor: a half-circle from the Digital shot to the
+ * line that runs down the room.
+ *
+ * The route used to back straight away from the screen to one waypoint and
+ * then slide left to the next, a ~94 degree change of direction on a quarter
+ * of a metre — a corner the camera took at walking pace. Waypoints every 30
+ * degrees along one arc turn the travel direction through the same half-turn
+ * at a steady rate — back, round, and away down the room — with the view held
+ * forward. (Fewer, wider-spaced points let the spline run straight and bunch
+ * the turn at each one.)
+ * Centred level with the Digital shot so the arc leaves it heading straight
+ * back, and ending just short of the next waypoint's line.
+ */
+const SWING_END_X = -1.4
+const SWING_CENTER = new THREE.Vector3((MONITOR_ALIGNED_POSITION.x + SWING_END_X) / 2, 0, MONITOR_ALIGNED_POSITION.z)
+const SWING_RADIUS = (MONITOR_ALIGNED_POSITION.x - SWING_END_X) / 2
+
+function onSwing(degrees, y) {
+  const angle = THREE.MathUtils.degToRad(degrees)
+  return new THREE.Vector3(SWING_CENTER.x + Math.cos(angle) * SWING_RADIUS, y, SWING_CENTER.z + Math.sin(angle) * SWING_RADIUS)
+}
+
+// Height and heading are not taken from these waypoints — the glide climbs
+// and turns on one smoothstep each, from the monitor to the hero (see
+// `GLIDES`). The old hand-set heights climbed steeply off the monitor,
+// levelled, climbed again and overshot the hero's height; the old aim points
+// swung the view left, right and back. The heights and yaws below are that
+// eased climb and turn at each waypoint, so the route is measured at the
+// heights the camera actually flies at and each waypoint still describes its
+// own shot.
+const heroTraversalWaypoints = [
+  { t: 0.615, position: onSwing(30, 1.22), yaw: -19.9, lookDistance: 1.5 },
+  { t: 0.63, position: onSwing(60, 1.27), yaw: -19.6, lookDistance: 2.4 },
+  { t: 0.645, position: onSwing(90, 1.36), yaw: -19.2, lookDistance: 3.6 },
+  { t: 0.66, position: onSwing(120, 1.49), yaw: -18.5, lookDistance: 5 },
+  { t: 0.672, position: onSwing(150, 1.63), yaw: -17.6, lookDistance: 6.2 },
+  { t: 0.685, position: onSwing(180, 1.78), yaw: -16.6, lookDistance: 7.4 },
+  { t: 0.754, position: new THREE.Vector3(-1.78, 2.38, -5.5), yaw: -12, lookDistance: 9.5 },
+  { t: 0.826, position: new THREE.Vector3(-1.52, 3.12, -9.3), yaw: -6.6, lookDistance: 9.2 },
+]
+
 const heroTraversalKeyframes = [
-  { t: 0.63, position: new THREE.Vector3(1.5, 1.45, -1.3), lookAt: new THREE.Vector3(0.6, 1.45, -3.5) },
-  { t: 0.685, position: new THREE.Vector3(-1.3, 2.0, -1.9), lookAt: new THREE.Vector3(-3.5, 2.0, -9.0) },
-  { t: 0.754, position: new THREE.Vector3(-1.78, 2.6, -5.5), lookAt: new THREE.Vector3(-1.95, 2.6, -15.0) },
-  { t: 0.826, position: new THREE.Vector3(-1.52, 3.2, -9.3), lookAt: new THREE.Vector3(-1.72, 3.2, -18.49) },
+  ...heroTraversalWaypoints.map(({ t, position, yaw, lookDistance }) => ({
+    t,
+    position: position.clone(),
+    lookAt: lookAlongYaw(position, yaw, lookDistance),
+  })),
   heroPreDollyKeyframe,
   heroKeyframe,
   // The pull-back. Same axis, same look-at, same level — the move reverses
@@ -956,6 +1032,33 @@ const heroTraversalKeyframes = [
   pullbackRevealKeyframe,
   impactKeyframe,
 ]
+
+/**
+ * Keeps the last waypoint ahead of the hero's pre-dolly point.
+ *
+ * The hero stands further back on narrow viewports (up to `HERO_MAX_DISTANCE`),
+ * which drags the pre-dolly point back with it. On square and portrait screens
+ * that put it BEHIND this fixed waypoint, so the camera ran past the pre-dolly
+ * spot, doubled back, then set off for the wall again — a visible wobble right
+ * before the hero. The waypoint keeps its authored place wherever that is
+ * already in order, and otherwise moves back along the same line just far
+ * enough to stay `FINAL_WAYPOINT_MIN_LEAD` ahead.
+ */
+const FINAL_WAYPOINT_MIN_LEAD = 1.2
+const finalTraversalKeyframe = heroTraversalKeyframes[heroTraversalWaypoints.length - 1]
+const finalTraversalWaypoint = heroTraversalWaypoints[heroTraversalWaypoints.length - 1]
+const FINAL_WAYPOINT_ALONG =
+  (finalTraversalWaypoint.position.x - HERO_CENTER.x) * HERO_AXIS.x + (finalTraversalWaypoint.position.z - HERO_CENTER.z) * HERO_AXIS.z
+const FINAL_WAYPOINT_LATERAL =
+  (finalTraversalWaypoint.position.x - HERO_CENTER.x) * HERO_LATERAL.x + (finalTraversalWaypoint.position.z - HERO_CENTER.z) * HERO_LATERAL.z
+
+function placeFinalTraversalWaypoint(heroDistance) {
+  const along = Math.max(FINAL_WAYPOINT_ALONG, heroDistance + HERO_PRE_DOLLY_LEAD + FINAL_WAYPOINT_MIN_LEAD)
+  const { position, yaw, lookDistance } = finalTraversalWaypoint
+  const placed = heroPositionAt(along).addScaledVector(HERO_LATERAL, FINAL_WAYPOINT_LATERAL)
+  finalTraversalKeyframe.position.set(placed.x, position.y, placed.z)
+  finalTraversalKeyframe.lookAt.copy(lookAlongYaw(finalTraversalKeyframe.position, yaw, lookDistance))
+}
 
 /**
  * Re-solves the hero stand-off for the current viewport and writes it into the
@@ -971,9 +1074,11 @@ const heroTraversalKeyframes = [
  * `ScrollCameraRig` calls this when the camera's aspect actually changes.
  */
 export function setHeroAspect(aspect) {
+  glideLengthsStale = true
   const distance = heroDistanceForAspect(aspect)
   heroKeyframe.position.copy(heroPositionAt(distance))
   heroPreDollyKeyframe.position.copy(heroPositionAt(distance + HERO_PRE_DOLLY_LEAD))
+  placeFinalTraversalWaypoint(distance)
   pullbackEdgeKeyframe.position.copy(
     pullbackPositionAt(distance + PULLBACK_EDGE, PULLBACK_LATERAL_EDGE),
   )
@@ -1019,9 +1124,9 @@ setHeroAspect(16 / 9)
 
 const KEYFRAMES = [
   ...orbitKeyframes, // Antipodal start (t: 0) through the exterior alignment point (t: 0.12) — already on-axis and looking at the lens
-  { t: 0.135, position: GATE_POSITION, lookAt: LENS_LOOKAT }, // Through the gate — radius pulls in from the orbit to the ring itself, same axis, same look direction
-  { t: ESTABLISH_T, position: ESTABLISH_POSITION, lookAt: LENS_LOOKAT }, // Snap 1 — Studio Scene, a waypoint on the same straight corridor
-  { t: APPROACH_T, position: APPROACH_POSITION, lookAt: LENS_LOOKAT }, // Approach
+  { t: 0.135, position: onDescent(GATE_POSITION), lookAt: LENS_LOOKAT }, // Through the gate — radius pulls in from the orbit to the ring itself, same axis, same look direction
+  { t: ESTABLISH_T, position: onDescent(ESTABLISH_POSITION), lookAt: LENS_LOOKAT }, // Snap 1 — Studio Scene, a waypoint on the same straight corridor
+  { t: APPROACH_T, position: onDescent(APPROACH_POSITION), lookAt: LENS_LOOKAT }, // Approach
   { t: FILM_FOCUS_T, position: LENS_DIVE_POSITION, lookAt: LENS_DIVE_LOOKAT }, // Snap 2 — Cinema Lens
   { t: HANDOFF_PULLBACK_T, position: HANDOFF_PULLBACK_POSITION, lookAt: HANDOFF_PULLBACK_LOOKAT }, // Film -> Digital hand-off: quick pull-back, vertically locked to lensY
   { t: MONITOR_SNAP_T, position: MONITOR_ALIGNED_POSITION, lookAt: MONITOR_ALIGNED_LOOKAT }, // Snap 3 — Digital Monitor
@@ -1145,11 +1250,9 @@ function glideEase(u) {
  * on the exact hero pose smoothly and leave it smoothly.
  */
 function applyHeroEasing(p) {
-  if (p <= MONITOR_SNAP_T) return p
-  if (p < HERO_T) {
-    const u = (p - MONITOR_SNAP_T) / (HERO_T - MONITOR_SNAP_T)
-    return MONITOR_SNAP_T + (HERO_T - MONITOR_SNAP_T) * glideEase(u)
-  }
+  // The approach into the hero is one of the `GLIDES` below; only the
+  // pull-back out of it is still eased here.
+  if (p <= HERO_T) return p
   const u = (p - HERO_T) / (1 - HERO_T)
   return HERO_T + (1 - HERO_T) * glideEase(u)
 }
@@ -1188,6 +1291,122 @@ const POSITION_CURVE = new THREE.CatmullRomCurve3(
 )
 const POSITION_SEGMENT_COUNT = KEYFRAMES.length - 1
 
+/** Position on segment `i` at local fraction `f`, with that segment's own interpolation. */
+function segmentPositionInto(i, f, out) {
+  const inStraightZone = i >= STRAIGHT_ZONE_START_INDEX && i < STRAIGHT_ZONE_END_INDEX
+  const inVerticalLockZone = i >= VERTICAL_LOCK_ZONE_START_INDEX && i < VERTICAL_LOCK_ZONE_END_INDEX
+  if (inStraightZone || inVerticalLockZone) {
+    out.lerpVectors(KEYFRAMES[i].position, KEYFRAMES[i + 1].position, f)
+  } else {
+    // `getPoint`'s second argument is an optional target — passing it is what
+    // keeps the curve evaluation allocation-free.
+    POSITION_CURVE.getPoint(THREE.MathUtils.clamp((i + f) / POSITION_SEGMENT_COUNT, 0, 1), out)
+  }
+}
+
+/**
+ * The two travelling moves, each shaped ONCE and paced by distance.
+ *
+ * Everywhere else each keyframe is a beat the camera settles on, so every
+ * segment is eased on its own. That is wrong for a journey. The descent from
+ * the pillars to the lens crossed three waypoints (gate, establish, approach)
+ * and stopped dead at each, and its keyframe times bore no relation to the
+ * distances between them — six of its 8.4 units went by in the first tenth of
+ * the leg, the last 2.4 took the rest. The hero traversal was eased once, but
+ * still paced by hand-spaced keyframe times, which leaves speed steps wherever
+ * the spacing and the curve's own parameter speed disagree.
+ *
+ * Inside a glide, progress is eased once with `glideEase` and that value is
+ * taken as a fraction of the leg's measured LENGTH. The camera therefore moves
+ * along the real route with one smooth speed profile — zero velocity and
+ * acceleration at both ends, one peak in the middle — however the waypoints
+ * are spaced. Waypoints still decide the shape of the route and when each
+ * look-at applies (by where the camera is, not by when); their `t` values
+ * inside a glide no longer set its pace.
+ */
+const GLIDE_SAMPLES_PER_SEGMENT = 64
+const GLIDES = [
+  { startT: INTRO_ALIGN_T, endT: FILM_FOCUS_T, startIndex: STRAIGHT_ZONE_START_INDEX, endIndex: STRAIGHT_ZONE_END_INDEX },
+  // Rises 2.4 and turns 15.5 degrees over ~15 of travel through a swing, so
+  // height and heading each get their own ease rather than whatever the
+  // spline and the waypoint aims make of them in between.
+  { startT: MONITOR_SNAP_T, endT: HERO_T, startIndex: GLIDE_ZONE_START_INDEX, endIndex: KEYFRAMES.indexOf(heroKeyframe), eased: true },
+].map((glide) => ({
+  ...glide,
+  lengths: new Float32Array((glide.endIndex - glide.startIndex) * GLIDE_SAMPLES_PER_SEGMENT + 1),
+}))
+if (GLIDES.some((g) => KEYFRAMES[g.startIndex].t !== g.startT || KEYFRAMES[g.endIndex].t !== g.endT)) {
+  throw new Error('cameraPath: glide keyframe indices no longer match their progress range')
+}
+
+const glidePointScratch = new THREE.Vector3()
+const glideAimA = new THREE.Vector3()
+const glideAimB = new THREE.Vector3()
+const glidePreviousScratch = new THREE.Vector3()
+
+function measureGlides() {
+  for (const glide of GLIDES) {
+    segmentPositionInto(glide.startIndex, 0, glidePreviousScratch)
+    let total = 0
+    for (let k = 1; k < glide.lengths.length; k += 1) {
+      const local = k / GLIDE_SAMPLES_PER_SEGMENT
+      const i = Math.min(glide.startIndex + Math.floor(local), glide.endIndex - 1)
+      segmentPositionInto(i, local - (i - glide.startIndex), glidePointScratch)
+      total += glidePointScratch.distanceTo(glidePreviousScratch)
+      glidePreviousScratch.copy(glidePointScratch)
+      glide.lengths[k] = total
+    }
+  }
+  glideLengthsStale = false
+}
+
+/** Writes the glide pose for progress `p`; returns false when `p` is outside every glide. */
+function sampleGlideInto(p, outPosition, outLookAt) {
+  let glide = null
+  for (const candidate of GLIDES) if (p >= candidate.startT && p <= candidate.endT) glide = candidate
+  if (!glide) return false
+  if (glideLengthsStale) measureGlides()
+
+  const { lengths } = glide
+  const target = glideEase((p - glide.startT) / (glide.endT - glide.startT)) * lengths[lengths.length - 1]
+  let lo = 0
+  let hi = lengths.length - 1
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1
+    if (lengths[mid] <= target) lo = mid
+    else hi = mid
+  }
+  const span = lengths[hi] - lengths[lo]
+  const local = (lo + (span > 0 ? (target - lengths[lo]) / span : 0)) / GLIDE_SAMPLES_PER_SEGMENT
+  const i = Math.min(glide.startIndex + Math.floor(local), glide.endIndex - 1)
+  const f = local - (i - glide.startIndex)
+
+  segmentPositionInto(i, f, outPosition)
+
+  // Blend the view DIRECTION, not the look-at point. Blending points mixes
+  // how far away each target is into the aim — the monitor's target is the
+  // screen 0.67 ahead, the next waypoint's is metres off — so the view swung
+  // between waypoints by more than either one asked for. Directions blend
+  // monotonically from one aim to the next.
+  let a = KEYFRAMES[i]
+  let b = KEYFRAMES[i + 1]
+  let weight = f
+  if (glide.eased) {
+    // One climb and one turn over the whole glide, from its first shot to its
+    // last, eased by distance travelled.
+    a = KEYFRAMES[glide.startIndex]
+    b = KEYFRAMES[glide.endIndex]
+    weight = THREE.MathUtils.smoothstep(target / lengths[lengths.length - 1], 0, 1)
+    outPosition.y = THREE.MathUtils.lerp(a.position.y, b.position.y, weight)
+  }
+  glideAimA.subVectors(a.lookAt, a.position)
+  glideAimB.subVectors(b.lookAt, b.position)
+  const distance = THREE.MathUtils.lerp(glideAimA.length(), glideAimB.length(), weight)
+  glideAimA.normalize().lerp(glideAimB.normalize(), weight).normalize()
+  outLookAt.copy(outPosition).addScaledVector(glideAimA, distance)
+  return true
+}
+
 /**
  * Pure function of `progress` only (no history/state) — deterministic and
  * therefore trivially reversible. Finds the two keyframes progress falls
@@ -1217,13 +1436,12 @@ const POSITION_SEGMENT_COUNT = KEYFRAMES.length - 1
 export function sampleCameraPathInto(progress, outPosition, outLookAt) {
   let p = THREE.MathUtils.clamp(progress, 0, 1)
 
-  // Shape the traversal once, before the segment search, so the ease spans the
-  // whole move rather than each leg of it — see `glideEase`.
-  // Approach ease into the hero, pull-back ease out of it — see
-  // `applyHeroEasing`. Both are `smootherstep`, so the camera reaches the hero
-  // at zero velocity AND zero acceleration and leaves it the same way. The
-  // PAUSE itself is not here: `ScrollTimelineProvider`'s hero countdown owns
-  // it, in real time.
+  // The two travelling moves are shaped once, over their whole length — see
+  // `GLIDES`. The pull-back out of the hero is eased by `applyHeroEasing`.
+  // Both use `smootherstep`, so the camera reaches the hero at zero velocity
+  // AND zero acceleration and leaves it the same way. The PAUSE itself is not
+  // here: `heroSequence.js` owns it, in real time.
+  if (sampleGlideInto(p, outPosition, outLookAt)) return
   p = applyHeroEasing(p)
 
   let i = 0
@@ -1232,24 +1450,13 @@ export function sampleCameraPathInto(progress, outPosition, outLookAt) {
   const b = KEYFRAMES[i + 1]
   const rawSegmentT = b.t === a.t ? 0 : (p - a.t) / (b.t - a.t)
 
-  const inStraightZone = i >= STRAIGHT_ZONE_START_INDEX && i < STRAIGHT_ZONE_END_INDEX
-  const inVerticalLockZone = i >= VERTICAL_LOCK_ZONE_START_INDEX && i < VERTICAL_LOCK_ZONE_END_INDEX
   const inGlideZone = i >= GLIDE_ZONE_START_INDEX && i < GLIDE_ZONE_END_INDEX
 
-  // Raw inside the glide (one continuous move), eased per segment everywhere
-  // else (each keyframe is a beat to settle on).
+  // Raw inside the pull-back (one continuous move, eased above), eased per
+  // segment everywhere else (each keyframe is a beat to settle on).
   const segmentT = inGlideZone ? rawSegmentT : THREE.MathUtils.smoothstep(rawSegmentT, 0, 1)
 
-  if (inStraightZone || inVerticalLockZone) {
-    outPosition.lerpVectors(a.position, b.position, segmentT)
-  } else {
-    // `getPoint`'s second argument is an optional target — passing it is what
-    // keeps the curve evaluation allocation-free.
-    POSITION_CURVE.getPoint(
-      THREE.MathUtils.clamp((i + segmentT) / POSITION_SEGMENT_COUNT, 0, 1),
-      outPosition,
-    )
-  }
+  segmentPositionInto(i, segmentT, outPosition)
   outLookAt.lerpVectors(a.lookAt, b.lookAt, segmentT)
 }
 

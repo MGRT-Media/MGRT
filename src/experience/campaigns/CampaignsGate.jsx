@@ -1,6 +1,6 @@
 import { Suspense, lazy, useEffect, useState } from 'react'
 import { scrollProgress } from '../timeline/ScrollTimelineProvider.jsx'
-import { HERO_T } from './../timeline/cameraPath.js'
+import { MONITOR_SNAP_T } from '../timeline/filmActBeats.js'
 
 /**
  * Holds Act 3 out of the initial load.
@@ -20,15 +20,20 @@ const Billboard = lazy(() => import('./Billboard.jsx'))
 const ExteriorEnvironment = lazy(() => import('./ExteriorEnvironment.jsx'))
 
 /**
- * How far ahead of the hand-over to start loading.
+ * Where to start loading: once the camera is settling onto the Digital shot.
  *
  * The point is that the assets are already resident by the time the swap
- * happens — arriving at `CAMPAIGNS_SWAP_T` and only then requesting them would
- * trade an initial-load cost for a visible stall at the worst possible moment,
- * mid-transition. 0.14 of the timeline is a long way at scroll speed, and the
- * cost of being early is only that some visitors fetch assets they don't reach.
+ * happens — arriving at the hand-over and only then requesting them would
+ * trade an initial-load cost for a visible stall at the worst possible moment.
+ * Fetching, parsing and building the exterior still costs a frame hitch of
+ * about a second on first visit, so WHERE it lands matters too. It used to arm
+ * 0.14 short of the hero, which is part-way down the room: once the traversal
+ * to the hero was given its proper pace, that put the stall mid-flight. At the
+ * Digital shot the camera is arriving on a held frame (the monitor lock), so
+ * the hitch has nothing moving to interrupt. The small margin catches the
+ * jump's ease-out before it reaches the exact snap value.
  */
-const PRELOAD_LEAD = 0.14
+const PRELOAD_AT = MONITOR_SNAP_T - 0.005
 
 /**
  * Once armed, this never disarms. Unmounting on the way back would dispose
@@ -58,7 +63,7 @@ export default function CampaignsGate() {
     if (armed) return undefined
     let handle = 0
     const check = () => {
-      if (scrollProgress.value >= HERO_T - PRELOAD_LEAD) {
+      if (scrollProgress.value >= PRELOAD_AT) {
         setArmed(true)
         return
       }

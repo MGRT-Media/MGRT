@@ -31,6 +31,8 @@ import { HERO_T, HERO_COUNTDOWN_MS, HERO_REVEAL_SECONDS } from './filmActBeats.j
  *                 `HERO_T`, so accumulated scroll cannot jump it forward and
  *                 it always starts cleanly from the beginning.
  *  - `IMPACT`   — settled; scroll takes over again for reverse navigation.
+ *  - `RETURN`   — the pull-back played backwards on the same clock, still on
+ *                 the exterior, until the camera is back on the hero pose.
  */
 
 export const HERO_STATE = {
@@ -38,6 +40,7 @@ export const HERO_STATE = {
   HERO_HOLD: 'HERO_HOLD',
   REVEAL: 'REVEAL',
   IMPACT: 'IMPACT',
+  RETURN: 'RETURN',
 }
 
 /** The hold, in real milliseconds. Not derived from scroll distance. */
@@ -73,13 +76,32 @@ const state = {
    */
   holdConsumed: false,
   holdStartedAt: 0,
-  revealStartedAt: 0,
+  /** The clocked exterior move shared by `REVEAL` and `RETURN`. */
+  moveFrom: HERO_T,
+  moveStartedAt: 0,
+  moveDurationMs: 0,
+  /** Called once a requested `RETURN` has handed the camera back to the interior. */
+  onReturned: null,
+  /**
+   * True from a requested return's hand-over until scroll is actually below
+   * the hero. The jump that follows starts from the bottom of the page, so for
+   * its first few frames raw progress still reads past the hero — without this
+   * `TRAVEL` would take that as a fresh arrival and start the reveal again.
+   */
+  leavingHero: false,
   /** What the rig should sample the path at this frame. */
   progress: 0,
 }
 
 /** Effective progress — what the camera is actually drawn from. */
 export const renderedProgress = { value: 0 }
+
+/**
+ * Where the camera actually IS along the path this frame: `renderedProgress`
+ * after `ScrollCameraRig`'s easing. Anything that has to stay in step with
+ * what the viewer sees — rather than with where scroll is heading — reads this.
+ */
+export const cameraProgress = { value: 0 }
 
 export function heroPhase() {
   return state.phase
@@ -105,7 +127,54 @@ export function isHeroFrozen() {
  * `HERO_HOLD`; the exterior only exists from the instant the pull-back begins.
  */
 export function isExteriorActive() {
-  return state.phase === HERO_STATE.REVEAL || state.phase === HERO_STATE.IMPACT
+  return state.phase === HERO_STATE.REVEAL || state.phase === HERO_STATE.IMPACT || state.phase === HERO_STATE.RETURN
+}
+
+/**
+ * Starts a clocked exterior move from the progress drawn last frame.
+ *
+ * The duration is the reveal's, scaled by how much of the pull-back is left to
+ * cover, so a move reversed part-way takes only the time its distance needs.
+ */
+function startExteriorMove(phase, to, now) {
+  state.phase = phase
+  state.moveFrom = state.progress
+  state.moveStartedAt = now
+  state.moveDurationMs = (HERO_REVEAL_SECONDS * 1000 * Math.abs(to - state.moveFrom)) / (1 - HERO_T)
+}
+
+function exteriorMoveProgress(to, now) {
+  const t = state.moveDurationMs > 0 ? THREE.MathUtils.clamp((now - state.moveStartedAt) / state.moveDurationMs, 0, 1) : 1
+  const eased = t * t * (3 - 2 * t)
+  return { t, progress: THREE.MathUtils.lerp(state.moveFrom, to, eased) }
+}
+
+/**
+ * Takes the camera from the exterior back to the hero before anything below it.
+ *
+ * Reverse used to swap to the interior on the raw scroll crossing. A section
+ * jump sweeps the whole pull-back in about a tenth of a second, so the damped
+ * camera was still out beside the highway when the room layer came on — the
+ * visitor saw the room from outside its walls, lit by the day sky, and then
+ * flew in through the back wall. The swap is only invisible from the hero
+ * pose, so reverse now mirrors forward: the pull-back runs backwards on its own
+ * clock, and the interior returns once the camera has actually arrived.
+ *
+ * Returns false when the exterior is not showing, so the caller can go ahead.
+ * `onReturned` fires on the frame the interior is back.
+ */
+export function requestHeroReturn(onReturned, now = performance.now()) {
+  if (!isExteriorActive()) return false
+  if (state.phase !== HERO_STATE.RETURN) startExteriorMove(HERO_STATE.RETURN, HERO_T, now)
+  state.onReturned = onReturned
+  return true
+}
+
+/** Turns a `RETURN` back into the reveal from wherever it has got to. */
+export function resumeHeroReveal(now = performance.now()) {
+  state.onReturned = null
+  state.leavingHero = false
+  if (state.phase === HERO_STATE.RETURN) startExteriorMove(HERO_STATE.REVEAL, 1, now)
 }
 
 /**
@@ -136,12 +205,12 @@ export function advanceHeroSequence(rawProgress, arrived, now = performance.now(
       // Far enough back that a fresh approach is clearly intended, so the beat
       // is available again on a genuine re-watch.
       if (rawProgress < HERO_T - REARM_BELOW) state.holdConsumed = false
-      if (rawProgress >= HERO_T && arrived) {
+      if (rawProgress < HERO_T) state.leavingHero = false
+      if (rawProgress >= HERO_T && arrived && !state.leavingHero) {
         if (state.holdConsumed) {
           // Already seen it. Go straight on rather than stalling at the hero
           // with nothing to advance the sequence.
-          state.phase = HERO_STATE.REVEAL
-          state.revealStartedAt = now
+          startExteriorMove(HERO_STATE.REVEAL, 1, now)
         } else {
           state.phase = HERO_STATE.HERO_HOLD
           // Set exactly once, on the transition — never per frame, so repeated
@@ -162,40 +231,52 @@ export function advanceHeroSequence(rawProgress, arrived, now = performance.now(
         break
       }
       state.holdConsumed = true
-      if (now - state.holdStartedAt >= HERO_HOLD_MS) {
-        state.phase = HERO_STATE.REVEAL
-        state.revealStartedAt = now
-      }
+      if (now - state.holdStartedAt >= HERO_HOLD_MS) startExteriorMove(HERO_STATE.REVEAL, 1, now)
       break
     }
 
     case HERO_STATE.REVEAL: {
-      // Driven by its own clock, always from HERO_T, so however much scroll
-      // piled up during the hold the pull-back begins at its beginning.
-      const t = THREE.MathUtils.clamp((now - state.revealStartedAt) / (HERO_REVEAL_SECONDS * 1000), 0, 1)
-      const eased = t * t * (3 - 2 * t)
-      state.progress = THREE.MathUtils.lerp(HERO_T, 1, eased)
-      // Reverse leaves at EXACTLY the hero, not a margin short of it. A margin
-      // here was the rough reverse: `IMPACT`/`REVEAL` pin progress at HERO_T
-      // while scroll runs down through the margin, so the camera stalls, and
-      // then jumps to `raw` the moment the phase flips. Swapping on the exact
-      // crossing keeps progress continuous through the hand-over — the frame
-      // either side is the canonical hero, and velocity carries straight
-      // through it.
+      // Driven by its own clock, always from where the camera is, so however
+      // much scroll piled up during the hold the pull-back begins at its
+      // beginning.
+      const move = exteriorMoveProgress(1, now)
+      state.progress = move.progress
+      // Scroll below the hero without a section jump (keyboard, scrollbar):
+      // same rule as a requested return — the camera goes back to the hero
+      // before the interior can show.
       if (rawProgress < HERO_T) {
-        state.phase = HERO_STATE.TRAVEL
+        startExteriorMove(HERO_STATE.RETURN, HERO_T, now)
         break
       }
-      if (t >= 1) state.phase = HERO_STATE.IMPACT
+      if (move.t >= 1) state.phase = HERO_STATE.IMPACT
       break
     }
 
     case HERO_STATE.IMPACT: {
-      // Settled. Scroll drives again so the viewer can travel back out, and
-      // dropping below the hero re-arms the whole sequence for a rewatch.
+      // Settled. Scroll drives again so the viewer can travel back out.
       state.progress = Math.max(rawProgress, HERO_T)
-      // Same exact crossing as `REVEAL` — see the note there.
-      if (rawProgress < HERO_T) state.phase = HERO_STATE.TRAVEL
+      if (rawProgress < HERO_T) startExteriorMove(HERO_STATE.RETURN, HERO_T, now)
+      break
+    }
+
+    case HERO_STATE.RETURN: {
+      // An unrequested return gives way if scroll comes back up past the hero.
+      if (!state.onReturned && rawProgress >= HERO_T) {
+        startExteriorMove(HERO_STATE.REVEAL, 1, now)
+        state.progress = exteriorMoveProgress(1, now).progress
+        break
+      }
+      const move = exteriorMoveProgress(HERO_T, now)
+      state.progress = move.progress
+      // Hand over on ARRIVAL, exactly as the forward hold does, so the wall
+      // replaces the billboard from the one pose where they match.
+      if (move.t >= 1 && arrived) {
+        state.phase = HERO_STATE.TRAVEL
+        const onReturned = state.onReturned
+        state.onReturned = null
+        state.leavingHero = Boolean(onReturned)
+        onReturned?.()
+      }
       break
     }
   }

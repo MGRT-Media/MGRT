@@ -10,7 +10,7 @@ import {
   useModel,
   useTreatedMaterials,
 } from '../models/modelAssets.js'
-import { scrollProgress } from '../timeline/ScrollTimelineProvider.jsx'
+import { cameraProgress } from '../timeline/heroSequence.js'
 import { MONITOR_SNAP_T, DIGITAL_IGNITE_RISE } from '../timeline/filmActBeats.js'
 import { BEAM_CENTER, YAW_DEGREES, MONITOR_PLINTH } from './plinthAnchor.js'
 import { assetUrl } from '../assets/assetUrl.js'
@@ -88,51 +88,34 @@ export const MONITOR_ANCHOR = {
 }
 
 /**
- * Names of the two nodes taken from `digital-monitor.glb`. The file is a
- * whole computer desk — two machines, two keyboards, a render-view plane —
- * so this deliberately takes one machine's housing and its screen panel and
- * leaves the rest, rather than dropping the whole set into a room that
- * needs a single monitor on a plinth.
- */
-/**
- * `old_computer_monitor_and_tv_model.glb`, optimised (533KB as downloaded to
- * 160KB, 3.9k triangles).
+ * `spark-computer.glb` — the Lumen 64 "Spark", a static computer with its
+ * keyboard attached, optimised offline from the 29.2MB source to 1.9MB.
  *
- * The one thing that made this the right asset: it has a real `Display` mesh,
- * separate from the housing. The terminal it replaces did not, which forced
- * the fit to be derived from a bounding box and left no reliable way to know
- * the video plane was landing on the bezel rather than near it. With a named
- * panel, the housing can once again be aligned so that panel sits exactly on
- * `screenFrontZ` at `screenCenterHeight` — the constants `MONITOR_ANCHOR`,
- * `cameraPath.js` and `DepthOfField` are all built from.
+ * What the production file is, and why:
  *
- * A 107x107-unit Sketchfab ground plane was removed from the file; it was the
- * only reason the asset's bounds were enormous, and it would have rendered a
- * second floor straight through the room's own.
+ *  - **Static.** The source's animation (gears, fans, a scrolling screen
+ *    layer, ray effects) was baked at t = 0 and removed; this room's props
+ *    do not move.
+ *  - **Cut, after inspection at the real camera positions.** The animated
+ *    screen layer and ray effects are gone, so nothing can overlap the
+ *    display. The CPU gears and fans sat deep under glass and changed nothing
+ *    even magnified. The trackball peripheral and its cable were removed:
+ *    fitted to this screen height they would hang 0.54m off the pedestal in
+ *    mid-air. The ornate cadence parts and the electrodes, which read through
+ *    the glass, were simplified rather than removed.
+ *  - **Hidden geometry removed** by rasterising the model from every position
+ *    on the camera path (plus a margin), keeping a two-triangle ring around
+ *    everything visible so no edge can open.
+ *  - **Merged by material** into seven meshes, with duplicate UV sets
+ *    collapsed onto one, textures re-encoded as WebP and geometry
+ *    meshopt-compressed (the decoder is already wired in `modelAssets.js`).
+ *
+ * The screen is its own mesh with its own material, named `SparkScreen`, and
+ * its UVs were remapped offline to the full frame — 0..1 across and up — so
+ * the video needs no correction here.
  */
-const MODEL_SCREEN_NODE = 'Display_Display_0'
-const MODEL_EXCLUDE = /^(Display_Display_0|Plane_Ground_0)$/
+const MODEL_SCREEN_NODE = 'SparkScreen'
 
-/**
- * Fits the downloaded housing to the screen anchor this project already
- * had, rather than the other way round.
- *
- * `MONITOR_ANCHOR.screenHeight` is not a decoration: `cameraPath.js`
- * derives `MONITOR_VIEW_DISTANCE` from it, and that distance sets both the
- * Digital shot and the whole Campaigns rail's look-at offset. So the model
- * is scaled until ITS screen is that height, and translated until ITS
- * screen sits exactly on `screenFrontZ` at `screenCenterHeight`. Every
- * keyframe therefore still frames the thing it was authored to frame, with
- * no change to the path.
- *
- * The one thing that cannot also be satisfied is the housing's footing: at
- * the scale the screen demands, the model's base lands well below the old
- * plinth's top, so a fixed 0.72 plinth would leave the monitor sunk into
- * the stone. `baseY` is returned for exactly that reason — the stone is
- * placed to meet the model instead. `MONITOR_PLINTH.height` itself stays
- * untouched, because `screenCenterHeight` (and so the camera path) is
- * derived from it.
- */
 function useFittedMonitor() {
   const gltf = useModel(MODEL_URLS.monitor)
 
@@ -140,13 +123,9 @@ function useFittedMonitor() {
     const holder = new THREE.Group()
     const parts = []
     gltf.scene.traverse((o) => {
-      if (o.isMesh && !MODEL_EXCLUDE.test(o.name)) parts.push(o)
-      // The panel is kept and used for alignment, then hidden below — the
-      // video goes on this project's own plane, whose UVs are a clean 0..1
-      // space rather than whatever the author gave the panel.
-      if (o.isMesh && o.name === MODEL_SCREEN_NODE) parts.push(o)
+      if (o.isMesh) parts.push(o)
     })
-    if (!parts.length) return { holder, screenWidth, baseY: MONITOR_PLINTH.height }
+    if (!parts.length) return { holder, screenWidth, screenAspect: screenWidth / screenHeight, baseY: MONITOR_PLINTH.height, footprint: null }
 
     const shell = new THREE.Group()
     parts.forEach((part) => {
@@ -159,22 +138,12 @@ function useFittedMonitor() {
     })
     holder.add(shell)
     const screen = shell.getObjectByName(MODEL_SCREEN_NODE)
-    if (!screen) return { holder, screenWidth, baseY: MONITOR_PLINTH.height }
+    if (!screen) return { holder, screenWidth, screenAspect: screenWidth / screenHeight, baseY: MONITOR_PLINTH.height, footprint: null }
 
-    // Turned to face +Z, this project's screen-forward convention.
-    //
-    // Not cosmetic: the model's housing is not centred on its own screen —
-    // it runs 0.78 behind the panel and 0.46 in front of it (the base the
-    // screen overhangs). Left unrotated, that 0.78 pointed at the viewer,
-    // and since `cameraPath.js` parks the Digital shot only
-    // MONITOR_VIEW_DISTANCE (0.675) in front of the screen, the camera sat
-    // INSIDE the housing — the monitor rendered perfectly and could not be
-    // seen, because the shot was behind its own front faces. Turned round,
-    // the housing reaches 0.48 toward the camera and clears it.
-    // Measured, not assumed: the display's centre sits at +X of the housing's,
-    // so the panel faces +X. -90 degrees about Y turns that onto +Z, this
-    // project's screen-forward convention.
-    holder.rotation.y = -Math.PI / 2
+    // Turned so the screen faces +Z, this project's screen-forward convention —
+    // measured from the screen's own geometry rather than assumed, since each
+    // asset this slot has held faced a different way.
+    holder.rotation.y = -screenFacingYaw(screen)
 
     const authored = measure(screen)
     holder.scale.setScalar(screenHeight / authored.size.y)
@@ -187,68 +156,84 @@ function useFittedMonitor() {
     holder.position.z += screenFrontZ - scaled.box.max.z
     holder.updateWorldMatrix(true, true)
 
-    /**
-     * The panel is a curved CRT face — 446 triangles bulging 0.28 units along
-     * its depth axis — and it ships with NO texture coordinates. That
-     * combination is why the previous asset's video went on a separate flat
-     * plane, and exactly why the result looked wrong here: a flat rectangle
-     * hung in front of a bulging glass face cannot follow it, so the image
-     * stood proud at the centre and cut short at the edges.
-     *
-     * The projection is computed in WORLD space, not in the geometry's own.
-     * Projecting on raw vertex positions looked correct on paper and came out
-     * rotated 90 degrees, because the `Display` node carries its own rotation:
-     * geometry-space Y and Z are not the screen's vertical and horizontal
-     * until that transform is applied. Reading each vertex through
-     * `matrixWorld` removes the guesswork — after the fit, world X IS the
-     * screen's horizontal and world Y its vertical, whatever the author did
-     * upstream.
-     *
-     * The geometry is cloned first: `useLoader` caches the GLB and hands every
-     * caller the same buffers, so writing UVs into the original would mutate a
-     * shared asset.
-     */
-    screen.geometry = screen.geometry.clone()
-    const geometry = screen.geometry
-    const position = geometry.attributes.position
-    const world = new THREE.Vector3()
-    const worldBox = new THREE.Box3()
-    for (let i = 0; i < position.count; i += 1) {
-      world.fromBufferAttribute(position, i).applyMatrix4(screen.matrixWorld)
-      worldBox.expandByPoint(world)
-    }
-    const spanX = worldBox.max.x - worldBox.min.x
-    const spanY = worldBox.max.y - worldBox.min.y
-    const uv = new Float32Array(position.count * 2)
-    for (let i = 0; i < position.count; i += 1) {
-      world.fromBufferAttribute(position, i).applyMatrix4(screen.matrixWorld)
-      uv[i * 2] = (world.x - worldBox.min.x) / spanX
-      uv[i * 2 + 1] = (world.y - worldBox.min.y) / spanY
-    }
-    geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2))
-
     const fitted = measure(screen)
+    const contact = contactFootprint(shell)
     return {
       holder,
       screen,
       screenWidth: fitted.size.x,
-      baseY: measure(shell).box.min.y,
+      screenAspect: fitted.size.x / fitted.size.y,
+      baseY: contact.baseY,
+      footprint: contact.footprint,
     }
   }, [gltf])
 }
 
+/** Height band above an object's lowest vertex that counts as touching what it stands on. */
+const CONTACT_BAND = 0.015
+
 /**
- * The stone pedestal (`digital-stone.glb`), replacing `buildRockGeometry`'s
- * procedural block.
+ * Where the computer actually touches its support: the extent of every vertex
+ * within `CONTACT_BAND` of its base — the feet, not the overhanging case.
  *
- * `topAt` is the housing's real base rather than `MONITOR_PLINTH.height`,
- * so the monitor lands ON the stone instead of floating above it or sinking
- * into it. The rock is fitted by footprint width and left to run below the
- * floor — it is a boulder the room was built around, not a plinth balanced
- * on the surface, and burying the remainder is both cheaper and more
- * convincing than trying to sit an irregular base flat on a floor.
+ * Measured from vertices rather than bounding boxes. A box transformed by a
+ * rotated node inflates, and this asset's parts arrive rotated, so a
+ * box-based base came out 28cm too low.
  */
-function useStonePedestal(topAt, footprintWidth) {
+function contactFootprint(root) {
+  const points = []
+  const v = new THREE.Vector3()
+  root.updateWorldMatrix(true, true)
+  root.traverse((o) => {
+    if (!o.isMesh) return
+    const position = o.geometry.attributes.position
+    for (let i = 0; i < position.count; i += 1) points.push(v.fromBufferAttribute(position, i).applyMatrix4(o.matrixWorld).clone())
+  })
+  const baseY = Math.min(...points.map((p) => p.y))
+  const footprint = new THREE.Box3().setFromPoints(points.filter((p) => p.y < baseY + CONTACT_BAND))
+  return { baseY, footprint }
+}
+
+/**
+ * The yaw of the screen's facing direction, from its own vertex normals.
+ * A flat panel's normals all agree, so their sum is its facing.
+ */
+function screenFacingYaw(screen) {
+  const normal = screen.geometry.attributes.normal
+  const sum = new THREE.Vector3()
+  const n = new THREE.Vector3()
+  screen.updateWorldMatrix(true, false)
+  const normalMatrix = new THREE.Matrix3().getNormalMatrix(screen.matrixWorld)
+  for (let i = 0; i < normal.count; i += 1) sum.add(n.fromBufferAttribute(normal, i).applyMatrix3(normalMatrix))
+  return Math.atan2(sum.x, sum.z)
+}
+
+/**
+ * The stone pedestal (`digital-stone.glb`), fitted to whatever it carries.
+ *
+ * `topAt` is the computer's real base, so it lands ON the stone. The rock is
+ * then sized and placed from the computer's contact `footprint` rather than
+ * from a fixed width: the Spark computer's screen sits at the back of its lid
+ * with the keyboard deck running 0.65m forward of it, so a pedestal centred
+ * on the screen — as it was for the old monitor, whose screen was its front —
+ * left most of the computer standing on nothing.
+ *
+ * The camera path pins the screen, so the computer cannot move or shrink to
+ * suit the stone; the stone adapts instead. Its flat top is widened just
+ * enough to carry the feet with `TOP_MARGIN` to spare, and only across its
+ * width and depth — its height, and so its proportions from the room, keep
+ * the scale the `MONITOR_PLINTH.width` fit always gave it. The floor-stone
+ * projection runs after scaling, in metres, so widening never stretches the
+ * texture.
+ *
+ * The rock is fitted by its real vertices, not by bounding boxes: its node
+ * arrives rotated, and a rotated box inflates — which is what had left a 13mm
+ * gap between the old monitor and the stone.
+ */
+const TOP_MARGIN = 0.03
+const TOP_BAND = 0.03
+
+function useStonePedestal(topAt, footprintWidth, footprint) {
   const gltf = useModel(MODEL_URLS.pedestal)
 
   return useMemo(() => {
@@ -257,23 +242,36 @@ function useStonePedestal(topAt, footprintWidth) {
     if (!rock) return group
     group.add(rock)
 
-    const authored = measure(rock)
-    group.scale.setScalar(footprintWidth / authored.size.x)
+    // Unscaled vertices in the group's frame, and the flat top among them.
+    const points = []
+    const v = new THREE.Vector3()
+    const position = rock.geometry.attributes.position
+    rock.updateMatrix()
+    for (let i = 0; i < position.count; i += 1) points.push(v.fromBufferAttribute(position, i).applyMatrix4(rock.matrix).clone())
+    const all = new THREE.Box3().setFromPoints(points)
+    const top = new THREE.Box3().setFromPoints(points.filter((p) => p.y > all.max.y - TOP_BAND * (all.max.x - all.min.x) / footprintWidth))
 
-    const scaled = measure(rock)
-    group.position.x -= scaled.center.x
-    group.position.z -= scaled.center.z
-    group.position.y += topAt - scaled.box.max.y
+    // Height keeps the scale the fixed-width fit always gave; width and depth
+    // grow only as far as the feet require.
+    const base = footprintWidth / (all.max.x - all.min.x)
+    const scale = new THREE.Vector3(base, base, base)
+    if (footprint) {
+      scale.x = Math.max(base, (footprint.max.x - footprint.min.x + TOP_MARGIN * 2) / (top.max.x - top.min.x))
+      scale.z = Math.max(base, (footprint.max.z - footprint.min.z + TOP_MARGIN * 2) / (top.max.z - top.min.z))
+    }
+    group.scale.copy(scale)
 
-    // Re-skinned in the floor's own stone — see `projectFloorStone`. The fit
-    // above is untouched: this changes what the surface is made of, not where
-    // or how large it is.
-    rock.geometry = projectFloorStone(rock.geometry, rock.matrix, group.scale.x)
+    const topCentre = top.getCenter(new THREE.Vector3()).multiply(scale)
+    const target = footprint ? footprint.getCenter(new THREE.Vector3()) : new THREE.Vector3()
+    group.position.set(target.x - topCentre.x, topAt - all.max.y * scale.y, target.z - topCentre.z)
+
+    // Re-skinned in the floor's own stone — see `projectFloorStone`.
+    rock.geometry = projectFloorStone(rock.geometry, rock.matrix, scale)
     rock.material = createFloorStoneMaterial()
     rock.castShadow = true
     rock.receiveShadow = true
     return group
-  }, [gltf, topAt, footprintWidth])
+  }, [gltf, topAt, footprintWidth, footprint])
 }
 
 /**
@@ -305,7 +303,7 @@ const PROJECTION_OFFSETS = [
   [1.84, 3.07],
 ]
 
-function projectFloorStone(sourceGeometry, nodeMatrix, metresPerUnit) {
+function projectFloorStone(sourceGeometry, nodeMatrix, scale) {
   const geometry = (sourceGeometry.index ? sourceGeometry.toNonIndexed() : sourceGeometry.clone())
   const position = geometry.attributes.position
   const uv = new Float32Array(position.count * 2)
@@ -318,7 +316,7 @@ function projectFloorStone(sourceGeometry, nodeMatrix, metresPerUnit) {
 
   for (let v = 0; v < position.count; v += 3) {
     corners.forEach((corner, k) => {
-      corner.fromBufferAttribute(position, v + k).applyMatrix4(nodeMatrix).multiplyScalar(metresPerUnit)
+      corner.fromBufferAttribute(position, v + k).applyMatrix4(nodeMatrix).multiply(scale)
     })
     normal.subVectors(c, b).cross(edge.subVectors(a, b))
     const ax = Math.abs(normal.x)
@@ -338,7 +336,7 @@ function projectFloorStone(sourceGeometry, nodeMatrix, metresPerUnit) {
   const scratch = new THREE.Vector3()
   applyStoneMacroVariation(geometry, {
     seed: 31,
-    toWorld: (x, y, z) => scratch.set(x, y, z).applyMatrix4(nodeMatrix).multiplyScalar(metresPerUnit).toArray(),
+    toWorld: (x, y, z) => scratch.set(x, y, z).applyMatrix4(nodeMatrix).multiply(scale).toArray(),
   })
   return geometry
 }
@@ -429,7 +427,9 @@ export default function Monitor() {
 
   useEffect(() => () => video.pause(), [video])
 
-  // Ignite is a pure function of scrollProgress — a smoothstep ramp into
+  // Ignite is a pure function of the camera's progress along the path
+  // (`cameraProgress`, not raw scroll, so the screen lights in step with the
+  // camera's own approach rather than ahead of it) — a smoothstep ramp into
   // MONITOR_SNAP_T, the same mechanism CinemaCamera.jsx already uses for
   // its own lens screen, rather than an onCameraLock event damped over
   // real time (the previous approach here). This is what makes the
@@ -437,7 +437,7 @@ export default function Monitor() {
   // level shows at a given progress value regardless of how fast, or in
   // which direction, the visitor scrolled to reach it.
   useFrame(() => {
-    const p = scrollProgress.value
+    const p = cameraProgress.value
     const ignite = THREE.MathUtils.smoothstep(p, MONITOR_SNAP_T - DIGITAL_IGNITE_RISE, MONITOR_SNAP_T)
     screenMaterial.uniforms.uIgnite.value = ignite
 
@@ -471,12 +471,17 @@ export default function Monitor() {
 
   const model = useFittedMonitor()
 
-  // The video goes on the model's own curved panel rather than on a plane of
-  // this project's making — see the UV generation in `useFittedMonitor`.
+  // The video goes on the model's own screen, which carries full-frame UVs
+  // from the offline pass. Its cover-fit target is the screen's MEASURED
+  // aspect (1.59), so a 16:9 clip is cropped a little at the sides rather than
+  // stretched — never letterboxed into a visible border.
   useEffect(() => {
-    if (model.screen) model.screen.material = screenMaterial
-  }, [model.screen, screenMaterial])
-  const pedestal = useStonePedestal(model.baseY, MONITOR_PLINTH.width)
+    if (!model.screen) return
+    screenMaterial.name = 'SparkScreenVideo'
+    screenMaterial.uniforms.uTargetAspect.value = model.screenAspect
+    model.screen.material = screenMaterial
+  }, [model.screen, model.screenAspect, screenMaterial])
+  const pedestal = useStonePedestal(model.baseY, MONITOR_PLINTH.width, model.footprint)
 
   // The downloaded housing and the stone both arrive lit for someone
   // else's scene. Knocking the albedo down and the roughness up puts them
@@ -503,16 +508,13 @@ export default function Monitor() {
             than a fixed height — see `useFittedMonitor`. */}
         <primitive object={pedestal} />
 
-        {/* Housing (digital-monitor.glb), fitted to the existing screen
+        {/* The computer (spark-computer.glb), fitted to the existing screen
             anchor so `cameraPath.js` still frames what it was authored to. */}
         <primitive object={model.holder} />
 
-        {/* No separate screen plane and no glass pane. Both were flat, and
-            this panel is curved — a flat quad in front of it is the artefact
-            that made the picture read as pasted on rather than displayed. The
-            video is on the panel itself, and the CRT's own front face is the
-            glass. `coverTransmittance` is 1 below for the same reason: there
-            is no longer a pane in front of the image to attenuate it. */}
+        {/* No separate screen plane and no glass pane: the video is on the
+            model's own screen mesh, so `coverTransmittance` is 1 — there is no
+            pane in front of the image to attenuate it. */}
       </group>
     </group>
   )

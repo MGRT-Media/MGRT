@@ -193,6 +193,14 @@ export const INTRO_CINEMATIC_MAX_DURATION_SECONDS = 3
 // direct-nav jumps — this stays untouched by this leg's own fixed value.
 export const INTRO_TO_FILM_DURATION_SECONDS = 1.5
 
+// The monitor -> MGRT hero traversal, in seconds. A chapter hop used to cross
+// it with the general distance-scaled jump — 1.2s of ease-out, which put the
+// whole 16-unit route through the room into under half a second. This gives
+// it the same average pace as the 8.3-unit descent to the lens above
+// (~5.5 units/s), and `ScrollTimelineProvider` moves progress through it
+// evenly so the camera path's own ease is the only one shaping it.
+export const HERO_TRAVERSAL_DURATION_SECONDS = 3
+
 export const INTRO_INTENT_DECAY_MS = 150
 
 /**

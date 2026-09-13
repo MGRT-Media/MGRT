@@ -21,7 +21,10 @@ import {
   JUMP_MIN_DURATION_SECONDS,
   JUMP_MAX_DURATION_SECONDS,
   CHAPTER_GESTURE_THRESHOLD,
+  HERO_T,
+  HERO_TRAVERSAL_DURATION_SECONDS,
 } from './filmActBeats.js'
+import { requestHeroReturn, resumeHeroReveal } from './heroSequence.js'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -33,6 +36,90 @@ gsap.registerPlugin(ScrollTrigger)
  */
 function easeSectionJump(t) {
   return 1 - (1 - t) ** 3
+}
+
+/**
+ * Progress ranges the camera path paces by itself — `cameraPath.js`'s
+ * `GLIDES` ease each of these once over its measured length. A jump must move
+ * progress through them at an even rate: any easing applied on top compounds
+ * with the path's own, and the ease-out every other jump uses crowded both
+ * moves into a burst at the start.
+ */
+const GLIDE_LEGS = [
+  { from: INTRO_ALIGN_T, to: FILM_FOCUS_T, seconds: INTRO_TO_FILM_DURATION_SECONDS },
+  { from: MONITOR_SNAP_T, to: HERO_T, seconds: HERO_TRAVERSAL_DURATION_SECONDS },
+]
+const LEG_BOUNDARIES = [INTRO_ALIGN_T, FILM_FOCUS_T, MONITOR_SNAP_T, HERO_T]
+const PROGRESS_EPSILON = 1e-4
+
+function easeLinear(t) {
+  return t
+}
+
+/**
+ * A jump that starts part-way through a glide — the visitor changed their mind
+ * mid-move — still has to leave from rest, or the camera's target would flip
+ * from full speed one way to full speed the other in a single frame.
+ */
+function easeFromRest(t) {
+  return t * t * (3 - 2 * t)
+}
+
+function jumpDuration(distance) {
+  return THREE.MathUtils.clamp(
+    JUMP_MIN_DURATION_SECONDS + distance * (JUMP_MAX_DURATION_SECONDS - JUMP_MIN_DURATION_SECONDS),
+    JUMP_MIN_DURATION_SECONDS,
+    JUMP_MAX_DURATION_SECONDS,
+  )
+}
+
+/**
+ * Splits a jump at the glide boundaries it crosses.
+ *
+ * Inside a glide, progress moves evenly for that glide's own duration (scaled
+ * by how much of it is covered). Past the hero it jumps immediately — the
+ * camera is clamped at the hero there and `heroSequence.js` owns the pull-back
+ * on its own clock. Everything else keeps the established distance-scaled
+ * ease-out. Neighbouring pieces meet at keyframes where the path itself is at
+ * rest, so chaining them adds no visible seam.
+ */
+function planJump(startT, targetT) {
+  const direction = Math.sign(targetT - startT)
+  const cuts = LEG_BOUNDARIES.filter((t) => (t - startT) * direction > PROGRESS_EPSILON && (targetT - t) * direction > PROGRESS_EPSILON)
+  if (direction < 0) cuts.reverse()
+  const points = [startT, ...cuts, targetT]
+  const steps = []
+  for (let k = 0; k < points.length - 1; k += 1) {
+    const from = points[k]
+    const to = points[k + 1]
+    const lo = Math.min(from, to)
+    const hi = Math.max(from, to)
+    if (hi - lo <= PROGRESS_EPSILON) {
+      steps.push({ to, duration: 0, easing: easeLinear })
+      continue
+    }
+    const leg = GLIDE_LEGS.find((g) => lo >= g.from - PROGRESS_EPSILON && hi <= g.to + PROGRESS_EPSILON)
+    if (leg) {
+      const startsAtBoundary = LEG_BOUNDARIES.some((t) => Math.abs(t - from) <= PROGRESS_EPSILON)
+      steps.push({
+        to,
+        duration: (leg.seconds * (hi - lo)) / (leg.to - leg.from),
+        easing: startsAtBoundary ? easeLinear : easeFromRest,
+      })
+    } else if (lo >= HERO_T - PROGRESS_EPSILON) {
+      steps.push({ to, duration: 0, easing: easeLinear })
+    } else {
+      const previous = steps[steps.length - 1]
+      if (previous?.distance !== undefined) {
+        previous.to = to
+        previous.distance += hi - lo
+        previous.duration = jumpDuration(previous.distance)
+      } else {
+        steps.push({ to, distance: hi - lo, duration: jumpDuration(hi - lo), easing: easeSectionJump })
+      }
+    }
+  }
+  return steps
 }
 
 /**
@@ -472,6 +559,35 @@ export function ScrollSpacer() {
     // visually consistent but never calls this for them... except it does
     // call requestNavigate unconditionally, so the guard lives here too as
     // a second line of defense.
+    // Runs `planJump`'s steps back to back. Every step checks the token, so a
+    // newer jump supersedes this one between steps as well as within them.
+    const runJump = (trigger, token, targetT, onArrive) => {
+      const steps = planJump(scrollProgress.value, targetT)
+      const scrollRange = trigger.end - trigger.start
+      const runStep = (index) => {
+        if (token !== jumpToken) return
+        if (index === steps.length) {
+          onArrive()
+          return
+        }
+        const step = steps[index]
+        smoothScroll.lenis.scrollTo(trigger.start + scrollRange * step.to, {
+          // prefers-reduced-motion: jump straight there rather than tweening,
+          // consistent with playIntroCinematic's own handling of the setting.
+          immediate: prefersReducedMotion || step.duration === 0,
+          duration: step.duration,
+          easing: step.easing,
+          // Lenis's own scrollTo is a no-op while stopped unless forced —
+          // cancelActiveDriversAndLocks() should already have released any
+          // stop via syncScrollSuspension(), but this is a safety net against
+          // a stale suspended state at the exact moment of the call.
+          force: true,
+          onComplete: () => runStep(index + 1),
+        })
+      }
+      runStep(0)
+    }
+
     const navigateToSection = (sectionKey) => {
       const targetT = SECTION_TARGETS[sectionKey]
       if (targetT === undefined) return
@@ -482,15 +598,6 @@ export function ScrollSpacer() {
       const trigger = timeline.scrollTrigger
       if (!trigger) return
 
-      // The "second scroll" leg — Film, reached directly from the exterior
-      // alignment point the intro cinematic just landed at — gets its own
-      // fixed, slower duration rather than the general distance-scaled
-      // formula below, per explicit follow-up to slow this specific
-      // straight-to-the-lens move down without also slowing the unrelated
-      // Film<->Digital chapter hop that formula also governs. Checked
-      // before any state below mutates `currentChapter`.
-      const isIntroToFilm = sectionKey === 'film' && currentChapter === 'intro'
-
       // Bump the token before tearing anything down so a rapid second
       // click cleanly supersedes the first — its onComplete below checks
       // this and no-ops if it's since gone stale. Lenis's own scrollTo
@@ -500,65 +607,49 @@ export function ScrollSpacer() {
       cancelActiveDriversAndLocks()
       isDirectJumpActive = true
 
-      const startT = scrollProgress.value
-      const distance = Math.abs(targetT - startT)
-      const duration = isIntroToFilm
-        ? INTRO_TO_FILM_DURATION_SECONDS
-        : THREE.MathUtils.clamp(
-            JUMP_MIN_DURATION_SECONDS + distance * (JUMP_MAX_DURATION_SECONDS - JUMP_MIN_DURATION_SECONDS),
-            JUMP_MIN_DURATION_SECONDS,
-            JUMP_MAX_DURATION_SECONDS,
-          )
-      const scrollRange = trigger.end - trigger.start
-      const targetScroll = trigger.start + scrollRange * targetT
+      // From the billboard to anything before the hero, the camera first comes
+      // back through the pull-back to the hero pose — the only place the
+      // exterior can hand over to the room without the swap showing. The jump
+      // itself waits for that hand-over (this function runs again, now from the
+      // interior), so the camera's target never leaps across the pull-back.
+      if (targetT >= HERO_T) resumeHeroReveal()
+      else if (requestHeroReturn(() => token === jumpToken && navigateToSection(sectionKey))) return
 
-      smoothScroll.lenis.scrollTo(targetScroll, {
-        // prefers-reduced-motion: jump straight there rather than tweening,
-        // consistent with playIntroCinematic's own handling of the setting
-        // elsewhere in this file.
-        immediate: prefersReducedMotion,
-        duration,
-        easing: easeSectionJump,
-        // Lenis's own scrollTo is a no-op while stopped unless forced —
-        // cancelActiveDriversAndLocks() should already have released any
-        // stop via syncScrollSuspension(), but this is a safety net against
-        // a stale suspended state at the exact moment of the call.
-        force: true,
-        onComplete: () => {
-          if (token !== jumpToken) return // superseded by a newer click
-          isDirectJumpActive = false
-          // Matches releaseLensHold's own reset: pins the crossing-
-          // detection baseline to exactly the arrival point so the very
-          // next tick can't misread a stale gap as a fresh crossing.
-          lastRawProgress = targetT
-          scrollProgress.value = targetT
-          if (sectionKey === 'film') engageLensHold(trigger)
-          else if (sectionKey === 'digital') engageMonitorLock()
-          else if (sectionKey === 'campaigns') {
-            // Act 3 has no lock of its own: per explicit answer its middle
-            // beat is "pacing only — one scroll," so the pull-back is a
-            // single uninterrupted movement that simply ends at the reveal.
-            // Chapter state still has to be recorded, or a subsequent
-            // backward gesture would compute the wrong neighbour.
-            currentChapter = 'campaigns'
-            chapterModeActive = true
-          } else {
-            // 'intro' — also exits chapter mode if the visitor was in it
-            // (e.g. clicking the Intro mark while at Film/Digital), so
-            // `currentChapter`/scroll-suspension stay synchronized with
-            // where the camera actually landed. Note this lands at t: 0
-            // exactly (`SECTION_TARGETS.intro`), past the exterior orbit
-            // this round added — the "one-shot forward play" only exists
-            // to get FROM here TO `INTRO_ALIGN_T`, so landing back at the
-            // literal start correctly requires the intro cinematic to be
-            // played again before chapter mode can resume, hence resetting
-            // `introCinematicPlayed` here too.
-            currentChapter = 'intro'
-            chapterModeActive = false
-            introCinematicPlayed = false
-            syncScrollSuspension()
-          }
-        },
+      // Paced by `planJump`: the two glides at their own even rate, everything
+      // else with the distance-scaled ease-out.
+      runJump(trigger, token, targetT, () => {
+        isDirectJumpActive = false
+        // Matches releaseLensHold's own reset: pins the crossing-
+        // detection baseline to exactly the arrival point so the very
+        // next tick can't misread a stale gap as a fresh crossing.
+        lastRawProgress = targetT
+        scrollProgress.value = targetT
+        if (sectionKey === 'film') engageLensHold(trigger)
+        else if (sectionKey === 'digital') engageMonitorLock()
+        else if (sectionKey === 'campaigns') {
+          // Act 3 has no lock of its own: per explicit answer its middle
+          // beat is "pacing only — one scroll," so the pull-back is a
+          // single uninterrupted movement that simply ends at the reveal.
+          // Chapter state still has to be recorded, or a subsequent
+          // backward gesture would compute the wrong neighbour.
+          currentChapter = 'campaigns'
+          chapterModeActive = true
+        } else {
+          // 'intro' — also exits chapter mode if the visitor was in it
+          // (e.g. clicking the Intro mark while at Film/Digital), so
+          // `currentChapter`/scroll-suspension stay synchronized with
+          // where the camera actually landed. Note this lands at t: 0
+          // exactly (`SECTION_TARGETS.intro`), past the exterior orbit
+          // this round added — the "one-shot forward play" only exists
+          // to get FROM here TO `INTRO_ALIGN_T`, so landing back at the
+          // literal start correctly requires the intro cinematic to be
+          // played again before chapter mode can resume, hence resetting
+          // `introCinematicPlayed` here too.
+          currentChapter = 'intro'
+          chapterModeActive = false
+          introCinematicPlayed = false
+          syncScrollSuspension()
+        }
       })
     }
 
@@ -744,25 +835,16 @@ export function ScrollSpacer() {
       cancelActiveDriversAndLocks()
       isDirectJumpActive = true
 
-      const scrollRange = trigger.end - trigger.start
-      const targetScroll = trigger.start + scrollRange * INTRO_ALIGN_T
-
-      smoothScroll.lenis.scrollTo(targetScroll, {
-        immediate: prefersReducedMotion,
-        duration: INTRO_TO_FILM_DURATION_SECONDS,
-        easing: easeSectionJump,
-        force: true,
-        onComplete: () => {
-          if (token !== jumpToken) return // superseded by a newer jump
-          isDirectJumpActive = false
-          lastRawProgress = INTRO_ALIGN_T
-          scrollProgress.value = INTRO_ALIGN_T
-          // Deliberately NOT the 'intro' exit path navigateToSection's own
-          // onComplete uses (that resets introCinematicPlayed/chapterModeActive
-          // for landing at the literal t: 0 start) — this pause is mid-chapter-mode,
-          // identical in every way to the pause the forward orbit itself produces.
-          currentChapter = 'intro'
-        },
+      // Same pacing as the forward descent it retraces — see `planJump`.
+      runJump(trigger, token, INTRO_ALIGN_T, () => {
+        isDirectJumpActive = false
+        lastRawProgress = INTRO_ALIGN_T
+        scrollProgress.value = INTRO_ALIGN_T
+        // Deliberately NOT the 'intro' exit path navigateToSection's own
+        // onComplete uses (that resets introCinematicPlayed/chapterModeActive
+        // for landing at the literal t: 0 start) — this pause is mid-chapter-mode,
+        // identical in every way to the pause the forward orbit itself produces.
+        currentChapter = 'intro'
       })
     }
 

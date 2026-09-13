@@ -26,7 +26,9 @@ export const MODEL_URLS = {
   // The camera model has no support of its own; the stand is the tripod
   // extracted out of the previous studio asset.
   cameraStand: assetUrl('/models/camera/camera-stand.glb'),
-  monitor: assetUrl('/models/monitor/crt-monitor.glb'),
+  // The Digital computer: a static computer with its keyboard attached — see
+  // `Monitor.jsx` for what was cut and baked offline.
+  monitor: assetUrl('/models/monitor/spark-computer.glb'),
   pedestal: assetUrl('/models/pedestal/digital-stone.glb'),
   billboard: assetUrl('/models/billboard/campaign-billboard.glb'),
   vehicles: assetUrl('/models/vehicles/vehicles.glb'),
