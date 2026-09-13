@@ -1,6 +1,8 @@
 import * as THREE from 'three'
 import { useMemo } from 'react'
 import VolumetricLightingRig from './lighting/VolumetricLightingRig.jsx'
+import HeroUplight from './lighting/HeroUplight.jsx'
+import { buildHeroColumnsGeometry } from './architecture/heroColumns.js'
 import SceneEnvironment from './lighting/SceneEnvironment.jsx'
 import SunsetSky from './lighting/SunsetSky.jsx'
 import { buildColumnGeometry } from './architecture/columnGeometry.js'
@@ -274,6 +276,9 @@ export default function Environment() {
   const roofRimGeometry = useMemo(() => buildRoofOpeningRimGeometry(), [])
   const inscriptionGeometry = useMemo(() => buildWallInscriptionGeometry(), [])
   const inscriptionMaterial = useMemo(() => createWallInscriptionMaterial(), [])
+  // The engaged half-columns framing the wordmark — see `heroColumns.js`. One
+  // merged geometry on a ring column material: one draw call.
+  const heroColumnsGeometry = useMemo(() => buildHeroColumnsGeometry(), [])
   // The contact occlusion around the lettering — see
   // `createWallInscriptionContactMaterial`. Shares the lettering's relief
   // texture, so it adds a draw call and nothing else.
@@ -409,6 +414,7 @@ export default function Environment() {
     <group>
       <SceneEnvironment />
       <VolumetricLightingRig />
+      <HeroUplight />
 
       {/* What the court opens onto — see `SunsetSky`. Without it the opening
           is a hole onto the clear colour, and the source of the room's light
@@ -456,6 +462,9 @@ export default function Environment() {
         off for the same reason as the contact debris: it is 12mm proud of a
         surface, so its own shadow would be nothing but noise in the map.
       */}
+      {/* Engaged half-columns framing the wordmark, from the ring's own
+          generator and material, so they share its stone and its wear. */}
+      <mesh geometry={heroColumnsGeometry} material={columnMaterials[1]} castShadow receiveShadow />
       <mesh geometry={inscriptionContactGeometry} material={inscriptionContactMaterial} />
       <mesh geometry={inscriptionGeometry} material={inscriptionMaterial} receiveShadow />
 

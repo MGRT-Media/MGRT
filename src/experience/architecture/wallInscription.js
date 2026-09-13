@@ -106,34 +106,44 @@ export const WALL_INSCRIPTION = {
  * shell's apex — it has to be marched along the plan curve exactly the way the
  * geometry marches it.
  */
-function solveInscriptionPlacement(spec = WALL_INSCRIPTION) {
-  const theta = (() => {
-    // Same arc march as the geometry, for the band's centre only.
-    const step = spec.offsetAlongWall < 0 ? -0.0004 : 0.0004
-    let t = spec.centerTheta
-    let previous = planPoint(t)
-    let arc = 0
-    while (Math.abs(arc) < Math.abs(spec.offsetAlongWall)) {
-      t += step
-      const p = planPoint(t)
-      arc += Math.sign(step) * Math.hypot(p.x - previous.x, p.z - previous.z)
-      previous = p
-    }
-    return t
-  })()
+/**
+ * A point ON the curved wall, `arcOffset` metres along it from `centerTheta`,
+ * at height `y`, backed off the surface by `standoff` — plus the inward normal
+ * there.
+ *
+ * Marched along the plan curve rather than stepped in theta, because arc
+ * length is what has to be even: the superellipse has no closed-form arc
+ * length, and equal theta steps are unequal distances wherever the curve turns.
+ *
+ * Exported so architecture placed relative to the wordmark (the engaged hero
+ * columns) lands on exactly the same surface the inscription does, by the same
+ * arithmetic, rather than on a second approximation of it.
+ */
+export function wallPointAtArc(centerTheta, arcOffset, y, standoff = 0) {
+  const step = arcOffset < 0 ? -0.0004 : 0.0004
+  let theta = centerTheta
+  let previous = planPoint(theta)
+  let arc = 0
+  while (Math.abs(arc) < Math.abs(arcOffset)) {
+    theta += step
+    const p = planPoint(theta)
+    arc += Math.sign(step) * Math.hypot(p.x - previous.x, p.z - previous.z)
+    previous = p
+  }
 
   const p = planPoint(theta)
   const radius = Math.hypot(p.x, p.z) || 1
-  const deviation = wallDeviation(theta, spec.centerY) - spec.standoff
-  const center = [
-    p.x + (p.x / radius) * deviation,
-    spec.centerY,
-    p.z + (p.z / radius) * deviation,
-  ]
+  const deviation = wallDeviation(theta, y) - standoff
+  const center = [p.x + (p.x / radius) * deviation, y, p.z + (p.z / radius) * deviation]
   // Inward normal: the wall faces the room, so it points back along its own
   // plan radius toward the centre line.
   const normal = [-p.x / radius, 0, -p.z / radius]
   return { center, normal }
+}
+
+function solveInscriptionPlacement(spec = WALL_INSCRIPTION) {
+  // Same arc march as the geometry, for the band's centre only.
+  return wallPointAtArc(spec.centerTheta, spec.offsetAlongWall, spec.centerY, spec.standoff)
 }
 
 const placement = solveInscriptionPlacement()
