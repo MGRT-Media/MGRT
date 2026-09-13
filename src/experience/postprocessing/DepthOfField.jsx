@@ -103,7 +103,11 @@ const RING_FOCUS_INNER_RADIUS = PILLAR_RING_RADIUS - 0.5
 // rather than being welded to it.
 const FOCUS_DAMP_LAMBDA = 1.9
 
-const FILM_SUBJECT = new THREE.Vector3().fromArray(CAMERA_ANCHOR.lensFrontFieldPosition)
+// The camera's real front face, not `lensFrontFieldPosition`: that anchor is a
+// path input with no geometry at it, 0.35 in front of the face, so focusing on
+// it held the Film subject out of focus at every close distance — worst exactly
+// where the stop is.
+const FILM_SUBJECT = new THREE.Vector3().fromArray(CAMERA_ANCHOR.frontFacePosition)
 const DIGITAL_SUBJECT = new THREE.Vector3().fromArray(MONITOR_ANCHOR.screenWorldPosition)
 
 /**

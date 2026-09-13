@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js'
+import { assetUrl } from '../assets/assetUrl.js'
 import { sunDirection } from './volumetricLighting.js'
 
 /**
@@ -38,7 +39,7 @@ import { sunDirection } from './volumetricLighting.js'
  * prefiltered through PMREM into low-resolution mips before any material
  * samples it.
  */
-export const SKY_HDRI_URL = '/environment/evening-road-puresky-1k.hdr'
+export const SKY_HDRI_URL = assetUrl('/environment/evening-road-puresky-1k.hdr')
 
 /**
  * Where this particular HDRI's sun sits, measured from the file rather than
@@ -80,6 +81,19 @@ export const SKY_ROTATION_Y = (() => {
 })()
 
 let pending = null
+let resolved = null
+
+/**
+ * The synchronous counterpart to `loadSkyTexture`: the decoded texture if it is
+ * already resident, otherwise `null`.
+ *
+ * `SceneEnvironment` uses this to decide, at mount, whether it needs to build a
+ * stand-in environment at all. Deliberately a plain getter and not a second
+ * load — it can only ever report on the one shared promise below.
+ */
+export function resolvedSkyTexture() {
+  return resolved
+}
 
 /** The shared texture. Resolves to the same instance for every caller. */
 export function loadSkyTexture() {
@@ -88,6 +102,7 @@ export function loadSkyTexture() {
       // Required by `PMREMGenerator.fromEquirectangular`, and correct for the
       // dome too — RGBELoader leaves the mapping as plain UV.
       texture.mapping = THREE.EquirectangularReflectionMapping
+      resolved = texture
       return texture
     })
   }

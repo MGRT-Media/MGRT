@@ -2,7 +2,7 @@ import { useLoader } from '@react-three/fiber'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js'
 import { MODEL_URLS } from '../models/modelAssets.js'
-import { scannedStoneUrls } from '../materials/stoneWallMaterial.js'
+import { preloadScannedStone } from '../materials/scannedStone.js'
 import { BRASS_URLS } from '../architecture/wallInscription.js'
 import { loadSkyTexture } from '../lighting/skyEnvironment.js'
 
@@ -42,12 +42,10 @@ const CRITICAL_MODEL_URLS = [
 ]
 
 /** Every surface the camera can see at progress 0 is one of these three sets. */
-const CRITICAL_TEXTURE_URLS = [
-  ...scannedStoneUrls('walls'),
-  ...scannedStoneUrls('floors'),
-  ...scannedStoneUrls('columns'),
-  ...BRASS_URLS,
-]
+const CRITICAL_STONE_SETS = ['walls', 'floors', 'columns']
+
+/** The MGRT inlay's own two maps, which have no set structure. */
+const CRITICAL_TEXTURE_URLS = [...BRASS_URLS]
 
 /**
  * A ceiling on how long the void may last.
@@ -119,6 +117,15 @@ export function preloadCriticalAssets() {
     // this is the real load rather than a duplicate of it: by the time they
     // ask, the texture is decoded and only the PMREM pass remains.
     loadSkyTexture().catch(() => null),
+    /*
+     * Stone goes through `preloadScannedStone` rather than `warm`, and the
+     * difference matters: `warm` only puts BYTES in the HTTP cache, leaving the
+     * decode to whichever material asked first. This decodes each file once,
+     * here, and keeps the `Texture`, which is what lets `createStoneWallMaterial`
+     * build straight from the scan instead of generating a stand-in it would
+     * only throw away. Same requests, same count — just finished properly.
+     */
+    ...CRITICAL_STONE_SETS.map(preloadScannedStone),
     ...CRITICAL_TEXTURE_URLS.map(warm),
   ]).then(() => {
     settled = true

@@ -3,6 +3,7 @@ import { useFrame, useLoader } from '@react-three/fiber'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js'
+import { assetUrl } from '../assets/assetUrl.js'
 import { scrollProgress } from '../timeline/ScrollTimelineProvider.jsx'
 import { IGNITE_START, IGNITE_END } from '../lighting/VolumetricLightingRig.jsx'
 
@@ -21,15 +22,15 @@ import { IGNITE_START, IGNITE_END } from '../lighting/VolumetricLightingRig.jsx'
  * FBX and a second loader.
  */
 export const MODEL_URLS = {
-  camera: '/models/camera/movie-camera.glb',
+  camera: assetUrl('/models/camera/movie-camera.glb'),
   // The camera model has no support of its own; the stand is the tripod
   // extracted out of the previous studio asset.
-  cameraStand: '/models/camera/camera-stand.glb',
-  monitor: '/models/monitor/crt-monitor.glb',
-  pedestal: '/models/pedestal/digital-stone.glb',
-  billboard: '/models/billboard/campaign-billboard.glb',
-  vehicles: '/models/vehicles/vehicles.glb',
-  streetLights: '/models/streetlights/street-lights.glb',
+  cameraStand: assetUrl('/models/camera/camera-stand.glb'),
+  monitor: assetUrl('/models/monitor/crt-monitor.glb'),
+  pedestal: assetUrl('/models/pedestal/digital-stone.glb'),
+  billboard: assetUrl('/models/billboard/campaign-billboard.glb'),
+  vehicles: assetUrl('/models/vehicles/vehicles.glb'),
+  streetLights: assetUrl('/models/streetlights/street-lights.glb'),
 }
 
 /**

@@ -312,11 +312,56 @@ const ESTABLISH_POSITION = new THREE.Vector3(
 const LENS_DIVE_FILL_FRACTION = 0.99
 const LENS_DIVE_HALF_FOV_RADIANS = THREE.MathUtils.degToRad(45 / 2) * LENS_DIVE_FILL_FRACTION
 const LENS_DIVE_DISTANCE = CAMERA_ANCHOR.lensRadius / Math.tan(LENS_DIVE_HALF_FOV_RADIANS)
-const LENS_DIVE_POSITION = new THREE.Vector3(
+/**
+ * The ORIGINAL Film stop — no longer a keyframe, kept because it defines the
+ * final leg's direction. It was built for a procedural lens that stood at
+ * `lensFrontFieldPosition`; the real camera's face is 0.35 behind that point,
+ * so this stop left the visitor 0.52 from the object they had walked to.
+ */
+const ORIGINAL_LENS_DIVE_POSITION = new THREE.Vector3(
   lensX + fwdX * LENS_DIVE_DISTANCE,
   lensY,
   lensZ + fwdZ * LENS_DIVE_DISTANCE,
 )
+
+/**
+ * Snap 2's real stop: the same final leg, carried further forward.
+ *
+ * Nothing about the route changes. The approach -> Film leg is already a
+ * straight line — on the lens axis horizontally, descending gently toward the
+ * lens — and this keyframe simply sits further along that exact line, so the
+ * move stays one straight dolly with no lateral step, no new curve and no new
+ * vertical component. Extended, that line arrives within a few millimetres of
+ * the camera face's own centre height, which is why it frames the lens rather
+ * than the top of the housing.
+ *
+ * `FILM_STOP_FACE_DISTANCE` is measured from the camera's actual front face.
+ * Chosen by eye against the rendered frame: at 0.15 the face fills roughly 85%
+ * of the viewport's height, so the image dominates while the housing, the reel
+ * above and the tripod rails still read around the edges. Closer loses the
+ * object; further and the stop reads as standing in front of a camera rather
+ * than arriving at it.
+ */
+const FILM_STOP_FACE_DISTANCE = 0.15
+const FILM_STOP_FACE = new THREE.Vector3().fromArray(CAMERA_ANCHOR.frontFacePosition)
+const LENS_FORWARD = new THREE.Vector3().fromArray(CAMERA_ANCHOR.lensForward)
+const FINAL_LEG_DIRECTION = new THREE.Vector3().subVectors(ORIGINAL_LENS_DIVE_POSITION, APPROACH_POSITION).normalize()
+const LENS_DIVE_POSITION = (() => {
+  const approachDepth = new THREE.Vector3().subVectors(APPROACH_POSITION, FILM_STOP_FACE).dot(LENS_FORWARD)
+  const along = (FILM_STOP_FACE_DISTANCE - approachDepth) / FINAL_LEG_DIRECTION.dot(LENS_FORWARD)
+  return APPROACH_POSITION.clone().addScaledVector(FINAL_LEG_DIRECTION, along)
+})()
+
+/**
+ * The Film stop's own look target: straight ahead, level, down the lens axis.
+ *
+ * The corridor looks at `LENS_LOOKAT`, and the new stop is now PAST that point
+ * — keeping it would turn the camera round. This target gives the stop exactly
+ * the orientation the original stop had (level, facing the lens), and sits a
+ * constant 1.0 ahead of the camera, which makes the look direction interpolate
+ * linearly across the final leg instead of the old stop's late swing.
+ */
+const LENS_DIVE_LOOKAT = LENS_DIVE_POSITION.clone().addScaledVector(LENS_FORWARD, -1)
 
 // Snap 3 — Digital Monitor (Interface): framed close enough that the web
 // interface fills most of the frame edge-to-edge, per explicit request —
@@ -977,7 +1022,7 @@ const KEYFRAMES = [
   { t: 0.135, position: GATE_POSITION, lookAt: LENS_LOOKAT }, // Through the gate — radius pulls in from the orbit to the ring itself, same axis, same look direction
   { t: ESTABLISH_T, position: ESTABLISH_POSITION, lookAt: LENS_LOOKAT }, // Snap 1 — Studio Scene, a waypoint on the same straight corridor
   { t: APPROACH_T, position: APPROACH_POSITION, lookAt: LENS_LOOKAT }, // Approach
-  { t: FILM_FOCUS_T, position: LENS_DIVE_POSITION, lookAt: LENS_LOOKAT }, // Snap 2 — Cinema Lens
+  { t: FILM_FOCUS_T, position: LENS_DIVE_POSITION, lookAt: LENS_DIVE_LOOKAT }, // Snap 2 — Cinema Lens
   { t: HANDOFF_PULLBACK_T, position: HANDOFF_PULLBACK_POSITION, lookAt: HANDOFF_PULLBACK_LOOKAT }, // Film -> Digital hand-off: quick pull-back, vertically locked to lensY
   { t: MONITOR_SNAP_T, position: MONITOR_ALIGNED_POSITION, lookAt: MONITOR_ALIGNED_LOOKAT }, // Snap 3 — Digital Monitor
   // Digital -> MGRT hero. This replaces the old Act 3 opening, which backed

@@ -13,13 +13,14 @@ import {
 import { scrollProgress } from '../timeline/ScrollTimelineProvider.jsx'
 import { MONITOR_SNAP_T, DIGITAL_IGNITE_RISE } from '../timeline/filmActBeats.js'
 import { BEAM_CENTER, YAW_DEGREES, MONITOR_PLINTH } from './plinthAnchor.js'
+import { assetUrl } from '../assets/assetUrl.js'
 
 // Phase 2: curated Digital work, per experience-design.md §8 ("approximately
 // 2-4 selected Digital projects"). One clip for now — extending to a
 // scroll-mapped sequence of several is future work, not part of this swap.
 // Exported so FullscreenButton.jsx's modal CTA (§4BN) can play the same
 // file directly, instead of hardcoding this path a second time.
-export const DIGITAL_MEDIA_SRC = '/media/digital/digital-01-website.mp4'
+export const DIGITAL_MEDIA_SRC = assetUrl('/media/digital/digital-01-website.mp4')
 
 // How far before the true end of the clip playback seeks back to the
 // start — see the seamless-loop comment in the useFrame below for why.

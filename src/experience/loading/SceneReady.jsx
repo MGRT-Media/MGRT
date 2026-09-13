@@ -5,15 +5,28 @@ import { whenAssetUpgradesSettled } from './assetReadiness.js'
 /**
  * How many frames to render before the canvas is shown.
  *
- * Not a guess at how long something takes — the real work is already done by
- * the time this counts. It exists because `gl.compile` links programs but the
- * first frames still touch things it cannot: the shadow map is rendered on
- * demand, the post chain (GTAO, bokeh, output) allocates and fills its own
- * targets, and `ScrollCameraRig` writes the camera's real transform on its
- * first `useFrame`. Three frames is enough for all of it and is a few tens of
- * milliseconds at the end of a load measured in seconds.
+ * One, measured rather than assumed. Three was the original guess, on the
+ * theory that `gl.compile` links programs but the first frames still touch
+ * things it cannot: the shadow map, the post chain's own render targets, and
+ * `ScrollCameraRig` writing the camera's real transform on its first
+ * `useFrame`.
+ *
+ * That theory missed something. The canvas is hidden with `opacity: 0`, not
+ * unmounted — so R3F's loop has been rendering this scene on every frame since
+ * it mounted, roughly a second before the gate ever gets here. Every one of
+ * those allocations has therefore already happened. Instrumented over eight
+ * consecutive warm-up frames, `gl.info` does not move at all: textures 47,
+ * geometries 52, programs 40, draw calls and triangles identical, and the
+ * camera already at its correct progress-0 transform on frame 1.
+ *
+ * What the one remaining frame is for: `whenAssetUpgradesSettled` resolves the
+ * instant the scanned maps are ASSIGNED, and an assigned texture uploads on the
+ * next render, not on assignment. One frame guarantees that upload has
+ * happened. It also guarantees one full composer pass after `gl.compile` —
+ * measured to link three further programs — so zero frames would not be safe.
+ * Frames two and three were buying nothing.
  */
-const WARMUP_FRAMES = 3
+const WARMUP_FRAMES = 1
 
 /**
  * Decides when the room is actually ready to be looked at.

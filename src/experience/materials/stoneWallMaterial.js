@@ -1,5 +1,13 @@
 import * as THREE from 'three'
+import { assetUrl } from '../assets/assetUrl.js'
 import { trackAssetUpgrade } from '../loading/assetReadiness.js'
+import {
+  cloneScannedMaps,
+  SCANNED_BASE,
+  SCANNED_SLOTS,
+  SCANNED_TILE_SIZE,
+  scannedStoneReady,
+} from './scannedStone.js'
 
 /**
  * Procedurally generated old-stone PBR material — albedo, normal, and
@@ -250,26 +258,6 @@ function buildNormalTexture(height) {
  *
  * See `public/textures/limestone/README.md` for what to install.
  */
-const SCANNED_BASE = '/textures'
-/**
- * Three files per set, not four, and WebP rather than JPEG.
- *
- * `MeshStandardMaterial` samples `aoMap` from the red channel and
- * `roughnessMap` from the green one, so a single ORM texture can fill both
- * slots. Packing them halves the requests and the GPU memory for that pair —
- * an uploaded texture costs the same VRAM whatever its file format, so
- * dropping a whole texture is the only thing that actually reduces it.
- *
- * WebP is purely a download saving (roughly half of JPEG at matching quality).
- * Normals get a higher quality setting than colour: they encode direction, so
- * compression error shows up as wrong lighting rather than as softness.
- */
-const SCANNED_SLOTS = [
-  { slot: 'map', file: 'albedo.webp', colorSpace: THREE.SRGBColorSpace },
-  { slot: 'normalMap', file: 'normal.webp' },
-  { slot: 'ormMap', file: 'orm.webp' },
-]
-
 function loadOptionalTexture(url) {
   return new Promise((resolve) => {
     new THREE.TextureLoader().load(url, resolve, undefined, () => resolve(null))
@@ -296,7 +284,7 @@ function isScannedStoneInstalled(set) {
     // back out of the HTTP cache when TextureLoader asks for the same URL.
     scannedSetAvailable.set(
       set,
-      fetch(`${SCANNED_BASE}/${set}/albedo.webp`)
+      fetch(assetUrl(`${SCANNED_BASE}/${set}/albedo.webp`))
         .then((response) => response.ok && (response.headers.get('content-type') || '').startsWith('image/'))
         .catch(() => false),
     )
@@ -304,24 +292,12 @@ function isScannedStoneInstalled(set) {
   return scannedSetAvailable.get(set)
 }
 
-/**
- * World size of one scanned tile, in units.
- *
- * Deliberately NOT `TILE_SIZE`. The generated texture is a single dressed
- * block with mortar around its border, so tiling it once per 1.4 units is
- * exactly what draws the coursing. A scanned set is a photograph of a large
- * slab of rock, and repeating that every 1.4 units turns the room into
- * wallpaper — the repeat becomes the most obvious thing in the frame. A
- * scanned tile has to stand for several metres of stone.
- */
-const SCANNED_TILE_SIZE = 4.2
-
 async function upgradeToScannedStone(material, set, repeat, normalScale) {
-  const scale = TILE_SIZE / SCANNED_TILE_SIZE
+  const [repeatU, repeatV] = scannedRepeat(repeat)
   if (!(await isScannedStoneInstalled(set))) return
 
   const textures = await Promise.all(
-    SCANNED_SLOTS.map((slot) => loadOptionalTexture(`${SCANNED_BASE}/${set}/${slot.file}`)),
+    SCANNED_SLOTS.map((slot) => loadOptionalTexture(assetUrl(`${SCANNED_BASE}/${set}/${slot.file}`))),
   )
 
   // Albedo and normal are the two that carry the realism. Without both, the
@@ -330,23 +306,14 @@ async function upgradeToScannedStone(material, set, repeat, normalScale) {
 
   textures.forEach((texture, index) => {
     if (!texture) return
-    const { slot: rawSlot, colorSpace } = SCANNED_SLOTS[index]
+    const { key: rawSlot, colorSpace } = SCANNED_SLOTS[index]
     // The ORM texture is assigned to two material slots; everything else maps
     // one-to-one.
     const slots = rawSlot === 'ormMap' ? ['aoMap', 'roughnessMap'] : [rawSlot]
     const slot = slots[0]
     texture.wrapS = THREE.RepeatWrapping
     texture.wrapT = THREE.RepeatWrapping
-    // A column's U axis wraps the shaft, so its repeat must stay a whole
-    // number or the texture jumps at the seam — which also means its V cannot
-    // be rescaled independently without stretching the tile. Columns
-    // therefore pass a repeat already in square-aspect terms and are used
-    // verbatim; flat surfaces get the scanned world scale applied.
-    const wrapsShaft = repeat[0] === 1
-    texture.repeat.set(
-      wrapsShaft ? 1 : repeat[0] * scale,
-      wrapsShaft ? repeat[1] : repeat[1] * scale,
-    )
+    texture.repeat.set(repeatU, repeatV)
     // Colour data is sRGB; normal, roughness and occlusion are measurements
     // and must stay linear or the lighting maths is fed gamma-encoded values.
     texture.colorSpace = colorSpace ?? THREE.NoColorSpace
@@ -389,8 +356,81 @@ async function upgradeToScannedStone(material, set, repeat, normalScale) {
   material.needsUpdate = true
 }
 
+/**
+ * How a surface's own repeat maps onto the scanned tile.
+ *
+ * A column's U axis wraps the shaft, so its repeat must stay a whole number or
+ * the texture jumps at the seam — which also means its V cannot be rescaled
+ * independently without stretching the tile. Columns therefore pass a repeat
+ * already in square-aspect terms and are used verbatim; flat surfaces get the
+ * scanned world scale applied.
+ */
+function scannedRepeat(repeat) {
+  const scale = TILE_SIZE / SCANNED_TILE_SIZE
+  const wrapsShaft = repeat[0] === 1
+  return wrapsShaft ? [1, repeat[1]] : [repeat[0] * scale, repeat[1] * scale]
+}
+
+/**
+ * A material built straight from the scan, with no generated stand-in at any
+ * point.
+ *
+ * This is the path taken whenever the loading gate's preflight has already put
+ * the set in memory, which is every normal load. The generated maps it skips
+ * were only ever visible in the window between the scene mounting and the
+ * scans arriving — a window the gate now closes by holding the whole canvas
+ * out of sight until both have happened. Building them was measured at ~246ms
+ * of the startup budget, spent entirely on textures that were then thrown
+ * away.
+ *
+ * The tint is left exactly as the caller set it, the normal scale is clamped
+ * the same way, and `aoMapIntensity` carries the same 0.7 — this produces the
+ * identical material the upgrade path produced, it simply never builds the
+ * other one first.
+ */
+function createScannedStoneMaterial(tintColor, repeat, normalScale, set) {
+  const [repeatU, repeatV] = scannedRepeat(repeat)
+  const maps = cloneScannedMaps(set, repeatU, repeatV)
+
+  const material = new THREE.MeshStandardMaterial({
+    map: maps.map,
+    normalMap: maps.normalMap,
+    // Scanned normals are calibrated; the generated ones needed exaggerating.
+    normalScale: new THREE.Vector2(Math.min(normalScale[0], 1), Math.min(normalScale[1], 1)),
+    roughnessMap: maps.ormMap,
+    aoMap: maps.ormMap,
+    color: tintColor,
+    metalness: 0,
+  })
+  // See `upgradeToScannedStone` for why this is 0.7 rather than 1.
+  material.aoMapIntensity = 0.7
+  return material
+}
+
 export function createStoneWallMaterial(tintColor, repeat = [6, 3], normalScale = [1.4, 1.4], options = {}) {
   const { bond = 'ashlar', erosion = 0, stain = 0, scanned = false } = options
+
+  /*
+   * Direct path: the scan is already decoded and resident, so build from it
+   * and skip the generated maps entirely.
+   *
+   * `scannedStoneReady` is the preflight's own signal — not a second
+   * availability test. It is populated by `preloadScannedStone`, which
+   * `criticalAssets.js` runs before the scene is allowed to mount, so there is
+   * no extra request, no extra decode and no new waterfall here: this is a
+   * synchronous map lookup.
+   *
+   * Everything below this line is the resilience path, and is still reached
+   * whenever the scan is genuinely unavailable — a missing or corrupt file, a
+   * failed decode, or the preflight's own 20s timeout firing before the set
+   * arrived. In those cases the room is built procedurally and upgraded in
+   * place exactly as before, so a missing texture can never leave the scene
+   * broken.
+   */
+  if (scanned && scannedStoneReady(scanned)) {
+    return createScannedStoneMaterial(tintColor, repeat, normalScale, scanned)
+  }
+
   const height = buildHeightField(bond, erosion)
   const map = buildAlbedoTexture(height, stain)
   const normalMap = buildNormalTexture(height)

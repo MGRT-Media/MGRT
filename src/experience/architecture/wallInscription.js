@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { assetUrl } from '../assets/assetUrl.js'
 import { trackAssetUpgrade } from '../loading/assetReadiness.js'
 import { planPoint, wallDeviation } from './galleryShellGeometry.js'
 
@@ -318,7 +319,7 @@ const BRASS_OFFSET = [0.08, 0.08]
 const BRASS_REPEAT = [0.42, 0.38]
 
 /** The two files the inlay is made of — see `criticalAssets.js`. */
-export const BRASS_URLS = [`${BRASS_BASE}/albedo.jpg`, `${BRASS_BASE}/roughness.jpg`]
+export const BRASS_URLS = [assetUrl(`${BRASS_BASE}/albedo.jpg`), assetUrl(`${BRASS_BASE}/roughness.jpg`)]
 
 /**
  * Fire-and-forget, like the scanned stone: nothing suspends on it. Each load
@@ -330,7 +331,7 @@ function loadBrassMaps(material) {
   const apply = (slot, file, colorSpace) => {
     trackAssetUpgrade(new Promise((resolve) => {
     loader.load(
-      `${BRASS_BASE}/${file}`,
+      assetUrl(`${BRASS_BASE}/${file}`),
       (texture) => {
         // Clamped, not repeating: this is a crop, and wrapping it would fold
         // the far side of the pan back into the letters.
@@ -391,43 +392,79 @@ function drawWordmark(ctx, width, height) {
   }
 }
 
-/** Separable box blur, two passes — cheap, and close enough to a chamfer. */
-function blur(source, width, height, radius) {
-  let input = source
-  let output = new Float32Array(source.length)
-  const scratch = new Float32Array(source.length)
+/**
+ * One axis of a separable box blur, as a sliding window.
+ *
+ * Each output texel is the mean of the window CLAMPED to the image, so the
+ * divisor shrinks toward the edges rather than the window being padded. That
+ * clamping is deliberate — it is what stops the bevel darkening along the
+ * border of the map — and is reproduced here exactly: the window is always
+ * [max(0, i - radius), min(last, i + radius)] and the divisor is always that
+ * window's true length.
+ *
+ * The sum is carried rather than recomputed. The previous implementation
+ * re-read all 2*radius+1 taps for every texel, which at 2048x666 and radius 7
+ * is ~82 million reads per call; here each step adds the one texel entering
+ * the window and subtracts the one leaving it, so the work per texel is
+ * constant regardless of radius. Measured bit-identical against the previous
+ * implementation on the real wordmark — see this module's own verification
+ * note in the commit that introduced it.
+ *
+ * `stride` selects the axis: 1 walks a row, `width` walks a column.
+ */
+function blurAxis(src, dst, width, height, radius, stride) {
+  const lineCount = stride === 1 ? height : width
+  const lineLength = stride === 1 ? width : height
+  const lineStep = stride === 1 ? width : 1
+  const last = lineLength - 1
 
-  for (let pass = 0; pass < 2; pass += 1) {
-    for (let y = 0; y < height; y += 1) {
-      for (let x = 0; x < width; x += 1) {
-        let sum = 0
-        let n = 0
-        for (let k = -radius; k <= radius; k += 1) {
-          const sx = x + k
-          if (sx < 0 || sx >= width) continue
-          sum += input[y * width + sx]
-          n += 1
-        }
-        output[y * width + x] = sum / n
+  for (let line = 0; line < lineCount; line += 1) {
+    const base = line * lineStep
+    let lo = 0
+    let hi = Math.min(radius, last)
+    let sum = 0
+    for (let i = lo; i <= hi; i += 1) sum += src[base + i * stride]
+
+    for (let i = 0; i < lineLength; i += 1) {
+      // Grow the trailing edge, then retire the leading one. Order matters
+      // only for readability — the window is the same either way.
+      const wantHi = i + radius < last ? i + radius : last
+      while (hi < wantHi) {
+        hi += 1
+        sum += src[base + hi * stride]
       }
-    }
-    for (let x = 0; x < width; x += 1) {
-      for (let y = 0; y < height; y += 1) {
-        let sum = 0
-        let n = 0
-        for (let k = -radius; k <= radius; k += 1) {
-          const sy = y + k
-          if (sy < 0 || sy >= height) continue
-          sum += output[sy * width + x]
-          n += 1
-        }
-        scratch[y * width + x] = sum / n
+      const wantLo = i - radius > 0 ? i - radius : 0
+      while (lo < wantLo) {
+        sum -= src[base + lo * stride]
+        lo += 1
       }
+      dst[base + i * stride] = sum / (hi - lo + 1)
     }
-    input = scratch.slice()
   }
-  return input
 }
+
+/**
+ * Separable box blur, two passes — cheap, and close enough to a chamfer.
+ *
+ * Two buffers, ping-ponged, and no copies: the previous version allocated an
+ * output and a scratch buffer and then `slice()`d the scratch once per pass,
+ * which on this map was five 5.5MB allocations per call instead of two. Both
+ * are local to the call, so nothing here can carry state between renders.
+ */
+function blur(source, width, height, radius) {
+  const a = new Float32Array(source.length)
+  const b = new Float32Array(source.length)
+
+  // Pass 1: source -> a (horizontal) -> b (vertical)
+  blurAxis(source, a, width, height, radius, 1)
+  blurAxis(a, b, width, height, radius, width)
+  // Pass 2: b -> a (horizontal) -> b (vertical)
+  blurAxis(b, a, width, height, radius, 1)
+  blurAxis(a, b, width, height, radius, width)
+
+  return b
+}
+
 
 /**
  * Renders the wordmark once and derives the two maps from it: the cutout

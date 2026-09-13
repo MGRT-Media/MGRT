@@ -34,10 +34,16 @@ body {
  * cross-fades is the room appearing inside the void rather than a panel
  * appearing over it. That is why there is no loading screen to dismiss: the
  * void was never a placeholder for the opening state, it IS the opening state.
+ *
+ * 500ms -> 260ms. The longer fade was doing the work of a title card, but this
+ * is a gate opening rather than a transition anyone is meant to read: the
+ * cinematic beats that follow are the sequence, and time spent here is time the
+ * visitor spends waiting. Short enough to feel immediate, long enough to still
+ * be a fade rather than a cut.
  */
 .app-shell {
   opacity: 0;
-  transition: opacity 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  transition: opacity 0.26s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   position: fixed;
   top: 0;
   left: 0;
