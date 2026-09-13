@@ -13,7 +13,12 @@ import {
   buildRoofOpeningRimGeometry,
   GALLERY_SHELL,
 } from './architecture/galleryShellGeometry.js'
-import { buildWallInscriptionGeometry, createWallInscriptionMaterial } from './architecture/wallInscription.js'
+import {
+  buildWallInscriptionGeometry,
+  createWallInscriptionContactMaterial,
+  createWallInscriptionMaterial,
+  INSCRIPTION_CONTACT_SPEC,
+} from './architecture/wallInscription.js'
 
 // Widened/deepened (14x32 -> 20x38) per explicit request: the previous
 // dimensions left almost no room for a genuine wide establishing orbit
@@ -269,6 +274,14 @@ export default function Environment() {
   const roofRimGeometry = useMemo(() => buildRoofOpeningRimGeometry(), [])
   const inscriptionGeometry = useMemo(() => buildWallInscriptionGeometry(), [])
   const inscriptionMaterial = useMemo(() => createWallInscriptionMaterial(), [])
+  // The contact occlusion around the lettering — see
+  // `createWallInscriptionContactMaterial`. Shares the lettering's relief
+  // texture, so it adds a draw call and nothing else.
+  const inscriptionContactGeometry = useMemo(() => buildWallInscriptionGeometry(INSCRIPTION_CONTACT_SPEC), [])
+  const inscriptionContactMaterial = useMemo(
+    () => createWallInscriptionContactMaterial(inscriptionMaterial),
+    [inscriptionMaterial],
+  )
 
   // One material for the whole shell. The five per-segment materials this
   // replaces existed so each flat wall could size its own texture repeat
@@ -443,6 +456,7 @@ export default function Environment() {
         off for the same reason as the contact debris: it is 12mm proud of a
         surface, so its own shadow would be nothing but noise in the map.
       */}
+      <mesh geometry={inscriptionContactGeometry} material={inscriptionContactMaterial} />
       <mesh geometry={inscriptionGeometry} material={inscriptionMaterial} receiveShadow />
 
       {/*

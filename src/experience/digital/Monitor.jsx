@@ -14,6 +14,8 @@ import { scrollProgress } from '../timeline/ScrollTimelineProvider.jsx'
 import { MONITOR_SNAP_T, DIGITAL_IGNITE_RISE } from '../timeline/filmActBeats.js'
 import { BEAM_CENTER, YAW_DEGREES, MONITOR_PLINTH } from './plinthAnchor.js'
 import { assetUrl } from '../assets/assetUrl.js'
+import { createStoneWallMaterial } from '../materials/stoneWallMaterial.js'
+import { applyStoneMacroVariation } from '../materials/stoneMacroVariation.js'
 
 // Phase 2: curated Digital work, per experience-design.md §8 ("approximately
 // 2-4 selected Digital projects"). One clip for now — extending to a
@@ -262,8 +264,99 @@ function useStonePedestal(topAt, footprintWidth) {
     group.position.x -= scaled.center.x
     group.position.z -= scaled.center.z
     group.position.y += topAt - scaled.box.max.y
+
+    // Re-skinned in the floor's own stone — see `projectFloorStone`. The fit
+    // above is untouched: this changes what the surface is made of, not where
+    // or how large it is.
+    rock.geometry = projectFloorStone(rock.geometry, rock.matrix, group.scale.x)
+    rock.material = createFloorStoneMaterial()
+    rock.castShadow = true
+    rock.receiveShadow = true
     return group
   }, [gltf, topAt, footprintWidth])
+}
+
+/**
+ * Gives the pedestal UVs in real metres, projected per face.
+ *
+ * The asset's own UVs are an unwrap for its own texture, so the floor scan
+ * laid across them would land at whatever scale that unwrap happened to have —
+ * stretched in one place, pinched in another. Instead each triangle is
+ * projected onto the local axis its face points along: the top takes X/Z, the
+ * sides take their own horizontal axis against Y. In metres, which is the unit
+ * the floor stone's density is expressed in (see `createFloorStoneMaterial`),
+ * so a pebble on the pedestal is the same size as a pebble on the floor.
+ *
+ * Per face, which means the geometry is de-indexed first: a vertex shared
+ * between a side and the top needs a different coordinate for each. The block
+ * is cut stone — its faces measure 93% aligned with its own axes — so the
+ * places the projection switches are its real edges, which is exactly where a
+ * change of grain belongs on dressed stone.
+ *
+ * The small per-axis offsets stop adjacent faces showing the same patch of the
+ * scan mirrored across a corner.
+ *
+ * Also bakes the floor's macro weathering into vertex colours, from the same
+ * field and seed the floor uses, so both are cut from one quarry.
+ */
+const PROJECTION_OFFSETS = [
+  [0.37, 1.13],
+  [2.61, 0.52],
+  [1.84, 3.07],
+]
+
+function projectFloorStone(sourceGeometry, nodeMatrix, metresPerUnit) {
+  const geometry = (sourceGeometry.index ? sourceGeometry.toNonIndexed() : sourceGeometry.clone())
+  const position = geometry.attributes.position
+  const uv = new Float32Array(position.count * 2)
+  const a = new THREE.Vector3()
+  const b = new THREE.Vector3()
+  const c = new THREE.Vector3()
+  const edge = new THREE.Vector3()
+  const normal = new THREE.Vector3()
+  const corners = [a, b, c]
+
+  for (let v = 0; v < position.count; v += 3) {
+    corners.forEach((corner, k) => {
+      corner.fromBufferAttribute(position, v + k).applyMatrix4(nodeMatrix).multiplyScalar(metresPerUnit)
+    })
+    normal.subVectors(c, b).cross(edge.subVectors(a, b))
+    const ax = Math.abs(normal.x)
+    const ay = Math.abs(normal.y)
+    const az = Math.abs(normal.z)
+    const axis = ay >= ax && ay >= az ? 1 : ax >= az ? 0 : 2
+    const [offsetU, offsetV] = PROJECTION_OFFSETS[axis]
+
+    corners.forEach((corner, k) => {
+      const [u, w] = axis === 1 ? [corner.x, corner.z] : axis === 0 ? [corner.z, corner.y] : [corner.x, corner.y]
+      uv[(v + k) * 2] = u + offsetU
+      uv[(v + k) * 2 + 1] = w + offsetV
+    })
+  }
+  geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2))
+
+  const scratch = new THREE.Vector3()
+  applyStoneMacroVariation(geometry, {
+    seed: 31,
+    toWorld: (x, y, z) => scratch.set(x, y, z).applyMatrix4(nodeMatrix).multiplyScalar(metresPerUnit).toArray(),
+  })
+  return geometry
+}
+
+/**
+ * The floor's material, not a lookalike: same scanned set, same tint, same
+ * normal strength, same weathering, and the same PBR path — including the
+ * scene environment the floor receives, which `useTreatedMaterials` would
+ * otherwise switch off.
+ *
+ * The repeat is the floor-debris convention (`Environment.jsx`): UVs in metres,
+ * passed as `1 / TILE_SIZE`, which `createStoneWallMaterial` turns into exactly
+ * the floor plane's texel density.
+ */
+function createFloorStoneMaterial() {
+  const material = createStoneWallMaterial('#b0aca4', [1 / 1.4, 1 / 1.4], [0.8, 0.8], { scanned: 'floors' })
+  material.vertexColors = true
+  return material
 }
 
 /** Matte painted-industrial finish, matching the casing this replaces. */
@@ -271,13 +364,6 @@ function casingTreatment(material) {
   material.roughness = Math.max(material.roughness ?? 1, 0.72)
   material.metalness = Math.min(material.metalness ?? 0, 0.15)
   if (material.color) material.color.multiplyScalar(0.45)
-}
-
-/** Dry, unpolished stone, tuned to sit beside the room's own wall stone. */
-function stoneTreatment(material) {
-  material.roughness = 0.95
-  material.metalness = 0
-  if (material.color) material.color.multiplyScalar(0.5)
 }
 
 export default function Monitor() {
@@ -397,14 +483,17 @@ export default function Monitor() {
   // in the same night interior as the walls and columns beside them,
   // rather than reading as brighter objects pasted into it.
   useTreatedMaterials(model.holder, casingTreatment)
-  useTreatedMaterials(pedestal, stoneTreatment)
+  // The pedestal is deliberately NOT treated or dimmed any more. Both existed
+  // to pull a foreign asset's own texture into line with the room; it is now
+  // built from the floor's own material, and any per-prop adjustment would
+  // make it the one piece of floor stone that lights differently from the
+  // floor it stands on.
 
   // Dark-state only: at progress 0 the housing and its plinth were the
   // brightest things in the frame, reading before the architecture. These
   // release back to the treated values above as the room ignites, so the
   // monitor close-up later in the sequence is untouched.
   useDarkStateDimming(model.holder, 0.5)
-  useDarkStateDimming(pedestal, 0.45)
 
   return (
     <group position={BEAM_CENTER} rotation={[0, yawRadians, 0]}>

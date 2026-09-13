@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { assetUrl } from '../assets/assetUrl.js'
 import { trackAssetUpgrade } from '../loading/assetReadiness.js'
+import { cloneScannedMaps, scannedStoneReady } from '../materials/scannedStone.js'
 import { planPoint, wallDeviation } from './galleryShellGeometry.js'
 
 /**
@@ -267,11 +268,30 @@ const MAP_WIDTH = 2048
  * hairline that disappears at the ~24 units the opening orbit views this
  * wall from; too wide and the letters read as soft embossed plastic rather
  * than as metal set into cut stone.
+ *
+ * 7 -> 2, and 7 was the "too wide" failure. A texel here is 3.9mm, and the
+ * blur runs twice, so radius 7 sloped each edge over ~30 texels — nearly 12cm
+ * — on letters whose strokes are not much wider. Thin strokes never reached a
+ * flat face at all and read as rounded tubes, with a highlight tracing both
+ * sides of every stroke: the signature of a digital bevel-and-emboss rather
+ * than of cast metal. The same wide blur also sets the cutout (see
+ * `ALPHA_TEST`), so it was melting the serifs and corners into soft blobs.
+ *
+ * At 2 the chamfer is ~4cm — a narrow worked edge around a flat face, still
+ * several pixels wide at the hero distance — and the letterforms keep their
+ * serifs. The blur is a sliding window, so this costs nothing at startup.
  */
-const BEVEL_TEXELS = 7
+const BEVEL_TEXELS = 2
 
-/** How steeply the chamfer turns away from the wall. */
-const RELIEF_STRENGTH = 3.2
+/**
+ * How steeply the chamfer turns away from the wall.
+ *
+ * 3.2 -> 2.6, rescaled for the narrower bevel rather than retuned by eye: the
+ * gradient of the field grows as its ramp shortens, so the old strength over a
+ * third of the width would tip the edge past 40 degrees and read as a hard
+ * mirror line. This lands the chamfer near 27.
+ */
+const RELIEF_STRENGTH = 2.6
 
 /**
  * Scanned brass for the lettering.
@@ -594,21 +614,160 @@ export function createWallInscriptionMaterial(spec = WALL_INSCRIPTION) {
     .catch(() => {})
 
   const material = new THREE.MeshStandardMaterial({
-    // A tint over the scan rather than the brass itself now — held slightly
-    // under white so the lettering keeps the room's restraint at the top of
-    // the ignition ramp instead of flaring.
-    color: new THREE.Color('#d8cdb8'),
+    // Aged architectural brass, in linear reflectance. The previous tint
+    // (`#d8cdb8`) multiplied an already strongly orange scan (mean linear
+    // 0.34, 0.19, 0.08) into a saturated copper — roughly twice as chromatic
+    // as brass that has stood in a room for decades, and the main reason the
+    // lettering separated from the grey-brown stone as a colour rather than
+    // as a material. This keeps about the same luminance and moves the hue
+    // back toward bronze; the scan now only varies it (see `agedBrassShader`).
+    color: new THREE.Color().setRGB(0.2, 0.13, 0.065),
     metalness: 1,
-    // The scan drives this once it lands; until then this is the fallback, and
-    // it stays low enough that `key` reads as a defined highlight along each
-    // chamfer rather than a wash.
-    roughness: 0.28,
+    // Worn rather than polished. At 0.28 each chamfer caught a tight mirror
+    // line; old brass scatters that into a broader sheen.
+    roughness: 0.4,
     normalMap,
     normalScale: new THREE.Vector2(1, 1),
     alphaMap,
     alphaTest: ALPHA_TEST,
+    // The cutout edge is binary without this, and binary edges do not survive
+    // MSAA — the letters were the only jagged silhouettes in the room. The
+    // composer target is 4x multisampled, so coverage turns the threshold
+    // into a properly antialiased edge.
+    alphaToCoverage: true,
   })
 
+  agedBrassShader(material)
   loadBrassMaps(material)
   return material
 }
+
+/** Mean linear colour of the brass scan over the region `BRASS_OFFSET`/`BRASS_REPEAT` crop. */
+const BRASS_SCAN_MEAN = new THREE.Vector3(0.3434, 0.1856, 0.0803)
+
+/**
+ * How the lettering ages — per pixel, from data this material already holds.
+ *
+ * Three cues, all restrained, and none of them a new texture:
+ *
+ *  1. **The scan is flattened, not discarded.** Stretched across eight metres,
+ *     the brass pan's polishing rings became long dark streaks that read as
+ *     varnished wood grain. The scan is divided by its own mean and blended
+ *     back at `SCAN_CONTRAST`, so its hue drift survives and its streaks do
+ *     not.
+ *
+ *  2. **Tarnish collects at the edges.** The relief field that already drives
+ *     the cutout and the chamfer (`alphaMap`) is flat on each letter's face
+ *     and ramps down across the chamfer. Where it ramps, the metal darkens,
+ *     greens slightly and roughens — the worn, handled face stays bright while
+ *     the edge meeting the stone dulls, which is how set metal actually ages.
+ *
+ *  3. **Oxidation follows the stone.** The walls' own scanned roughness —
+ *     already decoded and on the GPU for the shell — is sampled at a metre-and-
+ *     a-bit scale as low-contrast mottling across the letters. The breakup is
+ *     therefore made of the same stone the lettering is set into, rather than
+ *     a synthetic noise.
+ *
+ * None of this adds light. Every cue only darkens or roughens, so the
+ * lettering still becomes visible exactly as far as the room's light reaches it.
+ */
+const SCAN_CONTRAST = 0.3
+const MOTTLE_TILE_METRES = 1.3
+
+function agedBrassShader(material) {
+  const mottle = scannedStoneReady('walls') ? cloneScannedMaps('walls', 1, 1).ormMap : null
+
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uScanMean = { value: BRASS_SCAN_MEAN }
+    shader.uniforms.uScanContrast = { value: SCAN_CONTRAST }
+    shader.uniforms.uMottleMap = { value: mottle }
+    shader.uniforms.uMottleRepeat = {
+      value: new THREE.Vector2(WALL_INSCRIPTION.width / MOTTLE_TILE_METRES, WALL_INSCRIPTION.height / MOTTLE_TILE_METRES),
+    }
+
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+        uniform vec3 uScanMean;
+        uniform float uScanContrast;
+        uniform vec2 uMottleRepeat;
+        ${mottle ? 'uniform sampler2D uMottleMap;' : ''}`,
+      )
+      .replace(
+        '#include <map_fragment>',
+        `#include <map_fragment>
+        #ifdef USE_MAP
+          diffuseColor.rgb = diffuse * mix(vec3(1.0), sampledDiffuseColor.rgb / uScanMean, uScanContrast);
+        #endif`,
+      )
+      .replace(
+        '#include <metalnessmap_fragment>',
+        `#include <metalnessmap_fragment>
+        {
+          float relief = texture2D(alphaMap, vAlphaMapUv).g;
+          float edge = 1.0 - smoothstep(0.6, 0.97, relief);
+          ${
+            mottle
+              ? 'float stone = texture2D(uMottleMap, vAlphaMapUv * uMottleRepeat).g;'
+              : 'float stone = 0.5;'
+          }
+          float oxidation = smoothstep(0.35, 0.8, stone);
+          float tarnish = clamp(edge * 0.8 + oxidation * 0.3, 0.0, 1.0);
+          diffuseColor.rgb *= mix(vec3(1.0), vec3(0.5, 0.56, 0.52), tarnish);
+          roughnessFactor = clamp(mix(roughnessFactor, 0.72, tarnish) + (stone - 0.5) * 0.1, 0.08, 1.0);
+        }`,
+      )
+  }
+  // One shader for every inscription material this module builds; the key
+  // only has to distinguish the with- and without-mottle variants.
+  material.customProgramCacheKey = () => `aged-brass-${mottle ? 'mottled' : 'plain'}`
+}
+
+/**
+ * Contact occlusion where the lettering meets the stone.
+ *
+ * The inlay had nothing tying it to the wall: no cast shadow (at 12mm proud it
+ * would be sub-texel noise in the sun's shadow map), no occlusion, and the
+ * stone's texture ran untouched right up to every edge. That is what "pasted
+ * on" looks like.
+ *
+ * This is a second, darkening-only pass on the wall behind the letters, driven
+ * by the SAME relief texture — sampled at a coarse mip level, which is a free
+ * blur of the glyph field already on the GPU. The result is a soft falloff a
+ * few centimetres wide around every stroke: the grime and occlusion that
+ * collects where set metal meets stone. Its interior is hidden behind the
+ * letters, so only the fringe on the stone shows.
+ *
+ * Black at partial opacity can only remove light, so in shadow it is invisible
+ * and in light it reads as contact — it never makes the lettering more visible
+ * than the room's own light does. No new texture, one draw call.
+ */
+const CONTACT_OPACITY = 0.42
+const CONTACT_MIP_BIAS = 3.0
+
+export function createWallInscriptionContactMaterial(brassMaterial) {
+  const material = new THREE.MeshBasicMaterial({
+    color: 0x000000,
+    alphaMap: brassMaterial.alphaMap,
+    transparent: true,
+    opacity: CONTACT_OPACITY,
+    depthWrite: false,
+    // Drawn onto the wall itself, so it must win the depth test against the
+    // shell without being lifted away from it.
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -4,
+  })
+  material.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <alphamap_fragment>',
+      `diffuseColor.a *= texture2D(alphaMap, vAlphaMapUv, ${CONTACT_MIP_BIAS.toFixed(1)}).g;`,
+    )
+  }
+  material.customProgramCacheKey = () => 'inscription-contact'
+  return material
+}
+
+/** The contact pass sits on the wall itself, not proud of it with the lettering. */
+export const INSCRIPTION_CONTACT_SPEC = { ...WALL_INSCRIPTION, standoff: 0.001 }

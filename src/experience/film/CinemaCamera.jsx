@@ -467,17 +467,40 @@ function cameraBodyTreatment(material) {
 }
 
 /**
- * The stand, held well below the camera it carries.
+ * The stand: dark, professional cinema hardware.
  *
- * It shares the camera's model treatment in every respect except value: the
- * tripod's own albedo is bright metal, and at the body's multiplier it read as
- * the brightest object in the frame — a white armature with a dark camera
- * perched on it, which inverts what the shot is about. This is a support, and
- * supports recede.
+ * The tripod asset arrives as bright bare metal, and its previous treatment
+ * only scaled that colour down — which left a mid-grey, half-metallic finish
+ * (`#6b6b6b`, metalness 0.45) that read as pale aluminium beside a black
+ * camera. Scaling a light colour cannot produce black equipment; the finish
+ * has to be specified.
+ *
+ * So the tubes and plates become black powder coat — a DIELECTRIC finish, not
+ * a dark metal. That distinction is what keeps the geometry readable here: a
+ * metal surface takes no diffuse light at all, and this stand is lit mostly by
+ * the hemisphere fill, so a black metal would lose every leg to silhouette. A
+ * coated surface keeps a little diffuse, and its Fresnel still lifts the
+ * silhouette edges and rims — which is how black gear actually reads on set.
+ *
+ * Near-black rather than black, and moderately rough rather than glossy, so
+ * highlights are soft sheens instead of plastic hotspots. Fasteners get a
+ * darkened bare-steel finish where the asset gives them a material of their
+ * own; this one shares two materials across all 26 parts, so in practice the
+ * whole stand takes the coating.
+ *
+ * `#1f2022` rather than a lighter charcoal: the room's hemisphere fill is a
+ * cool sky blue, and on thin legs against a bright floor anything much above
+ * this reads as pale blue-grey aluminium at a distance rather than as black
+ * equipment catching skylight.
  */
-function cameraStandTreatment(material) {
-  cameraBodyTreatment(material)
-  if (material.color) material.color.multiplyScalar(0.18)
+const STAND_COATING_COLOR = new THREE.Color('#1f2022')
+const STAND_FASTENER_COLOR = new THREE.Color('#34353a')
+
+function cameraStandTreatment(material, mesh) {
+  const isFastener = /bolt/i.test(mesh?.name ?? '')
+  if (material.color) material.color.copy(isFastener ? STAND_FASTENER_COLOR : STAND_COATING_COLOR)
+  material.metalness = isFastener ? 0.75 : 0.15
+  material.roughness = isFastener ? 0.38 : 0.52
 }
 
 export default function CinemaCamera() {
