@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { scrollProgress } from '../timeline/ScrollTimelineProvider.jsx'
+import { contentValue } from '../timeline/contentProgress.js'
 import { CAMPAIGNS_GATE_T, FILM_FOCUS_T, MONITOR_SNAP_T } from '../timeline/filmActBeats.js'
 import { FILM_MEDIA_SRC } from '../film/CinemaCamera.jsx'
 import { DIGITAL_MEDIA_SRC } from '../digital/Monitor.jsx'
@@ -36,15 +37,25 @@ function isInRange(progress) {
   return progress >= FILM_FOCUS_T && progress < CAMPAIGNS_GATE_T
 }
 
+/**
+ * Follows the content, not raw scroll, so the button appears with the Film or
+ * Digital picture it opens: as the camera arrives, and during a section flight
+ * only once the destination has faded in more than the origin — never for a
+ * section the flight is passing.
+ */
+function isButtonShown() {
+  return contentValue((progress) => (isInRange(progress) ? 1 : 0)) >= 0.5
+}
+
 export default function FullscreenButton() {
-  const [visible, setVisible] = useState(() => isInRange(scrollProgress.value))
+  const [visible, setVisible] = useState(isButtonShown)
   const [isOpen, setIsOpen] = useState(false)
 
   useEffect(() => {
     let rafId
     let lastVisible = visible
     const tick = () => {
-      const next = isInRange(scrollProgress.value)
+      const next = isButtonShown()
       if (next !== lastVisible) {
         lastVisible = next
         setVisible(next)

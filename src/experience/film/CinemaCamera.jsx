@@ -11,7 +11,7 @@ import {
   useTreatedMaterials,
 } from '../models/modelAssets.js'
 import { createScreenVideoMaterial } from '../digital/screenVideoMaterial.js'
-import { scrollProgress } from '../timeline/ScrollTimelineProvider.jsx'
+import { contentCondition, contentValue } from '../timeline/contentProgress.js'
 import { FILM_FOCUS_T, FILM_IGNITE_RISE } from '../timeline/filmActBeats.js'
 import { BEAM_CENTER, YAW_DEGREES, CAMERA_STAND } from '../digital/plinthAnchor.js'
 import { assetUrl } from '../assets/assetUrl.js'
@@ -27,6 +27,16 @@ const LOOP_EARLY_SECONDS = 0.1
  * first frame is decoded well before the surface is allowed to show it.
  */
 const FILM_PREPARE_LEAD = 0.1
+
+function lensIgniteAt(p) {
+  const rise = THREE.MathUtils.smoothstep(p, FILM_FOCUS_T - FILM_IGNITE_RISE, FILM_FOCUS_T)
+  const fall = 1 - THREE.MathUtils.smoothstep(p, FILM_FOCUS_T, FILM_FOCUS_T + FILM_IGNITE_RISE)
+  return Math.min(rise, fall)
+}
+
+function isLensPlaybackRange(p) {
+  return p > FILM_FOCUS_T - FILM_IGNITE_RISE - FILM_PREPARE_LEAD && p < FILM_FOCUS_T + FILM_IGNITE_RISE + FILM_PREPARE_LEAD
+}
 
 // Phase 2: the cinema-camera object explicitly deferred from Phase 1D
 // (build-status.md §4's scope note). Stands on its own sleek 4-legged
@@ -577,15 +587,14 @@ export default function CinemaCamera() {
   }, [video])
 
   useFrame(() => {
-    const p = scrollProgress.value
-    const rise = THREE.MathUtils.smoothstep(p, FILM_FOCUS_T - FILM_IGNITE_RISE, FILM_FOCUS_T)
-    const fall = 1 - THREE.MathUtils.smoothstep(p, FILM_FOCUS_T, FILM_FOCUS_T + FILM_IGNITE_RISE)
-    const ignite = Math.min(rise, fall)
+    // Content progress (see `contentProgress.js`): the camera's own progress
+    // along the journey, and during a section flight a blend of where it left
+    // and where it is going — so flying past Film to somewhere else never
+    // lights the lens.
+    const ignite = contentValue(lensIgniteAt)
     lensScreenMaterial.uniforms.uIgnite.value = frameReady.current ? ignite : 0
 
-    const shouldPlay =
-      p > FILM_FOCUS_T - FILM_IGNITE_RISE - FILM_PREPARE_LEAD &&
-      p < FILM_FOCUS_T + FILM_IGNITE_RISE + FILM_PREPARE_LEAD
+    const shouldPlay = contentCondition(isLensPlaybackRange)
 
     // Once per crossing, never per frame.
     if (shouldPlay && !playing.current) {

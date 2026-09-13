@@ -6,15 +6,19 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
 import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js'
 import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js'
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
+import { Pass } from 'three/examples/jsm/postprocessing/Pass.js'
 import { CAMPAIGNS_SWAP_DISTANCE, campaignsRailDistance, HERO_LOOKAT } from '../timeline/cameraPath.js'
-import { renderedProgress } from '../timeline/heroSequence.js'
+import { contentValue } from '../timeline/contentProgress.js'
 import { HERO_T } from '../timeline/filmActBeats.js'
 import { CAMERA_ANCHOR } from '../film/CinemaCamera.jsx'
 import { MONITOR_ANCHOR } from '../digital/Monitor.jsx'
 import { PILLAR_RING_CENTER, PILLAR_RING_RADIUS } from '../Environment.jsx'
+import { dustScene } from '../lighting/volumetricLighting.js'
+import { circleOfConfusionGLSL, depthOfFieldUniforms } from './depthOfFieldShared.js'
 
 /**
- * Depth of field — the project's only post-processing pass.
+ * Depth of field, and the post-processing chain it owns: scene, contact
+ * occlusion, the blur, airborne dust composited after it, then output.
  *
  * **Focus is not a parameter, it is the shot.** The focal plane is put on
  * the room's two real subjects — the Cinema Camera's lens and the
@@ -136,6 +140,10 @@ const HERO_SUBJECT = HERO_LOOKAT.clone()
  */
 const HERO_FOCUS_START = 0.82
 
+function heroFocusWeightAt(progress) {
+  return THREE.MathUtils.smoothstep(progress, HERO_FOCUS_START, HERO_T)
+}
+
 /**
  * Depth of field must be OFF at the Campaigns hand-over, and this is not a
  * taste decision.
@@ -166,6 +174,132 @@ const HERO_FOCUS_START = 0.82
  */
 const FADE_START_DISTANCE = 8.0
 const FADE_END_DISTANCE = CAMPAIGNS_SWAP_DISTANCE - 0.4
+
+/**
+ * The stock bokeh pass, with the two things that made the opening shot's blur
+ * look wrong fixed.
+ *
+ * **Its depth.** BokehPass renders its own depth by drawing the whole scene
+ * with one override material — so every object writes depth, including the
+ * ones that write none when the frame is actually drawn. The sun shaft is the
+ * big one: an additive, near-invisible prism whose flat walls cross most of the
+ * room. In the depth buffer those walls were solid, so the blur of everything
+ * behind them was decided by a surface no one can see, and each wall's
+ * straight edge became a straight line across the frame where the blur
+ * changed. Measured at the opening frame they covered 40% of it — at progress
+ * 0, where the shaft's opacity is zero. Objects that do not write depth (the
+ * shaft, the sky dome, glass) are now hidden for the depth render only, so the
+ * blur follows the geometry that is really there.
+ *
+ * **Its gather.** The stock shader blurs a pixel by averaging 41 samples in
+ * fixed rings, with no idea what depth those samples come from. Where a sharp
+ * column stands in front of a soft wall, the wall's pixels average the column
+ * into themselves — a halo — and the rings show as bands at larger radii. The
+ * replacement samples a rotated spiral, dithered per pixel so it has no
+ * rings, and rejects samples that are nearer and sharper than the pixel being
+ * blurred, so in-focus geometry does not bleed into the blur behind it. The
+ * blur itself uses `circleOfConfusion`, which eases onto its ceiling rather
+ * than hitting it, so there is no contour where a surface reaches maximum blur.
+ */
+const BOKEH_TAPS = 28
+
+class DepthAwareBokehPass extends BokehPass {
+  constructor(scene, camera, params) {
+    super(scene, camera, params)
+    this.hiddenForDepth = []
+    this.materialBokeh.fragmentShader = /* glsl */ `
+      #include <common>
+      #include <packing>
+      ${circleOfConfusionGLSL}
+      varying vec2 vUv;
+      uniform sampler2D tColor;
+      uniform sampler2D tDepth;
+      uniform float maxblur;
+      uniform float aperture;
+      uniform float nearClip;
+      uniform float farClip;
+      uniform float focus;
+      uniform float aspect;
+
+      float viewZAt( const in vec2 uv ) {
+        return perspectiveDepthToViewZ( unpackRGBAToDepth( texture2D( tDepth, uv ) ), nearClip, farClip );
+      }
+
+      void main() {
+        vec3 centre = texture2D( tColor, vUv ).rgb;
+        float centreZ = viewZAt( vUv );
+        float radius = abs( circleOfConfusion( centreZ, focus, aperture, maxblur ) );
+        if ( radius < 1e-5 ) {
+          gl_FragColor = vec4( centre, 1.0 );
+          return;
+        }
+
+        // Interleaved gradient noise rotates the spiral per pixel.
+        float rotation = 6.2831853 * fract( 52.9829189 * fract( dot( gl_FragCoord.xy, vec2( 0.06711056, 0.00583715 ) ) ) );
+        vec3 sum = centre;
+        float weightSum = 1.0;
+        for ( int i = 0; i < ${BOKEH_TAPS}; i++ ) {
+          float fi = float( i ) + 0.5;
+          float r = sqrt( fi / ${BOKEH_TAPS}.0 ) * radius;
+          float theta = fi * 2.3999632 + rotation;
+          vec2 uv = vUv + vec2( cos( theta ), sin( theta ) * aspect ) * r;
+          float sampleZ = viewZAt( uv );
+          // A sample nearer than this pixel may only contribute as far as its
+          // own blur reaches; a sharp column in front stays out of the wall's
+          // blur behind it.
+          float nearer = smoothstep( 0.05, 0.3, sampleZ - centreZ );
+          float reach = smoothstep( r * 0.5, r, abs( circleOfConfusion( sampleZ, focus, aperture, maxblur ) ) );
+          float weight = mix( 1.0, reach, nearer );
+          sum += texture2D( tColor, uv ).rgb * weight;
+          weightSum += weight;
+        }
+        gl_FragColor = vec4( sum / weightSum, 1.0 );
+      }
+    `
+    this.materialBokeh.needsUpdate = true
+  }
+
+  render(renderer, writeBuffer, readBuffer, deltaTime, maskActive) {
+    const hidden = this.hiddenForDepth
+    hidden.length = 0
+    this.scene.traverseVisible((object) => {
+      const material = object.material
+      if (material && !Array.isArray(material) && material.depthWrite === false) hidden.push(object)
+    })
+    for (const object of hidden) object.visible = false
+    super.render(renderer, writeBuffer, readBuffer, deltaTime, maskActive)
+    for (const object of hidden) object.visible = true
+  }
+}
+
+/**
+ * Draws the airborne dust (`dustScene`) into the blurred frame.
+ *
+ * After the blur on purpose: the dust lays out its own defocus from the same
+ * circle of confusion (see `volumetricLighting.js`'s `buildDust`), where a
+ * gathering blur would average each speck away. Before the output pass, so it
+ * is tone-mapped with everything else. One draw call, from a scene holding only
+ * the dust. Skipped outside the room, where the camera is on the exterior layer.
+ */
+class DustPass extends Pass {
+  constructor(scene, camera) {
+    super()
+    this.scene = scene
+    this.camera = camera
+    this.needsSwap = false
+  }
+
+  render(renderer, writeBuffer, readBuffer) {
+    if (!this.camera.layers.isEnabled(0)) return
+    const autoClear = renderer.autoClear
+    renderer.autoClear = false
+    renderer.setRenderTarget(this.renderToScreen ? null : readBuffer)
+    renderer.render(this.scene, this.camera)
+    renderer.autoClear = autoClear
+  }
+}
+
+const drawingBufferScratch = new THREE.Vector2()
 
 export default function DepthOfField() {
   const { gl, scene, camera, size, viewport } = useThree()
@@ -224,12 +358,13 @@ export default function DepthOfField() {
     gtaoPass.blendIntensity = 0.75
     composerInstance.addPass(gtaoPass)
 
-    const bokehPass = new BokehPass(scene, camera, {
+    const bokehPass = new DepthAwareBokehPass(scene, camera, {
       focus: 5,
       aperture: APERTURE,
       maxblur: MAX_BLUR,
     })
     composerInstance.addPass(bokehPass)
+    composerInstance.addPass(new DustPass(dustScene, camera))
 
     // Tone mapping and the output colour-space conversion move here.
     // Three applies neither when rendering into a render target, so
@@ -279,7 +414,9 @@ export default function DepthOfField() {
 
     // Hand the subject over to MGRT as the hero composition arrives, and keep
     // it there for the hold and the entire pull-back.
-    const heroWeight = THREE.MathUtils.smoothstep(renderedProgress.value, HERO_FOCUS_START, HERO_T)
+    // Content progress (see `contentProgress.js`), so a section flight past the
+    // hero does not rack focus onto a wall it is not stopping at.
+    const heroWeight = contentValue(heroFocusWeightAt, 'rendered')
     const targetDistance = THREE.MathUtils.lerp(
       approachDistance,
       activeCamera.position.distanceTo(HERO_SUBJECT),
@@ -312,6 +449,16 @@ export default function DepthOfField() {
     // depth in the frame from that point on.
     bokeh.uniforms.nearClip.value = activeCamera.near
     bokeh.uniforms.farClip.value = activeCamera.far
+
+    // The same numbers for effects composited after the blur — see
+    // `depthOfFieldShared.js`.
+    depthOfFieldUniforms.uFocus.value = bokeh.uniforms.focus.value
+    depthOfFieldUniforms.uAperture.value = bokeh.uniforms.aperture.value
+    depthOfFieldUniforms.uMaxBlur.value = bokeh.uniforms.maxblur.value
+    depthOfFieldUniforms.uSceneDepth.value = bokeh.renderTargetDepth.texture
+    depthOfFieldUniforms.uNearClip.value = activeCamera.near
+    depthOfFieldUniforms.uFarClip.value = activeCamera.far
+    depthOfFieldUniforms.uResolution.value.copy(gl.getDrawingBufferSize(drawingBufferScratch))
 
     composer.render(delta)
   }, 1)

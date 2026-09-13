@@ -195,10 +195,11 @@ export const INTRO_TO_FILM_DURATION_SECONDS = 1.5
 
 // The monitor -> MGRT hero traversal, in seconds. A chapter hop used to cross
 // it with the general distance-scaled jump — 1.2s of ease-out, which put the
-// whole 16-unit route through the room into under half a second. This gives
-// it the same average pace as the 8.3-unit descent to the lens above
-// (~5.5 units/s), and `ScrollTimelineProvider` moves progress through it
-// evenly so the camera path's own ease is the only one shaping it.
+// whole route through the room into under half a second. The direct route is
+// ~12 units at 16:9, so this is a measured ~4 units/s: a little calmer than the
+// descent to the lens above, which suits the approach to the wordmark.
+// `ScrollTimelineProvider` moves progress through it evenly so the camera
+// path's own ease is the only one shaping it.
 export const HERO_TRAVERSAL_DURATION_SECONDS = 3
 
 export const INTRO_INTENT_DECAY_MS = 150
@@ -255,6 +256,22 @@ export const SECTION_TARGETS = {
 // longest end of the range at 1.6s.
 export const JUMP_MIN_DURATION_SECONDS = 0.9
 export const JUMP_MAX_DURATION_SECONDS = 1.6
+
+/**
+ * Section flights — a click on a side-navigation mark.
+ *
+ * Unlike a chapter gesture, which travels the journey, a click flies straight
+ * to the section (see `sectionFlightRoute.js`). Each move between stops is
+ * paced at `SECTION_FLIGHT_PACE` units/s — its length plus a cost for how far
+ * the view turns — and clamped to the range below, so a hop to the neighbouring section and a flight across the
+ * whole room both take a controlled, similar time. The only stop is the hero
+ * pose when a flight crosses between the room and the exterior; that leg has a
+ * fixed duration of its own because its 29 units read as one wide pull-back.
+ */
+export const SECTION_FLIGHT_PACE = 6
+export const SECTION_FLIGHT_MIN_SECONDS = 1.1
+export const SECTION_FLIGHT_MAX_SECONDS = 3.4
+export const SECTION_FLIGHT_EXTERIOR_SECONDS = 2
 
 /**
  * Chapter mode (Film and beyond) — per explicit request, once the camera

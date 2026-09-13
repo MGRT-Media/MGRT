@@ -23,8 +23,10 @@ import {
   CHAPTER_GESTURE_THRESHOLD,
   HERO_T,
   HERO_TRAVERSAL_DURATION_SECONDS,
+  CAMPAIGNS_GATE_T,
 } from './filmActBeats.js'
 import { requestHeroReturn, resumeHeroReveal } from './heroSequence.js'
+import { cancelSectionFlight, requestSectionFlight } from './sectionFlightRequest.js'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -51,6 +53,10 @@ const GLIDE_LEGS = [
 ]
 const LEG_BOUNDARIES = [INTRO_ALIGN_T, FILM_FOCUS_T, MONITOR_SNAP_T, HERO_T]
 const PROGRESS_EPSILON = 1e-4
+
+// Scroll pixels round to a few ten-thousandths of progress; a section flight
+// treats anything past this as the visitor scrolling (see `flyToSection`).
+const FLIGHT_SCROLL_TOLERANCE = 0.003
 
 function easeLinear(t) {
   return t
@@ -327,6 +333,10 @@ export function ScrollSpacer() {
     // sequences on the way"). `jumpToken` guards a jump's own `onComplete`
     // against firing after a newer click has superseded it.
     let isDirectJumpActive = false
+    // The destination of the section flight in progress, or null — see
+    // `flyToSection`. Declared up here because the scroll trigger's `onUpdate`
+    // reads it and can run as soon as the trigger exists.
+    let flightTargetT = null
     let jumpToken = 0
 
     // --- Intro cinematic (t: 0 <-> INTRO_ALIGN_T) — one-shot auto-play ---
@@ -484,6 +494,14 @@ export function ScrollSpacer() {
         // the scroller — without being a smoothing layer in its own right.
         scrub: 0.5,
         onUpdate: (self) => {
+          // Scroll moving away from a section flight's destination while it
+          // flies can only be the visitor scrolling (the flight put scroll
+          // there itself). Scroll wins: the flight stops where the camera is
+          // and the journey carries on from there — see `interruptSectionFlight`.
+          if (flightTargetT !== null && Math.abs(self.progress - flightTargetT) > FLIGHT_SCROLL_TOLERANCE) {
+            interruptSectionFlight(self.progress)
+          }
+
           // Snap 2: checked every tick (not just on scroll-stop) so a
           // fast, continuous scroll still gets caught exactly at
           // FILM_FOCUS_T instead of sailing through it — and checked as
@@ -617,40 +635,98 @@ export function ScrollSpacer() {
 
       // Paced by `planJump`: the two glides at their own even rate, everything
       // else with the distance-scaled ease-out.
-      runJump(trigger, token, targetT, () => {
-        isDirectJumpActive = false
-        // Matches releaseLensHold's own reset: pins the crossing-
-        // detection baseline to exactly the arrival point so the very
-        // next tick can't misread a stale gap as a fresh crossing.
-        lastRawProgress = targetT
-        scrollProgress.value = targetT
-        if (sectionKey === 'film') engageLensHold(trigger)
-        else if (sectionKey === 'digital') engageMonitorLock()
-        else if (sectionKey === 'campaigns') {
-          // Act 3 has no lock of its own: per explicit answer its middle
-          // beat is "pacing only — one scroll," so the pull-back is a
-          // single uninterrupted movement that simply ends at the reveal.
-          // Chapter state still has to be recorded, or a subsequent
-          // backward gesture would compute the wrong neighbour.
-          currentChapter = 'campaigns'
-          chapterModeActive = true
-        } else {
-          // 'intro' — also exits chapter mode if the visitor was in it
-          // (e.g. clicking the Intro mark while at Film/Digital), so
-          // `currentChapter`/scroll-suspension stay synchronized with
-          // where the camera actually landed. Note this lands at t: 0
-          // exactly (`SECTION_TARGETS.intro`), past the exterior orbit
-          // this round added — the "one-shot forward play" only exists
-          // to get FROM here TO `INTRO_ALIGN_T`, so landing back at the
-          // literal start correctly requires the intro cinematic to be
-          // played again before chapter mode can resume, hence resetting
-          // `introCinematicPlayed` here too.
-          currentChapter = 'intro'
-          chapterModeActive = false
-          introCinematicPlayed = false
-          syncScrollSuspension()
-        }
+      runJump(trigger, token, targetT, () => arriveAtSection(sectionKey, trigger))
+    }
+
+    // What arriving at a section means, however the camera got there — a
+    // chapter gesture's journey or a section flight.
+    const arriveAtSection = (sectionKey, trigger) => {
+      const targetT = SECTION_TARGETS[sectionKey]
+      isDirectJumpActive = false
+      // Matches releaseLensHold's own reset: pins the crossing-
+      // detection baseline to exactly the arrival point so the very
+      // next tick can't misread a stale gap as a fresh crossing.
+      lastRawProgress = targetT
+      scrollProgress.value = targetT
+      if (sectionKey === 'film') engageLensHold(trigger)
+      else if (sectionKey === 'digital') engageMonitorLock()
+      else if (sectionKey === 'campaigns') {
+        // Act 3 has no lock of its own: per explicit answer its middle
+        // beat is "pacing only — one scroll," so the pull-back is a
+        // single uninterrupted movement that simply ends at the reveal.
+        // Chapter state still has to be recorded, or a subsequent
+        // backward gesture would compute the wrong neighbour.
+        currentChapter = 'campaigns'
+        chapterModeActive = true
+      } else {
+        // 'intro' — also exits chapter mode if the visitor was in it
+        // (e.g. clicking the Intro mark while at Film/Digital), so
+        // `currentChapter`/scroll-suspension stay synchronized with
+        // where the camera actually landed. Note this lands at t: 0
+        // exactly (`SECTION_TARGETS.intro`), past the exterior orbit
+        // this round added — the "one-shot forward play" only exists
+        // to get FROM here TO `INTRO_ALIGN_T`, so landing back at the
+        // literal start correctly requires the intro cinematic to be
+        // played again before chapter mode can resume, hence resetting
+        // `introCinematicPlayed` here too.
+        currentChapter = 'intro'
+        chapterModeActive = false
+        introCinematicPlayed = false
+        syncScrollSuspension()
+      }
+    }
+
+    // --- Section flights (side navigation clicks) ---
+    // A click flies straight to the section rather than travelling the journey
+    // through every section in between; `ScrollCameraRig` flies the camera
+    // (`sectionFlightRoute.js`) and this keeps everything else in step.
+    //
+    // Scroll goes to the destination IMMEDIATELY, before the camera moves. That
+    // is what keeps scroll-driven and flight-driven updates from competing:
+    // nothing about the scroll changes while the camera travels, the side
+    // navigation shows the destination from the click, the destination's
+    // assets start loading, and on arrival manual scrolling simply continues
+    // from the section. Content that would react to that jump reads content
+    // progress (`contentProgress.js`), which follows the flight instead.
+    const flyToSection = (sectionKey) => {
+      const targetT = SECTION_TARGETS[sectionKey]
+      if (targetT === undefined) return
+      // Same rule as a chapter jump: the intro cinematic is uninterruptible.
+      if (introCinematicActive) return
+      const trigger = timeline.scrollTrigger
+      if (!trigger) return
+
+      // A click mid-flight supersedes that flight's arrival; the rig redirects
+      // the camera from wherever it is.
+      const token = ++jumpToken
+      cancelActiveDriversAndLocks()
+      isDirectJumpActive = true
+      flightTargetT = targetT
+      lastRawProgress = targetT
+      smoothScroll.lenis.scrollTo(trigger.start + (trigger.end - trigger.start) * targetT, { immediate: true, force: true })
+      scrollProgress.value = targetT
+
+      requestSectionFlight(targetT, {
+        immediate: prefersReducedMotion,
+        onArrive: () => {
+          if (token !== jumpToken) return
+          flightTargetT = null
+          isDirectJumpActive = false
+          arriveAtSection(sectionKey, trigger)
+        },
       })
+    }
+
+    // The visitor scrolled while a flight was travelling. The camera stops
+    // flying and scroll takes it from where it is; chapter state follows the
+    // scroll position so the next gesture steps from there.
+    const interruptSectionFlight = (progress) => {
+      flightTargetT = null
+      ++jumpToken
+      isDirectJumpActive = false
+      cancelSectionFlight()
+      currentChapter =
+        progress >= CAMPAIGNS_GATE_T ? 'campaigns' : progress >= MONITOR_SNAP_T ? 'digital' : progress >= FILM_FOCUS_T ? 'film' : 'intro'
     }
 
     // --- Intro cinematic playback ---
@@ -907,7 +983,9 @@ export function ScrollSpacer() {
     window.addEventListener('touchstart', onChapterTouchStart, { capture: true, passive: true })
     window.addEventListener('touchmove', onChapterTouchMove, { capture: true, passive: false })
 
-    const unsubscribeNavigate = onNavigateRequest(navigateToSection)
+    // Side navigation clicks fly directly; chapter gestures (below the flight
+    // code) keep travelling the journey through `navigateToSection`.
+    const unsubscribeNavigate = onNavigateRequest(flyToSection)
 
     return () => {
       unsubscribeNavigate()

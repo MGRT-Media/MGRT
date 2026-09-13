@@ -10,7 +10,7 @@ import {
   useModel,
   useTreatedMaterials,
 } from '../models/modelAssets.js'
-import { cameraProgress } from '../timeline/heroSequence.js'
+import { contentValue } from '../timeline/contentProgress.js'
 import { MONITOR_SNAP_T, DIGITAL_IGNITE_RISE } from '../timeline/filmActBeats.js'
 import { BEAM_CENTER, YAW_DEGREES, MONITOR_PLINTH } from './plinthAnchor.js'
 import { assetUrl } from '../assets/assetUrl.js'
@@ -364,6 +364,10 @@ function casingTreatment(material) {
   if (material.color) material.color.multiplyScalar(0.45)
 }
 
+function monitorIgniteAt(p) {
+  return THREE.MathUtils.smoothstep(p, MONITOR_SNAP_T - DIGITAL_IGNITE_RISE, MONITOR_SNAP_T)
+}
+
 export default function Monitor() {
   // A plain <video> element (not React state) driving a THREE.VideoTexture
   // — muted/playsInline/loop so autoplay is permitted and the clip repeats
@@ -427,9 +431,11 @@ export default function Monitor() {
 
   useEffect(() => () => video.pause(), [video])
 
-  // Ignite is a pure function of the camera's progress along the path
-  // (`cameraProgress`, not raw scroll, so the screen lights in step with the
-  // camera's own approach rather than ahead of it) — a smoothstep ramp into
+  // Ignite is a pure function of content progress (`contentProgress.js`: the
+  // camera's own progress along the path, not raw scroll, so the screen
+  // lights in step with the camera's approach; during a section flight a
+  // blend of origin and destination, so flying past Digital never lights it)
+  // — a smoothstep ramp into
   // MONITOR_SNAP_T, the same mechanism CinemaCamera.jsx already uses for
   // its own lens screen, rather than an onCameraLock event damped over
   // real time (the previous approach here). This is what makes the
@@ -437,8 +443,7 @@ export default function Monitor() {
   // level shows at a given progress value regardless of how fast, or in
   // which direction, the visitor scrolled to reach it.
   useFrame(() => {
-    const p = cameraProgress.value
-    const ignite = THREE.MathUtils.smoothstep(p, MONITOR_SNAP_T - DIGITAL_IGNITE_RISE, MONITOR_SNAP_T)
+    const ignite = contentValue(monitorIgniteAt)
     screenMaterial.uniforms.uIgnite.value = ignite
 
     const shouldPlay = ignite > 0.02

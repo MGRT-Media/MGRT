@@ -4,8 +4,8 @@ import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js'
 import { assetUrl } from '../assets/assetUrl.js'
-import { scrollProgress } from '../timeline/ScrollTimelineProvider.jsx'
-import { IGNITE_START, IGNITE_END } from '../lighting/VolumetricLightingRig.jsx'
+import { contentValue } from '../timeline/contentProgress.js'
+import { sceneIgniteAt } from '../lighting/VolumetricLightingRig.jsx'
 
 /**
  * Every downloaded model asset, in one place.
@@ -246,7 +246,9 @@ export function useDarkStateDimming(root, darkScale) {
   }, [root])
 
   useFrame(() => {
-    const ignite = THREE.MathUtils.smoothstep(scrollProgress.value, IGNITE_START, IGNITE_END)
+    // Content progress, like the lights this dimming follows — see
+    // `VolumetricLightingRig.jsx`.
+    const ignite = contentValue(sceneIgniteAt)
     const scale = THREE.MathUtils.lerp(darkScale, 1, ignite)
     tracked.current.forEach(({ material, base }) => {
       material.color.copy(base).multiplyScalar(scale)

@@ -1,10 +1,15 @@
 import * as THREE from 'three'
-import {
-  GALLERY_SHELL,
-  ROOF_OPENING_BOUNDS,
-  isInsideRoofOpening,
-  roofOpeningBoundarySegments,
-} from '../architecture/galleryShellGeometry.js'
+import { GALLERY_SHELL, planPoint, roofOpeningBoundarySegments } from '../architecture/galleryShellGeometry.js'
+import { circleOfConfusionGLSL, depthOfFieldUniforms } from '../postprocessing/depthOfFieldShared.js'
+
+/**
+ * Airborne dust lives in its own scene rather than the room's. `DepthOfField`'s
+ * `DustPass` draws it after the blur; the main render, the ambient occlusion and
+ * the blur's depth never see it, and drawing it does not re-walk the room's
+ * scene graph — measured, that walk alone cost more than the dust itself.
+ */
+export const dustScene = new THREE.Scene()
+dustScene.name = 'AirborneDustScene'
 
 /**
  * The composition anchor — the point on the floor the production ensemble is
@@ -259,26 +264,27 @@ export const lightingParams = {
      */
     lengthFraction: 0.95,
   },
+  /**
+   * Airborne dust through the whole room, visible where the sun reaches it.
+   *
+   * Real dust is everywhere; a sunbeam only makes the motes crossing it visible.
+   * So the field fills the hall, and each mote is lit by the sun's own shadow
+   * map — bright inside the beam, dark in the roof's shadow — rather than being
+   * placed inside a hand-built volume.
+   */
   dust: {
-    color: '#fff6e8',
-    /**
-     * Unchanged at 720. The field is now confined to the shaft instead of
-     * being spread through a cone across the room, so the same count reads as
-     * a good deal denser where it matters and absent where it should be.
-     */
-    count: 720,
-    sizeSmall: 0.02,
-    sizeLarge: 0.062,
-    /**
-     * 0.26 -> 0.2. Confining the field concentrated it; holding the old
-     * per-mote value made the shaft sparkle, which is the "fireflies" read.
-     * Density comes from overlap, not from making each speck brighter.
-     */
-    opacity: 0.2,
-    /** Skews the field toward the opening — see `buildDust`. */
-    topBias: 1.7,
-    /** Peak continuous rise, for the heaviest motes only. 0.05 -> 0.018. */
-    drift: 0.018,
+    color: '#ffe9c9',
+    /** Across the whole hall; only the share inside the beam is ever visible. */
+    count: 2600,
+    /** Mote diameters in world units. Most are small; a few are large. */
+    sizeMin: 0.003,
+    sizeMax: 0.016,
+    /** Overall gain on the scattered light. */
+    brightness: 0.9,
+    /** Forward scattering: motes glow brighter when the camera looks toward the sun through them. */
+    anisotropy: 0.6,
+    /** Headroom of height kept free under the vault. */
+    ceilingClearance: 0.8,
   },
 }
 
@@ -425,155 +431,236 @@ function buildShaft(params, direction, length) {
   return new THREE.Mesh(geometry, material)
 }
 
+/** Whether (x, y, z) is inside the hall, vault included, with `margin` to spare. */
+function isInsideHall(x, y, z, margin) {
+  const springing = GALLERY_SHELL.springingHeight
+  const crown = GALLERY_SHELL.crownHeight
+  let xScale = 1
+  let zScale = 1
+  if (y > springing) {
+    // Same section as the shell's own vault (`shellSection`): the plan narrows
+    // as the roof curves over.
+    const arc = THREE.MathUtils.clamp((y - springing) / (crown - springing), 0, 1)
+    const tuck = Math.cos(Math.asin(arc))
+    xScale = 0.05 + 0.95 * tuck
+    zScale = 1 - 0.35 * (1 - tuck)
+  }
+  const px = x / xScale
+  const pz = z / zScale
+  const edge = planPoint(Math.atan2(px, pz))
+  return Math.hypot(px, pz) < Math.hypot(edge.x, edge.z) - margin
+}
+
 /**
- * Dust, seeded INSIDE the shaft rather than around an axis.
+ * Airborne dust, lit by the sun where the sun actually reaches.
  *
- * The old field was a cone of points about a line, which had the same problem
- * as the cone beam: its shape had nothing to do with the aperture. Worse, its
- * brightness was uniform, so every mote read the same whether it was in the
- * light or not — which is the thing the brief rules out. Real dust is always
- * everywhere; what changes is that a sunbeam makes the motes crossing it
- * visible and leaves the rest invisible.
+ * **Why it had disappeared.** The old field lived only inside a hand-built
+ * copy of the shaft, and each mote was drawn at a fixed one-to-two pixels.
+ * Since the room gained its depth-of-field pass, almost all of it sits well
+ * off the focal plane, and a gathering blur averages a one-pixel speck into
+ * the pixels around it until nothing is left. Its opacity was also tied to the
+ * sun's arrival, so on the opening frames it was exactly zero.
  *
- * So each point is rejection-sampled to a position genuinely inside the
- * opening's plan outline, then pushed down the sun vector by a random
- * distance. The field IS the lit volume. A small lateral jitter lets a few
- * motes stray just outside it, and `aInside` carries how far in they are so
- * the shader can dim the strays — that soft boundary is what stops the shaft
- * looking like a container with particles in it.
+ * **What replaces it.**
  *
- * Positions are generated once. Each point then drifts around its own base
- * position on the GPU (a per-vertex sine/cosine offset driven by `uTime` from
- * `VolumetricLightingRig`'s `useFrame`) — an air-current wobble, not a
- * particle simulation with velocity or state. Because the offset is a bounded
- * oscillation around a fixed base, points can never wander out of bounds and
- * never need wrapping.
+ *  - The field fills the hall in world space, so it has real depth and
+ *    parallax from every viewpoint, not only where the shaft is.
+ *  - Each mote samples the sun's existing shadow map in the vertex shader: it
+ *    is lit inside the beam and dark in the roof's shadow, so the beam reveals
+ *    the dust exactly where the light falls, with the same soft edge as the
+ *    patch on the floor. No extra shadow pass, no geometry for the beam.
+ *  - Forward scattering (a Henyey-Greenstein lobe) makes motes brighter when
+ *    the camera looks toward the sun through them, which is when real dust is
+ *    most visible.
+ *  - It is drawn AFTER the blur, from `dustScene`, and lays out its own defocus
+ *    from the same circle of confusion the blur uses (`depthOfFieldShared.js`):
+ *    an out-of-focus mote grows into a soft disc and dims as it grows, instead
+ *    of being averaged away.
+ *  - It is tested against the blur pass's depth of the opaque room, softly, so
+ *    motes never show through a column or wall and never cut hard lines where
+ *    they meet a surface. Scene fog is applied too.
  *
- * Size and motion key off depth down the shaft: small, tight specks near the
- * opening; larger, slower ones near the floor where the columns give them
- * scale.
+ * Motion is a slow, irregular drift — two incommensurate sine terms per axis
+ * around a fixed base position, with each mote's own speed and phases —
+ * bounded, so nothing ever needs wrapping or re-seeding and nothing pops.
  */
-function buildDust(params, direction, length) {
-  const { count, color, opacity, topBias, sizeSmall, sizeLarge, drift } = params.dust
-
+function buildDust(params, sunLight) {
+  const { count, color, sizeMin, sizeMax, brightness, anisotropy, ceilingClearance } = params.dust
   const positions = new Float32Array(count * 3)
-  // A per-point random phase so points don't oscillate in lockstep, which
-  // would read as the whole field pulsing rather than as independent motes.
-  const phases = new Float32Array(count)
+  const phases = new Float32Array(count * 3)
   const sizes = new Float32Array(count)
-  const wobbles = new Float32Array(count)
-  const drifts = new Float32Array(count)
-  // 1 well inside the shaft, falling toward 0 for the strays outside it.
-  const insideness = new Float32Array(count)
-
-  const { minX, maxX, minZ, maxZ } = ROOF_OPENING_BOUNDS
+  const glints = new Float32Array(count)
+  const speeds = new Float32Array(count)
+  const top = GALLERY_SHELL.crownHeight - ceilingClearance
 
   for (let i = 0; i < count; i += 1) {
-    // Rejection-sample the opening's real outline. It fills a good fraction of
-    // its own bounding box, so this converges in a couple of tries; the cap
-    // just guarantees termination.
     let x = 0
+    let y = 0
     let z = 0
-    let inside = false
-    for (let attempt = 0; attempt < 12; attempt += 1) {
-      x = minX + Math.random() * (maxX - minX)
-      z = minZ + Math.random() * (maxZ - minZ)
-      inside = isInsideRoofOpening(x, z)
-      if (inside) break
+    for (let attempt = 0; attempt < 24; attempt += 1) {
+      x = (Math.random() * 2 - 1) * 10
+      y = 0.08 + Math.random() * (top - 0.08)
+      z = (Math.random() * 2 - 1) * 19
+      if (isInsideHall(x, y, z, 0.3)) break
     }
-
-    // Bias toward the opening: `random ** topBias` skews a uniform sample
-    // toward 0, so the field is densest where the light enters and thins into
-    // a long tail down into the room.
-    const t = Math.random() ** topBias
-    const distance = t * length
-
-    // A little lateral spread so the shaft's edge is a haze boundary rather
-    // than a cut. Strays are dimmed by `aInside` in the shader.
-    const strayX = (Math.random() - 0.5) * 0.9
-    const strayZ = (Math.random() - 0.5) * 0.9
-
-    positions[i * 3] = x + direction.x * distance + strayX
-    positions[i * 3 + 1] = GALLERY_SHELL.roofOpening.crownHeight + direction.y * distance
-    positions[i * 3 + 2] = z + direction.z * distance + strayZ
-
-    insideness[i] = inside ? 1 : 0.25
-    phases[i] = Math.random() * Math.PI * 2
-
-    // Jittered so the size/speed split is not a mechanically sharp line at a
-    // given depth — the overlap is what reads as organic.
-    const sizeT = THREE.MathUtils.clamp(t + (Math.random() - 0.5) * 0.25, 0, 1)
-    sizes[i] = THREE.MathUtils.lerp(sizeSmall, sizeLarge, sizeT)
-    wobbles[i] = THREE.MathUtils.lerp(1.2, 0.35, sizeT)
-    drifts[i] = THREE.MathUtils.lerp(0, drift, sizeT)
+    positions.set([x, y, z], i * 3)
+    phases.set([Math.random() * 6.2832, Math.random() * 6.2832, Math.random() * 6.2832], i * 3)
+    // Skewed small: most motes are fine specks, a few are coarse.
+    sizes[i] = THREE.MathUtils.lerp(sizeMin, sizeMax, Math.random() ** 2.6)
+    // Varied reflectance, with the occasional mote catching the light harder.
+    glints[i] = Math.random() < 0.06 ? 1.6 + Math.random() * 0.8 : 0.35 + Math.random() * 0.65
+    speeds[i] = 0.6 + Math.random() * 0.9
   }
 
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-  geometry.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1))
+  geometry.setAttribute('aPhase', new THREE.BufferAttribute(phases, 3))
   geometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1))
-  geometry.setAttribute('aWobble', new THREE.BufferAttribute(wobbles, 1))
-  geometry.setAttribute('aDrift', new THREE.BufferAttribute(drifts, 1))
-  geometry.setAttribute('aInside', new THREE.BufferAttribute(insideness, 1))
+  geometry.setAttribute('aGlint', new THREE.BufferAttribute(glints, 1))
+  geometry.setAttribute('aSpeed', new THREE.BufferAttribute(speeds, 1))
 
   const material = new THREE.ShaderMaterial({
     transparent: true,
+    depthTest: false,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
     uniforms: {
+      ...depthOfFieldUniforms,
       uTime: { value: 0 },
       uColor: { value: new THREE.Color(color) },
-      uOpacity: { value: opacity },
+      uBrightness: { value: brightness },
+      uSunStrength: { value: 0 },
+      uSunTravel: { value: sunDirection(params).clone().negate() },
+      uAnisotropy: { value: anisotropy },
+      uShadowMap: { value: null },
+      uShadowMatrix: { value: sunLight.shadow.matrix },
+      uShadowMapSize: { value: sunLight.shadow.mapSize },
+      uShadowBias: { value: sunLight.shadow.bias },
+      uFogDensity: { value: params.fog.density },
     },
     vertexShader: /* glsl */ `
+      #include <common>
+      #include <packing>
+      ${circleOfConfusionGLSL}
       uniform float uTime;
-      attribute float aPhase;
+      uniform float uBrightness;
+      uniform float uSunStrength;
+      uniform vec3 uSunTravel;
+      uniform float uAnisotropy;
+      uniform sampler2D uShadowMap;
+      uniform mat4 uShadowMatrix;
+      uniform vec2 uShadowMapSize;
+      uniform float uShadowBias;
+      uniform float uFogDensity;
+      uniform float uFocus;
+      uniform float uAperture;
+      uniform float uMaxBlur;
+      uniform vec2 uResolution;
+      attribute vec3 aPhase;
       attribute float aSize;
-      attribute float aWobble;
-      attribute float aDrift;
-      attribute float aInside;
-      varying float vInside;
+      attribute float aGlint;
+      attribute float aSpeed;
+      varying float vIntensity;
+      varying float vDefocus;
+      varying float vViewZ;
+
+      float sunlit( vec3 worldPosition ) {
+        vec4 coord = uShadowMatrix * vec4( worldPosition, 1.0 );
+        vec3 sc = coord.xyz / coord.w;
+        if ( sc.x <= 0.0 || sc.x >= 1.0 || sc.y <= 0.0 || sc.y >= 1.0 || sc.z >= 1.0 ) return 0.0;
+        float z = sc.z + uShadowBias;
+        vec2 texel = 2.0 / uShadowMapSize;
+        // Five taps, so a mote crossing the beam's edge fades rather than blinks.
+        float lit = step( z, unpackRGBAToDepth( texture2D( uShadowMap, sc.xy ) ) );
+        lit += step( z, unpackRGBAToDepth( texture2D( uShadowMap, sc.xy + vec2( texel.x, 0.0 ) ) ) );
+        lit += step( z, unpackRGBAToDepth( texture2D( uShadowMap, sc.xy - vec2( texel.x, 0.0 ) ) ) );
+        lit += step( z, unpackRGBAToDepth( texture2D( uShadowMap, sc.xy + vec2( 0.0, texel.y ) ) ) );
+        lit += step( z, unpackRGBAToDepth( texture2D( uShadowMap, sc.xy - vec2( 0.0, texel.y ) ) ) );
+        return lit / 5.0;
+      }
+
       void main() {
-        vInside = aInside;
+        // Slow, irregular drift: two incommensurate terms per axis, per-mote
+        // phase and speed. Centimetres a second at most, bounded around home.
+        float t = uTime * aSpeed;
+        vec3 worldPosition = position + vec3(
+          sin( t * 0.031 + aPhase.x ) * 0.32 + sin( t * 0.083 + aPhase.y * 1.7 ) * 0.1,
+          sin( t * 0.023 + aPhase.y ) * 0.2 + sin( t * 0.067 + aPhase.z * 2.3 ) * 0.07,
+          sin( t * 0.029 + aPhase.z ) * 0.32 + sin( t * 0.091 + aPhase.x * 1.3 ) * 0.1
+        );
 
-        // An air current, not a snowfall. The frequencies below are a third of
-        // what they were: at the old rate the motes read as falling, which is
-        // the "snow" the brief rules out. Dust in still air barely moves at
-        // all — it is the light changing on it that the eye picks up.
-        vec3 pos = position;
-        pos.x += sin(uTime * 0.10 + position.y + aPhase) * 0.05 * aWobble;
-        pos.y += cos(uTime * 0.07 + position.x + aPhase) * 0.03 * aWobble;
-        pos.z += sin(uTime * 0.09 + position.z + aPhase) * 0.04 * aWobble;
-
-        // A slow continuous rise for the heavier motes only, bounded by mod()
-        // into a small cycling range so it never needs position wrapping.
-        float driftRange = 0.6;
-        float cyclic = mod(uTime * aDrift + aPhase * driftRange, driftRange) - driftRange * 0.5;
-        pos.y += cyclic;
-
-        vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+        vec4 mvPosition = modelViewMatrix * vec4( worldPosition, 1.0 );
+        float distance = -mvPosition.z;
         gl_Position = projectionMatrix * mvPosition;
-        // Perspective attenuation, matching THREE.PointsMaterial's approach.
-        gl_PointSize = aSize * (400.0 / -mvPosition.z);
+        vViewZ = mvPosition.z;
+
+        float light = uSunStrength > 0.0 ? sunlit( worldPosition ) * uSunStrength : 0.0;
+
+        // Henyey-Greenstein: strongest when the camera sits downstream of the
+        // light, looking back toward the sun through the mote.
+        vec3 toCamera = normalize( cameraPosition - worldPosition );
+        float cosTheta = dot( toCamera, uSunTravel );
+        float g = uAnisotropy;
+        float hg = ( 1.0 - g * g ) / pow( max( 1.0 + g * g - 2.0 * g * cosTheta, 1e-4 ), 1.5 );
+        float scatter = 0.3 + 0.2 * hg;
+
+        // Size on screen from world size, then grown by the same defocus the
+        // blur applies at this depth. Dimmed as it grows, so a defocused mote
+        // is a soft disc, not a brighter one.
+        float focusedPx = aSize * projectionMatrix[ 1 ][ 1 ] * uResolution.y * 0.5 / max( distance, 0.01 );
+        float blurPx = abs( circleOfConfusion( mvPosition.z, uFocus, uAperture, uMaxBlur ) ) * uResolution.x * 2.0;
+        float shownPx = clamp( sqrt( focusedPx * focusedPx + blurPx * blurPx ), 1.5, 36.0 );
+        float spread = max( focusedPx, 0.35 ) / shownPx;
+        vDefocus = clamp( blurPx / shownPx, 0.0, 1.0 );
+
+        float fog = exp( -uFogDensity * uFogDensity * distance * distance );
+        // Never let a mote swell across the lens as the camera passes it.
+        float nearFade = smoothstep( 0.35, 1.2, distance );
+
+        vIntensity = light * scatter * aGlint * uBrightness * spread * fog * nearFade;
+        // Nothing to draw: collapse the sprite so it costs no fill.
+        gl_PointSize = vIntensity > 0.002 ? shownPx : 0.0;
       }
     `,
     fragmentShader: /* glsl */ `
+      #include <common>
+      #include <packing>
       uniform vec3 uColor;
-      uniform float uOpacity;
-      varying float vInside;
+      uniform sampler2D uSceneDepth;
+      uniform float uNearClip;
+      uniform float uFarClip;
+      uniform vec2 uResolution;
+      varying float vIntensity;
+      varying float vDefocus;
+      varying float vViewZ;
+
       void main() {
-        // A soft round mote. The falloff starts at the centre rather than at
-        // an edge, so these read as out-of-focus specks rather than as discs
-        // with a rim — a hard rim is what makes particles look like sparks.
-        float d = distance(gl_PointCoord, vec2(0.5));
-        float fade = 1.0 - smoothstep(0.05, 0.5, d);
-        if (fade <= 0.0) discard;
-        gl_FragColor = vec4(uColor, uOpacity * fade * vInside);
+        float r = length( gl_PointCoord - 0.5 ) * 2.0;
+        if ( r >= 1.0 ) discard;
+        // In focus: a soft speck with no rim. Defocused: a flatter disc with a
+        // soft edge, the way out-of-focus dust reads through a real lens.
+        float speck = exp( -r * r * 5.0 );
+        float disc = ( 1.0 - smoothstep( 0.55, 1.0, r ) ) * 0.8;
+        float shape = mix( speck, disc, vDefocus );
+
+        // Soft occlusion against the opaque room: fully hidden behind geometry,
+        // faded in over a few centimetres where a mote nears a surface.
+        vec2 screenUv = gl_FragCoord.xy / uResolution;
+        float sceneZ = perspectiveDepthToViewZ( unpackRGBAToDepth( texture2D( uSceneDepth, screenUv ) ), uNearClip, uFarClip );
+        float visible = clamp( ( vViewZ - sceneZ ) / 0.12, 0.0, 1.0 );
+
+        float alpha = vIntensity * shape * visible;
+        if ( alpha <= 0.0005 ) discard;
+        gl_FragColor = vec4( uColor, alpha );
       }
     `,
   })
 
-  return new THREE.Points(geometry, material)
+  const points = new THREE.Points(geometry, material)
+  points.name = 'AirborneDust'
+  // Drift moves motes off their base positions; the field spans the room anyway.
+  points.frustumCulled = false
+  return points
 }
 
 /**
@@ -669,9 +756,10 @@ export function createVolumetricLighting(params = lightingParams) {
     const down = sunDirection(params).clone().negate()
     const throwLength = (OPENING.crownHeight / -down.y) * params.shaft.lengthFraction
     beam = buildShaft(params, down, throwLength)
-    dust = buildDust(params, down, throwLength)
+    dust = buildDust(params, sunLight)
 
-    group.add(sunLight, sunTarget, bounceLight, bounceTarget, fillLight, hemisphereLight, beam, dust)
+    group.add(sunLight, sunTarget, bounceLight, bounceTarget, fillLight, hemisphereLight, beam)
+    dustScene.add(dust)
 
     // Start in the skylit state rather than at full sun, so there is never a
     // frame of the lit room before the first `useFrame` lands.
@@ -706,12 +794,16 @@ export function createVolumetricLighting(params = lightingParams) {
     // The shaft and its dust are the one thing that genuinely is absent until
     // the sun arrives — there is no beam in the air without a beam.
     if (beam) beam.material.uniforms.uOpacity.value = params.shaft.opacity * factor
-    if (dust) dust.material.uniforms.uOpacity.value = params.dust.opacity * factor
+    // Dust is lit by the sun itself, so it follows the sun's real intensity.
+    if (dust) dust.material.uniforms.uSunStrength.value = sunLight.intensity / params.sun.intensity
   }
 
-  /** Advances the dust field's GPU drift animation — see `buildDust`. */
+  /** Advances the dust's drift and keeps its view of the sun's shadow map current — see `buildDust`. */
   function setTime(t) {
-    if (dust) dust.material.uniforms.uTime.value = t
+    if (!dust) return
+    dust.material.uniforms.uTime.value = t
+    // The shadow map is only allocated on the renderer's first shadow pass.
+    if (sunLight.shadow.map) dust.material.uniforms.uShadowMap.value = sunLight.shadow.map.texture
   }
 
   function update() {
@@ -722,6 +814,7 @@ export function createVolumetricLighting(params = lightingParams) {
   function dispose() {
     beam?.geometry.dispose()
     beam?.material.dispose()
+    if (dust) dustScene.remove(dust)
     dust?.geometry.dispose()
     dust?.material.dispose()
     group.clear()

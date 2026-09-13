@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import { WALL_INSCRIPTION_CENTER, WALL_INSCRIPTION_NORMAL } from '../architecture/wallInscription.js'
-import { renderedProgress } from '../timeline/heroSequence.js'
+import { contentValue } from '../timeline/contentProgress.js'
 import { HERO_T } from '../timeline/filmActBeats.js'
 
 /**
@@ -102,7 +102,8 @@ export default function HeroUplight() {
   }, [])
 
   useFrame(() => {
-    light.intensity = CANDELA * heroUplightLevel(renderedProgress.value)
+    // Content progress on the hero sequence's own base — see `contentProgress.js`.
+    light.intensity = CANDELA * contentValue(heroUplightLevel, 'rendered')
   })
 
   if (!RISE_SANITY) throw new Error('HeroUplight rise must complete by HERO_T')

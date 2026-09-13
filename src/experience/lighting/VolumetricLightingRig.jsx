@@ -2,7 +2,7 @@ import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import { createVolumetricLighting } from './volumetricLighting.js'
-import { scrollProgress } from '../timeline/ScrollTimelineProvider.jsx'
+import { contentValue } from '../timeline/contentProgress.js'
 
 // Dark-to-light ignition ramp — replaces the previous approach-fade
 // mechanism (removed; it thinned the beam near the monitor, the opposite
@@ -30,6 +30,11 @@ import { scrollProgress } from '../timeline/ScrollTimelineProvider.jsx'
 export const IGNITE_START = 0
 export const IGNITE_END = 0.06
 
+/** The scene's light-up at `progress`, shared with the material dimming in `modelAssets.js`. */
+export function sceneIgniteAt(progress) {
+  return THREE.MathUtils.smoothstep(progress, IGNITE_START, IGNITE_END)
+}
+
 /**
  * Thin R3F adapter around the framework-agnostic lighting controller.
  * Mounts once, disposes on unmount. Geometry (the beam's truncated cone,
@@ -52,7 +57,10 @@ export default function VolumetricLightingRig() {
   }, [controller])
 
   useFrame((state) => {
-    const ignite = THREE.MathUtils.smoothstep(scrollProgress.value, IGNITE_START, IGNITE_END)
+    // Content progress (`contentProgress.js`): follows the camera, and a
+    // section flight to or from the opening crossfades the lights rather than
+    // switching them.
+    const ignite = contentValue(sceneIgniteAt)
     controller.setIgnition(ignite)
     // R3F's own clock, not tied to scroll — the dust keeps drifting even
     // while the user is completely still.

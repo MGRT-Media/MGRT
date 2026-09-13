@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { HERO_LOOKAT, HERO_T, heroDistanceForAspect, heroPositionAt } from '../timeline/cameraPath.js'
-import { isHeroCaptureWindow, renderedProgress } from '../timeline/heroSequence.js'
+import { isHeroCaptureWindow, markHeroCaptured } from '../timeline/heroSequence.js'
 import { useExteriorLayer } from './layers.js'
 import { MODEL_URLS, cloneNode, measure, useModel, useTreatedMaterials } from '../models/modelAssets.js'
 
@@ -549,12 +549,15 @@ export default function Billboard() {
      * biggest thing this phase gives back to Safari.
      */
     if (!isHeroCaptureWindow()) return
-    if (captured.current === camera.aspect) return
-    captured.current = camera.aspect
-
-    gl.setRenderTarget(renderTarget)
-    gl.render(scene, interiorCamera)
-    gl.setRenderTarget(null)
+    if (captured.current !== camera.aspect) {
+      captured.current = camera.aspect
+      gl.setRenderTarget(renderTarget)
+      gl.render(scene, interiorCamera)
+      gl.setRenderTarget(null)
+    }
+    // Reported even when this aspect was already captured, so a section flight
+    // waiting at the hero knows the board is ready to stand in for the wall.
+    markHeroCaptured(camera.aspect)
   })
 
   const [cx, cy, cz] = BILLBOARD_PLACEMENT.center

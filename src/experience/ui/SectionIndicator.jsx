@@ -26,9 +26,10 @@ const CAMPAIGNS_INDEX = 3
  * Which of the five markers is "active" (current-section treatment),
  * derived directly from `scrollProgress.value` — the exact same normalized
  * progress that drives the Three.js camera (`ScrollCameraRig.jsx`/
- * `cameraPath.js`), including while a direct-navigation jump (below) is in
- * flight, since that jump animates `scrollProgress.value` through the same
- * pipeline as scroll. Never a second, independent section-detection system.
+ * `cameraPath.js`). A click's section flight moves scroll to the destination
+ * the moment it starts (see `ScrollTimelineProvider.jsx`'s `flyToSection`), so
+ * the mark shows where the visitor is going for the whole flight. Never a
+ * second, independent section-detection system.
  *
  * Returns `null` for "no marker active" (Intro) rather than an Intro index —
  * the Intro/Return *positions* in the row are real (they reserve their slot
@@ -58,8 +59,8 @@ function getActiveIndex(progress) {
  * each mark is a real `<button>` that hands off to
  * `sectionNavigationEvent.js`'s `requestNavigate`, which
  * `ScrollTimelineProvider.jsx` (the existing scroll/camera state machine)
- * picks up and turns into a smooth jump along the same physical camera
- * track scroll already uses. This component never touches camera/scroll
+ * picks up and turns into a direct section flight — straight to that section,
+ * without replaying the ones in between. This component never touches camera/scroll
  * state directly — it only ever reads `scrollProgress.value` (for the
  * active-index display) and emits navigation requests.
  *

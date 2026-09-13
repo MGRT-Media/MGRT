@@ -187,7 +187,57 @@ export function resumeHeroReveal(now = performance.now()) {
  * camera is not looking at.
  */
 export function isHeroCaptureWindow() {
-  return state.phase === HERO_STATE.HERO_HOLD
+  return state.phase === HERO_STATE.HERO_HOLD || heroCapture.requested
+}
+
+/**
+ * The billboard's capture, requested outside the hold.
+ *
+ * A section flight to Campaigns goes through the hero pose without holding
+ * there, so it asks for the capture explicitly and waits for it before the
+ * exterior comes on. `Billboard.jsx` reports each capture with the aspect it
+ * was taken at; the image stays valid until the viewport's aspect changes.
+ */
+const heroCapture = { requested: false, capturedAspect: 0 }
+
+export function requestHeroCapture() {
+  heroCapture.requested = true
+}
+
+export function markHeroCaptured(aspect) {
+  heroCapture.capturedAspect = aspect
+  heroCapture.requested = false
+}
+
+export function isHeroCaptured(aspect) {
+  return heroCapture.capturedAspect === aspect
+}
+
+/**
+ * Switches which side of the hand-over is showing, for a section flight
+ * crossing it at the hero pose. The flight owns the camera while it runs, so
+ * the machine is not advanced; this only moves the layer.
+ */
+export function setHeroFlightExterior(exterior) {
+  state.phase = exterior ? HERO_STATE.IMPACT : HERO_STATE.TRAVEL
+  state.onReturned = null
+  state.leavingHero = false
+}
+
+/**
+ * Puts the machine into the state a camera resting at `progress` would be in,
+ * so scroll takes over from a section flight (or from an interrupted one)
+ * without the machine replaying a beat or clamping somewhere else.
+ */
+export function syncHeroSequence(progress, exterior) {
+  state.phase = exterior ? HERO_STATE.IMPACT : HERO_STATE.TRAVEL
+  state.progress = exterior ? Math.max(progress, HERO_T) : Math.min(progress, HERO_T)
+  state.onReturned = null
+  state.leavingHero = false
+  // Arriving anywhere near the hero counts as having seen it; arriving well
+  // before it re-arms the beat for the next approach, as scrolling there would.
+  state.holdConsumed = state.progress >= HERO_T - REARM_BELOW
+  renderedProgress.value = state.progress
 }
 
 /**
