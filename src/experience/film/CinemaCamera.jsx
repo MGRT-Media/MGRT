@@ -198,7 +198,29 @@ const lensForward = new THREE.Vector3(0, 0, 1).applyAxisAngle(Y_AXIS, totalYawRa
  * is a rendering concern; where the visitor travels is not.
  */
 const lensFrontZ = BODY.depth / 2 + LENS.length
-const bodyWorldOrigin = worldOrigin.clone().setY(bodyCenterHeight)
+
+/**
+ * Uniform size of the whole rig — tripod, body and film image together.
+ *
+ * Everything above is fitted at 1: the tripod to `CAMERA_STAND.standHeight`,
+ * the body to `BODY.depth`. At that size the camera stood no taller than the
+ * Monitor's plinth, with its top at 0.99 beside a console reaching 1.57, and
+ * read as a toy next to it. At 1.5 the lens sits level with the Monitor's
+ * screen centre (1.19 against 1.20) and the top of the camera a little below
+ * the console's, so the two read as equipment of one studio.
+ *
+ * The scale is applied as one group around `RIG_SCALE_PIVOT`, so the fits,
+ * the parts' attachment to each other and the camera's orientation are all
+ * untouched. The pivot is on the floor, directly below the front face: the
+ * feet stay on the ground, and the face keeps its place in plan and only
+ * rises — so the approach axis and every waypoint's plan position hold, and
+ * `CAMERA_ANCHOR` only has to carry heights and the face's size.
+ */
+const CAMERA_RIG_SCALE = 1.5
+const RIG_SCALE_PIVOT = [0, 0, FRONT_FACE_LOCAL.z]
+const RIG_SCALE_PIVOT_INVERSE = RIG_SCALE_PIVOT.map((v) => -v)
+
+const bodyWorldOrigin = worldOrigin.clone().setY(bodyCenterHeight * CAMERA_RIG_SCALE)
 const lensFrontFieldPosition = bodyWorldOrigin.clone().addScaledVector(lensForward, lensFrontZ)
 
 /**
@@ -212,15 +234,18 @@ const lensFrontFieldPosition = bodyWorldOrigin.clone().addScaledVector(lensForwa
 const frontFacePosition = worldOrigin
   .clone()
   .addScaledVector(lensForward, FRONT_FACE_LOCAL.z)
-  .setY(FRONT_FACE_LOCAL.y)
+  .setY(FRONT_FACE_LOCAL.y * CAMERA_RIG_SCALE)
 
+// Heights and the face's size are the rendered, scaled rig's; plan positions
+// need no scaling because the rig grows about a point below the face.
 export const CAMERA_ANCHOR = {
-  bodyCenterHeight,
+  bodyCenterHeight: bodyCenterHeight * CAMERA_RIG_SCALE,
   lensRadius: LENS.frontRadius,
   lensFrontFieldPosition: lensFrontFieldPosition.toArray(),
   lensForward: lensForward.toArray(),
   frontFacePosition: frontFacePosition.toArray(),
-  frontFaceHalfHeight: 0.0544,
+  frontFaceHalfHeight: 0.0544 * CAMERA_RIG_SCALE,
+  rigScale: CAMERA_RIG_SCALE,
 }
 
 /**
@@ -628,60 +653,66 @@ export default function CinemaCamera() {
   return (
     <group position={BEAM_CENTER} rotation={[0, yawRadians, 0]}>
       <group position={[CAMERA_STAND.offsetX, 0, 0]} rotation={[0, tiltRadians, 0]}>
-        {/* The rig — stand and body together — turned about the lens glass so
-            the barrel faces down the corridor (see
-            `measureLensAxisCorrection`). The pivot is the measured glass, so
-            the lens itself does not move: the Film dive frames exactly the
-            same point, and the film image below still sits in the barrel.
-            The tripod turns with the body so the rig stays assembled. */}
-        <group
-          position={[LENS_FRONT_LOCAL.x + RIG_CENTERING_X, 0, LENS_FRONT_LOCAL.z]}
-          rotation={[0, lensAxisCorrection, 0]}
-        >
-          <group position={[-LENS_FRONT_LOCAL.x, 0, -LENS_FRONT_LOCAL.z]}>
-            {/* The rig's own tripod, from the same asset as the body — see
-                `useFittedTripod`. Replaces the procedural quadpod, which existed
-                only because the previous camera model had no support of its own. */}
-            <primitive object={tripod} />
+        {/* The whole rig at `CAMERA_RIG_SCALE`, grown about the floor below
+            its front face — see that constant. */}
+        <group position={RIG_SCALE_PIVOT} scale={CAMERA_RIG_SCALE}>
+          <group position={RIG_SCALE_PIVOT_INVERSE}>
+            {/* The rig — stand and body together — turned about the lens glass so
+                the barrel faces down the corridor (see
+                `measureLensAxisCorrection`). The pivot is the measured glass, so
+                the lens itself does not move: the Film dive frames exactly the
+                same point, and the film image below still sits in the barrel.
+                The tripod turns with the body so the rig stays assembled. */}
+            <group
+              position={[LENS_FRONT_LOCAL.x + RIG_CENTERING_X, 0, LENS_FRONT_LOCAL.z]}
+              rotation={[0, lensAxisCorrection, 0]}
+            >
+              <group position={[-LENS_FRONT_LOCAL.x, 0, -LENS_FRONT_LOCAL.z]}>
+                {/* The rig's own tripod, from the same asset as the body — see
+                    `useFittedTripod`. Replaces the procedural quadpod, which existed
+                    only because the previous camera model had no support of its own. */}
+                <primitive object={tripod} />
 
-            {/* Camera body (film-camera.glb), replacing the procedural
-                body, viewfinder and lens barrel. Fitted to `CAMERA_ANCHOR` —
-                see `useFittedCameraBody` for why that fit, rather than a
-                chosen scale, is what keeps the Film lens-dive valid. The
-                quadpod stand above is kept: the model has no support of its
-                own, and the stand is what sets `CAMERA_STAND.standHeight`,
-                which `bodyCenterHeight` (and so the camera path) derives
-                from. */}
-            <primitive object={cameraBody} />
+                {/* Camera body (film-camera.glb), replacing the procedural
+                    body, viewfinder and lens barrel. Fitted to `CAMERA_ANCHOR` —
+                    see `useFittedCameraBody` for why that fit, rather than a
+                    chosen scale, is what keeps the Film lens-dive valid. The
+                    quadpod stand above is kept: the model has no support of its
+                    own, and the stand is what sets `CAMERA_STAND.standHeight`,
+                    which `bodyCenterHeight` (and so the camera path) derives
+                    from. */}
+                <primitive object={cameraBody} />
+              </group>
+            </group>
+
+            {/* Film image, on the camera's visible front face — see
+                `FRONT_FACE_LOCAL` for why it cannot sit at the glass. Position and size
+                come from the same measured constants `CAMERA_ANCHOR` is built
+                from, so what the dive frames and what is actually drawn cannot
+                drift apart. */}
+            <mesh
+              position={[FILM_IMAGE_LOCAL.x, FILM_IMAGE_LOCAL.y, FILM_IMAGE_LOCAL.z]}
+              castShadow={false}
+              receiveShadow={false}
+            >
+              <planeGeometry args={[FILM_IMAGE_SIZE, FILM_IMAGE_SIZE]} />
+              <primitive object={lensScreenMaterial} attach="material" />
+            </mesh>
+
+            {/* The camera is the body asset alone, per explicit request:
+                the procedural barrel, glass dome, lip and the film-media screen
+                that sat behind them are all gone, and the model's own optics stay
+                hidden as before.
+
+                `LENS` and `lensFrontZ` above are deliberately KEPT even though
+                nothing is drawn from them any more. They are what `CAMERA_ANCHOR`
+                is built from, and `cameraPath.js`'s Act 1 keyframe and
+                `DepthOfField`'s focus target are both built on that — so they now
+                describe a point in space the camera still flies to, rather than a
+                piece of geometry. Deleting them would move the camera path, which
+                this change was explicitly not to touch. */}
           </group>
         </group>
-
-        {/* Film image, on the camera's visible front face — see
-            `FRONT_FACE_LOCAL` for why it cannot sit at the glass. Position and size
-            come from the same measured constants `CAMERA_ANCHOR` is built
-            from, so what the dive frames and what is actually drawn cannot
-            drift apart. */}
-        <mesh
-          position={[FILM_IMAGE_LOCAL.x, FILM_IMAGE_LOCAL.y, FILM_IMAGE_LOCAL.z]}
-          castShadow={false}
-          receiveShadow={false}
-        >
-          <planeGeometry args={[FILM_IMAGE_SIZE, FILM_IMAGE_SIZE]} />
-          <primitive object={lensScreenMaterial} attach="material" />
-        </mesh>
-
-        {/* The camera is the body asset alone, per explicit request:
-            the procedural barrel, glass dome, lip and the film-media screen
-            that sat behind them are all gone, and the model's own optics stay
-            hidden as before.
-
-            `LENS` and `lensFrontZ` above are deliberately KEPT even though
-            nothing is drawn from them any more. They are what `CAMERA_ANCHOR`
-            is built from, and `cameraPath.js`'s Act 1 keyframe and
-            `DepthOfField`'s focus target are both built on that — so they now
-            describe a point in space the camera still flies to, rather than a
-            piece of geometry. Deleting them would move the camera path, which
-            this change was explicitly not to touch. */}
       </group>
     </group>
   )

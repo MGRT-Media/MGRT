@@ -342,14 +342,22 @@ const ORIGINAL_LENS_DIVE_POSITION = new THREE.Vector3(
  * object; further and the stop reads as standing in front of a camera rather
  * than arriving at it.
  */
-const FILM_STOP_FACE_DISTANCE = 0.15
+// Measured on the camera at its original size, so it grows with the rig
+// (`CAMERA_ANCHOR.rigScale`): the same face fill, and the same clearance from
+// the housing that projects in front of the face.
+const FILM_STOP_FACE_DISTANCE = 0.15 * CAMERA_ANCHOR.rigScale
 const FILM_STOP_FACE = new THREE.Vector3().fromArray(CAMERA_ANCHOR.frontFacePosition)
 const LENS_FORWARD = new THREE.Vector3().fromArray(CAMERA_ANCHOR.lensForward)
 const FINAL_LEG_DIRECTION = new THREE.Vector3().subVectors(ORIGINAL_LENS_DIVE_POSITION, APPROACH_POSITION).normalize()
+// Level with the face's centre. The extended leg used to land there by
+// construction (0.795 against the face's 0.794); once the rig is scaled the
+// leg's shape no longer does, so the height is taken from the face itself. The
+// descent's waypoints are read off the line ending here (`onDescent`), so the
+// whole leg stays one straight dolly.
 const LENS_DIVE_POSITION = (() => {
   const approachDepth = new THREE.Vector3().subVectors(APPROACH_POSITION, FILM_STOP_FACE).dot(LENS_FORWARD)
   const along = (FILM_STOP_FACE_DISTANCE - approachDepth) / FINAL_LEG_DIRECTION.dot(LENS_FORWARD)
-  return APPROACH_POSITION.clone().addScaledVector(FINAL_LEG_DIRECTION, along)
+  return APPROACH_POSITION.clone().addScaledVector(FINAL_LEG_DIRECTION, along).setY(FILM_STOP_FACE.y)
 })()
 
 /**
@@ -471,7 +479,10 @@ const MONITOR_ALIGNED_LOOKAT = new THREE.Vector3(screenX, screenY, screenZ)
 // round only touches the vertical component.
 const HANDOFF_PULLBACK_T_FRACTION = 0.15
 const HANDOFF_PULLBACK_T = FILM_FOCUS_T + (1 - FILM_FOCUS_T) * HANDOFF_PULLBACK_T_FRACTION
-const HANDOFF_PULLBACK_Y = THREE.MathUtils.lerp(lensY, screenY, HANDOFF_PULLBACK_T_FRACTION)
+// From the Film stop's own height rather than `lensY`: with the rig scaled the
+// corridor's look height sits above both ends, and rising from it would bob up
+// and back down on the way to the monitor.
+const HANDOFF_PULLBACK_Y = THREE.MathUtils.lerp(LENS_DIVE_POSITION.y, screenY, HANDOFF_PULLBACK_T_FRACTION)
 const HANDOFF_PULLBACK_DISTANCE = 1.6
 const HANDOFF_PULLBACK_POSITION = new THREE.Vector3(
   lensX + fwdX * HANDOFF_PULLBACK_DISTANCE,

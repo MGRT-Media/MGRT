@@ -434,13 +434,31 @@ html.lenis-smooth {
   left: 32px;
   top: 28px;
   z-index: 5;
+  /* A button (SiteMark.jsx: back to start) with the browser's own button
+     chrome removed, so it keeps the wordmark's exact appearance. */
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
   font-family: 'Cormorant', Georgia, serif;
   font-weight: 400;
   font-size: 15px;
+  line-height: normal;
   letter-spacing: 0.22em;
   color: rgba(255, 241, 220, 0.68);
-  pointer-events: none;
+  cursor: pointer;
   user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.26s var(--nav-ease), transform 0.26s var(--nav-ease);
+}
+
+/* A comfortable touch target (44px tall) without changing how the mark or its
+   focus outline look. Vertical only: sideways it would reach the mobile menu
+   control beside it. */
+.site-mark::before {
+  content: '';
+  position: absolute;
+  inset: -14px 0;
 }
 
 @media (max-width: 640px) {
@@ -574,7 +592,8 @@ html.lenis-smooth {
  */
 @media (hover: hover) {
   .global-nav__link:hover,
-  .global-nav__mark:hover {
+  .global-nav__mark:hover,
+  .site-mark:hover {
     color: rgba(var(--color-warm-rgb), 1);
     transform: scale(1.1);
   }
@@ -582,6 +601,7 @@ html.lenis-smooth {
 
 .global-nav__link:focus-visible,
 .global-nav__mark:focus-visible,
+.site-mark:focus-visible,
 .global-nav__toggle:focus-visible {
   outline: 1px solid rgba(var(--color-warm-rgb), 0.6);
   outline-offset: 4px;
@@ -597,13 +617,15 @@ html.lenis-smooth {
 }
 
 .global-nav__mark,
+.site-mark,
 .global-nav__drop .global-nav__link {
   transform-origin: left center;
 }
 
 /* Touch equivalent: the link brightens while held, and does not scale.
    A pressed state is feedback, not an animation. */
-.global-nav__link:active {
+.global-nav__link:active,
+.site-mark:active {
   color: rgba(var(--color-warm-rgb), 0.95);
 }
 
@@ -783,6 +805,7 @@ html.lenis-smooth {
 @media (prefers-reduced-motion: reduce) {
   .global-nav__link,
   .global-nav__mark,
+  .site-mark,
   .global-nav__bar,
   .global-nav__drop-item {
     transition-duration: 0.01ms;
@@ -797,7 +820,8 @@ html.lenis-smooth {
      brighten stays, so the affordance survives without it. */
   @media (hover: hover) {
     .global-nav__link:hover,
-    .global-nav__mark:hover {
+    .global-nav__mark:hover,
+    .site-mark:hover {
       transform: none;
     }
   }
