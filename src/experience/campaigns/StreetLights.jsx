@@ -3,38 +3,39 @@ import * as THREE from 'three'
 import { sampleCameraPath } from '../timeline/cameraPath.js'
 import { centrelinePoint, groundY } from './highway.js'
 import { useExteriorLayer } from './layers.js'
-import { MODEL_URLS, cloneNode, measure, useModel } from '../models/modelAssets.js'
+import { MODEL_URLS, bakedGeometry, cloneNode, measure, useModel } from '../models/modelAssets.js'
 
 /**
  * Lighting columns down the median, running away into the distance.
  *
- * Entirely static — the poles never move, so unlike the traffic there is no
- * per-frame work at all here: the positions are baked once into two
- * `InstancedMesh` transforms and one `Points` buffer, and after that the
- * whole run costs three draw calls and nothing else.
+ * Entirely static — there is no per-frame work at all here: the positions
+ * are baked once into the column instances, the pools and one `Points`
+ * buffer.
  *
- * Scale is set against the traffic rather than against the frame: a 9-unit
- * column over vehicles that stand 1.5 to 3.5 puts the lamps at roughly
- * three times a car's height, which is what a motorway column actually
- * looks like. Spacing likewise — 30 units against 3.5-unit lanes is real
- * motorway spacing, not a density chosen to fill the shot.
+ * Scale is set against the road rather than against the frame: a 9-unit
+ * column is what a motorway lighting column actually stands at, and 30 units
+ * against 3.5-unit lanes is real motorway spacing, not a density chosen to
+ * fill the shot.
  */
 
 const POLE_SPACING = 30
 const POLE_HEIGHT = 9
-const POLE_RADIUS = 0.13
-const ARM_REACH = 1.5
 
 // The run starts just past the camera and continues well beyond the drawn
 // ribbon. Everything past ~90 units is heavily fogged, so what is actually
 // being extended is the chain of lamp glows — the poles under them have
 // long since dissolved, which is exactly what a real lit road looks like
 // from a distance.
-const FIRST_S = 45
+// 45 -> -15 once the columns stood at their real height (see `bakedGeometry`):
+// the column at 15 is the nearest in front of the camera's resting pose and
+// stood full height at the left edge of the reveal, behind the side
+// navigation — a foreground object in a composition whose foreground is meant
+// to be empty. (The one at 45 is behind the camera.)
+const FIRST_S = -15
 const LAST_S = -195
 
-// The glows opt out of the scene fog (like the vehicles' lamps, and for the
-// same reason — at these distances it would erase them outright) and carry
+// The glows opt out of the scene fog (a point source is exactly what stays
+// visible through haze, and at these distances fog would erase them) and carry
 // their own, gentler falloff instead, baked per lamp from the camera's
 // resting pose. Without it the chain would stay pin-bright to the horizon
 // and read as a string of beads rather than as a road going away.
@@ -108,12 +109,13 @@ function buildRun() {
 /**
  * One lamp column from `street-lights.glb`.
  *
- * The file is a row of eight lamps; this takes a single one and instances
- * it, so the run down the median costs one draw call however many columns
- * it has — the same trade the procedural cylinder made.
+ * The source asset is a row of eight lamp designs; the production file keeps
+ * only this one (its pole and its lens), which this instances down the
+ * median, so the run costs one draw call per part however many columns it
+ * has.
  *
  * Scaled by height rather than by arm span. Both were tried: at this
- * distance the column's height against the traffic beside it is what sets
+ * distance the column's height against the lanes beside it is what sets
  * the sense of scale, while the arm span is barely readable, so height is
  * the measurement worth matching to `POLE_HEIGHT`. The model is a
  * double-arm design, which is why the glows below moved from one per
@@ -126,9 +128,9 @@ function useLampColumn() {
 
   return useMemo(() => {
     const holder = new THREE.Group()
-    const parts = MODEL_COLUMN_NODES.map((name) => cloneNode(gltf, name)).filter(Boolean)
-    if (!parts.length) return null
-    holder.add(...parts)
+    const nodes = MODEL_COLUMN_NODES.map((name) => cloneNode(gltf, name)).filter(Boolean)
+    if (!nodes.length) return null
+    holder.add(...nodes)
 
     const authored = measure(holder)
     holder.scale.setScalar(POLE_HEIGHT / authored.size.y)
@@ -141,19 +143,63 @@ function useLampColumn() {
     holder.position.y -= scaled.box.min.y
 
     holder.updateWorldMatrix(true, true)
-    const geometries = []
-    const materials = []
+    // Baked through `bakedGeometry`: the file is quantised, and baking the
+    // column's 9-unit scale straight into its integer positions clamped the
+    // whole column down to a ~1-unit stump under glows hanging at full height.
+    const parts = []
     holder.traverse((object) => {
       if (!object.isMesh) return
-      const geometry = object.geometry.clone()
-      geometry.applyMatrix4(object.matrixWorld)
-      geometries.push(geometry)
-      materials.push(object.material)
+      parts.push({ geometry: bakedGeometry(object), source: object.material, isLens: /_light_/.test(object.name) })
     })
 
-    const final = measure(holder)
-    return { geometries, materials, armReach: final.size.z / 2, headHeight: final.box.max.y }
+    // Where the two lenses actually are on the fitted column. The model's arms
+    // run along its own Z axis, one lens at each end, so the lens geometry is
+    // split by the sign of Z and each half averaged — the glows and pools are
+    // placed from these rather than from a guessed reach and height.
+    const lensOffsets = [new THREE.Vector3(), new THREE.Vector3()]
+    const lensCounts = [0, 0]
+    parts
+      .filter((part) => part.isLens)
+      .forEach(({ geometry }) => {
+        const position = geometry.attributes.position
+        for (let i = 0; i < position.count; i += 1) {
+          const side = position.getZ(i) < 0 ? 0 : 1
+          lensOffsets[side].x += position.getX(i)
+          lensOffsets[side].y += position.getY(i)
+          lensOffsets[side].z += position.getZ(i)
+          lensCounts[side] += 1
+        }
+      })
+    lensOffsets.forEach((offset, side) => offset.divideScalar(Math.max(lensCounts[side], 1)))
+
+    return { parts, lensOffsets }
   }, [gltf])
+}
+
+/**
+ * The model's own two materials, carried over as the cheaper standard type.
+ *
+ * `metal` keeps the file's colour and a gloss close to its clear coat. The
+ * clear coat itself is dropped: it is a second specular lobe with nothing
+ * here to reflect — the exterior has no environment map — so it would cost a
+ * physical-material shader and add nothing visible.
+ *
+ * `light` is the lens under each head. The file gives it a white emissive at
+ * 2.5x, which in this scene would be the brightest thing in the frame and
+ * compete with the billboard; it keeps its role as a lit lens but in the same
+ * warm tone as the glow sprites, at a level that reads as a lamp rather than a
+ * light source of its own.
+ */
+function columnMaterial({ source, isLens }) {
+  if (isLens) {
+    return new THREE.MeshBasicMaterial({ color: GLOW_COLOR, side: THREE.DoubleSide })
+  }
+  return new THREE.MeshStandardMaterial({
+    color: source.color,
+    roughness: Math.max(source.roughness, 0.35),
+    metalness: source.metalness,
+    side: THREE.DoubleSide,
+  })
 }
 
 export default function StreetLights() {
@@ -162,18 +208,14 @@ export default function StreetLights() {
   const lamp = useLampColumn()
   const glowMap = useMemo(glowTexture, [])
   const poolMap = useMemo(poolTexture, [])
+  const materials = useMemo(() => (lamp ? lamp.parts.map(columnMaterial) : []), [lamp])
 
   const { poleMatrices, poolMatrices, glowPositions, glowColors } = useMemo(() => {
-    // Two lamps per column now, not one: the model is a double-arm design
-    // reaching across both carriageways, so a single glow at a guessed
-    // offset would have sat in mid-air beside the heads rather than under
-    // them. Reach and height come from the fitted model, not a constant.
-    const reach = lamp ? lamp.armReach * 0.72 : ARM_REACH
-    const headY = lamp ? lamp.headHeight - 0.35 : POLE_HEIGHT - 0.12
     const matrix = new THREE.Matrix4()
     const position = new THREE.Vector3()
+    const lens = new THREE.Vector3()
     const quaternion = new THREE.Quaternion()
-    const scale = new THREE.Vector3()
+    const scale = new THREE.Vector3(1, 1, 1)
     const up = new THREE.Vector3(0, 1, 0)
     const flat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2)
     const color = new THREE.Color()
@@ -182,38 +224,38 @@ export default function StreetLights() {
     const pools = []
     const glowPositions = new Float32Array(columns.length * 2 * 3)
     const glowColors = new Float32Array(columns.length * 2 * 3)
+    if (!lamp) return { poleMatrices: poles, poolMatrices: pools, glowPositions, glowColors }
 
     columns.forEach((column, i) => {
-      quaternion.setFromAxisAngle(up, column.yaw)
+      // A quarter turn past the road's own heading: the model's arms run along
+      // its Z axis, and this double-arm column stands in the median to reach
+      // out over both carriageways, not along the median itself.
+      quaternion.setFromAxisAngle(up, column.yaw + Math.PI / 2)
 
       // The column itself sits ON the road surface — the model was fitted
-      // with its base at zero, so no half-height offset is needed the way
-      // the centred cylinder required one.
+      // with its base at zero.
       position.set(column.x, groundY, column.z)
-      scale.set(1, 1, 1)
       poles.push(matrix.compose(position, quaternion, scale).clone())
 
       const fade = Math.exp(-Math.pow(GLOW_FALLOFF * column.distance, 2))
       color.copy(GLOW_COLOR).multiplyScalar(0.35 + fade * 0.65)
 
-      for (let side = 0; side < 2; side += 1) {
-        const offset = side === 0 ? reach : -reach
-        // The arms run across the column's own axis, so the offset is
-        // taken along the yaw's perpendicular.
-        const armX = column.x + Math.cos(column.yaw) * offset
-        const armZ = column.z - Math.sin(column.yaw) * offset
+      // One glow just under each measured lens, and its pool on the road
+      // directly beneath — both follow the column's own transform, so they
+      // cannot drift off the heads.
+      lamp.lensOffsets.forEach((offset, side) => {
+        lens.copy(offset).applyQuaternion(quaternion).add(position)
         const slot = i * 2 + side
 
-        position.set(armX, groundY + 0.03, armZ)
-        pools.push(matrix.compose(position, flat, scale).clone())
+        pools.push(matrix.compose(new THREE.Vector3(lens.x, groundY + 0.03, lens.z), flat, scale).clone())
 
-        glowPositions[slot * 3] = armX
-        glowPositions[slot * 3 + 1] = groundY + headY
-        glowPositions[slot * 3 + 2] = armZ
+        glowPositions[slot * 3] = lens.x
+        glowPositions[slot * 3 + 1] = lens.y - 0.12
+        glowPositions[slot * 3 + 2] = lens.z
         glowColors[slot * 3] = color.r
         glowColors[slot * 3 + 1] = color.g
         glowColors[slot * 3 + 2] = color.b
-      }
+      })
     })
 
     return { poleMatrices: poles, poolMatrices: pools, glowPositions, glowColors }
@@ -230,15 +272,13 @@ export default function StreetLights() {
       {/* Columns and lamp heads. Fogged like the rest of the road furniture,
           so they dissolve with distance and leave only the glows — which is
           how a lit road actually reads from far off. */}
-      {lamp?.geometries.map((geometry, index) => (
+      {lamp?.parts.map((part, index) => (
         <instancedMesh
           key={index}
           ref={applyMatrices(poleMatrices)}
-          args={[geometry, undefined, columns.length]}
+          args={[part.geometry, materials[index], columns.length]}
           frustumCulled={false}
-        >
-          <meshStandardMaterial color="#15161a" roughness={0.8} metalness={0.4} />
-        </instancedMesh>
+        />
       ))}
 
       <instancedMesh ref={applyMatrices(poolMatrices)} args={[undefined, undefined, columns.length * 2]} frustumCulled={false}>

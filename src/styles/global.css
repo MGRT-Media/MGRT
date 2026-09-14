@@ -329,6 +329,16 @@ html.lenis-smooth {
     width: 36px;
     height: 36px;
   }
+
+  /* A 44px touch target around the 36px circle, without changing how it
+     looks. The button is already a positioned box (fixed), so this sits
+     relative to it. */
+  .fullscreen-toggle::before {
+    content: '';
+    position: absolute;
+    inset: -5px;
+    border-radius: 50%;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

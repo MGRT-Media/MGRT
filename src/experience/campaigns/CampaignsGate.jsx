@@ -8,7 +8,7 @@ import { MONITOR_SNAP_T } from '../timeline/filmActBeats.js'
  * The exterior world and the billboard were mounted with everything else, so
  * a visitor who never scrolled past the opening room still paid for three GLBs
  * they would not see for another 83% of the sequence — plus the code that
- * builds the road, the traffic, the river and the night sky. On the opening
+ * builds the road, the street lights, the river and the night sky. On the opening
  * frame, which is the one that has to feel immediate, all of that is dead
  * weight.
  *

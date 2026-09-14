@@ -28,7 +28,8 @@ const LOOP_EARLY_SECONDS = 0.1
  */
 const FILM_PREPARE_LEAD = 0.1
 
-function lensIgniteAt(p) {
+/** How visible the Film preview is at progress `p`, 0 to 1. Shared with `FullscreenButton.jsx`. */
+export function lensIgniteAt(p) {
   const rise = THREE.MathUtils.smoothstep(p, FILM_FOCUS_T - FILM_IGNITE_RISE, FILM_FOCUS_T)
   const fall = 1 - THREE.MathUtils.smoothstep(p, FILM_FOCUS_T, FILM_FOCUS_T + FILM_IGNITE_RISE)
   return Math.min(rise, fall)

@@ -14,6 +14,33 @@ import { EXTERIOR_LAYER } from './layers.js'
 const EXTERIOR_FAR = 400
 
 /**
+ * The exterior's own atmosphere, applied with the layer swap.
+ *
+ * Until this existed the exterior was rendered through the ROOM's atmosphere,
+ * and that is what turned the whole act grey:
+ *
+ *  - Fog. `lightingParams.fog` is tuned for a 14-unit room (density 0.028). The
+ *    exterior works at tens to hundreds of units, where that density is already
+ *    69% fog colour at the billboard's 39 and over 93% across the road — every
+ *    lit surface out there was mostly the one flat grey.
+ *    0.0065 gives about 6% at the billboard, 30% at 90 units down the road and
+ *    94% by the 250-unit horizon, so distance still dissolves into the same
+ *    haze the night sky and river are graded to (the colour is unchanged) but
+ *    the road and structure keep their own values up close.
+ *  - Environment lighting. `scene.environment` is the room's DAYLIGHT sky
+ *    (`SceneEnvironment.jsx`). Every standard material outside received it at
+ *    full strength, and its specular term does not scale with albedo, so a
+ *    uniform blue-grey sheen sat over dark metal and sand alike, flattening them into one tone. The night exterior has no such sky;
+ *    it is lit by its own moonlight and fill (`ExteriorEnvironment.jsx`).
+ *
+ * The room's values are read from the scene when the exterior takes over and
+ * put back when it hands back, rather than duplicated here, so they cannot
+ * drift from `SceneEnvironment.jsx` and `lightingParams`.
+ */
+const EXTERIOR_FOG_DENSITY = 0.0065
+const EXTERIOR_ENVIRONMENT_INTENSITY = 0
+
+/**
  * The single point where Act 3's reveal actually happens: at
  * `CAMPAIGNS_SWAP_T` the main camera stops rendering the interior layer and
  * starts rendering the exterior one, where the billboard is showing that
@@ -33,9 +60,10 @@ const EXTERIOR_FAR = 400
  */
 export default function CampaignsLayerSwitch() {
   const interiorFar = useRef(null)
+  const interiorAtmosphere = useRef(null)
   const showingExterior = useRef(null)
 
-  useFrame(({ camera }) => {
+  useFrame(({ camera, scene }) => {
     if (interiorFar.current === null) interiorFar.current = camera.far
 
     // Keyed off where the camera ACTUALLY is, not off scroll progress — see
@@ -61,11 +89,24 @@ export default function CampaignsLayerSwitch() {
      */
     const exterior = isExteriorActive()
     if (exterior === showingExterior.current) return
+    const wasExterior = showingExterior.current
     showingExterior.current = exterior
 
     camera.layers.set(exterior ? EXTERIOR_LAYER : 0)
     camera.far = exterior ? EXTERIOR_FAR : interiorFar.current
     camera.updateProjectionMatrix()
+
+    if (exterior) {
+      interiorAtmosphere.current = {
+        fogDensity: scene.fog?.density,
+        environmentIntensity: scene.environmentIntensity,
+      }
+      if (scene.fog) scene.fog.density = EXTERIOR_FOG_DENSITY
+      scene.environmentIntensity = EXTERIOR_ENVIRONMENT_INTENSITY
+    } else if (wasExterior && interiorAtmosphere.current) {
+      if (scene.fog) scene.fog.density = interiorAtmosphere.current.fogDensity
+      scene.environmentIntensity = interiorAtmosphere.current.environmentIntensity
+    }
   })
 
   return null

@@ -19,8 +19,8 @@ import { loadSkyTexture } from '../lighting/skyEnvironment.js'
  * and `SceneReady` holds the canvas out of sight across those frames.
  *
  * CRITICAL means "visible in, or lighting, the opening frame" — not "used by
- * the site." Act 3's world (billboard, highway, vehicles, street lights, the
- * night sky) is absent from this list by design and stays behind
+ * the site." Act 3's world (billboard, highway, street lights, the night
+ * sky) is absent from this list by design and stays behind
  * `CampaignsGate`, which fetches it on approach. The chapter videos are
  * absent too: their elements carry `preload = 'none'` and together they are
  * 60MB.
@@ -31,8 +31,8 @@ import { loadSkyTexture } from '../lighting/skyEnvironment.js'
  */
 
 /**
- * The four models standing in the room. `billboard`, `vehicles` and
- * `streetLights` are deliberately NOT here — see the note above.
+ * The four models standing in the room. `billboard` and `streetLights` are
+ * deliberately NOT here — see the note above.
  */
 const CRITICAL_MODEL_URLS = [
   MODEL_URLS.camera,

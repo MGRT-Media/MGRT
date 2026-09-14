@@ -13,7 +13,6 @@ import { useExteriorLayer } from './layers.js'
 import NightSky from './NightSky.jsx'
 import River from './River.jsx'
 import StreetLights from './StreetLights.jsx'
-import Traffic from './Traffic.jsx'
 
 /**
  * The world the billboard turns out to be standing in: a four-lane highway
@@ -35,8 +34,9 @@ import Traffic from './Traffic.jsx'
  * haze so it resolves into a sky rather than into the canvas's own flat
  * background.
  *
- * The road's own geometry lives in `highway.js` — shared with `Traffic.jsx`,
- * which has to follow exactly the same centreline this is drawn from.
+ * The road's own geometry lives in `highway.js` — shared with
+ * `StreetLights.jsx`, which places its columns on the same centreline this is
+ * drawn from.
  */
 
 // Only the painted lines use this, so it stays here rather than moving to
@@ -139,7 +139,6 @@ export default function ExteriorEnvironment() {
 
       <River />
       <StreetLights />
-      <Traffic />
       <NightSky />
 
       {/* Exterior lighting, layer-assigned like every other object here:

@@ -3,15 +3,13 @@ import { CAMPAIGNS_RAIL } from '../timeline/cameraPath.js'
 import { BILLBOARD_PLACEMENT } from './Billboard.jsx'
 
 /**
- * The highway's own geometry — its centreline, its lanes, and the ribbon
- * builder every painted surface is made from.
+ * The highway's own geometry — its centreline, its lane layout, and the
+ * ribbon builder every painted surface is made from.
  *
- * Extracted out of `ExteriorEnvironment.jsx` when traffic arrived: the
- * vehicles have to follow exactly the same centreline the road is drawn
- * from, and having them import it from the component that renders the road
- * would have made a cycle (that component now renders the traffic). This
- * module holds no JSX and imports nothing from either, so both can depend on
- * it. Nothing about the layout changed in the move.
+ * Kept out of `ExteriorEnvironment.jsx` so that things placed along the road
+ * (`StreetLights.jsx`, the landscape's flattened corridor) can follow exactly
+ * the centreline the road is drawn from without importing the component that
+ * renders it. This module holds no JSX, so anything can depend on it.
  */
 
 export const { groundY } = BILLBOARD_PLACEMENT
@@ -29,12 +27,12 @@ export const SHOULDER_WIDTH = 1.6
 // path never silently strands the highway.
 //
 // `s` is distance along the rail direction from the anchor; `lateral` bends
-// the line steadily toward the traffic's right as `s` grows, giving the
+// the line steadily toward the road's right as `s` grows, giving the
 // gentle right-hand curve. The odd-power term keeps the curvature close to
 // zero beside the billboard and increases with distance, so the bend reads
 // as the road sweeping away rather than as a kink.
 export const RAIL_DIRECTION = new THREE.Vector3().fromArray(CAMPAIGNS_RAIL.direction).setY(0).normalize()
-// The traffic's right-hand side: the billboard is offset along +this, which
+// The road's right-hand side: the billboard is offset along +this, which
 // is what literally places it on the road's right-hand shoulder.
 export const ROAD_RIGHT = new THREE.Vector3(RAIL_DIRECTION.z, 0, -RAIL_DIRECTION.x)
 
@@ -90,27 +88,7 @@ const CENTRELINE_POINTS = Array.from({ length: 18 }, (_, i) =>
   centrelinePoint(ROAD_S_NEAR - i * ((ROAD_S_NEAR - ROAD_S_FAR) / 17)),
 ).reverse()
 
-export const CENTRELINE_CURVE = new THREE.CatmullRomCurve3(CENTRELINE_POINTS, false, 'centripetal')
-
-/**
- * The four lanes, as a lateral `offset` in the same convention
- * `ribbonGeometry` uses plus the direction traffic runs in.
- *
- * The sign is worth stating because it is easy to get backwards: the ribbon
- * builder's `side` is `cross(tangent, up)`, which is the NEGATIVE of
- * `ROAD_RIGHT`. So a negative offset is the traffic's right-hand side —
- * where `direction: 1` vehicles belong, and the side the billboard stands
- * on. `direction: 1` runs along `RAIL_DIRECTION`, which is the way the
- * camera itself retreats: those vehicles come toward it out of the haze
- * showing headlights, while `direction: -1` vehicles pass it and recede
- * showing taillights.
- */
-export const LANES = [
-  { offset: -LANE_WIDTH * 1.5, direction: 1 },
-  { offset: -LANE_WIDTH * 0.5, direction: 1 },
-  { offset: LANE_WIDTH * 0.5, direction: -1 },
-  { offset: LANE_WIDTH * 1.5, direction: -1 },
-]
+const CENTRELINE_CURVE = new THREE.CatmullRomCurve3(CENTRELINE_POINTS, false, 'centripetal')
 
 /**
  * A flat ribbon following the centreline at a lateral `offset`, `halfWidth`
@@ -118,6 +96,9 @@ export const LANES = [
  * marking are all built from, rather than three near-identical mesh
  * builders. `dashLength`/`gapLength` (in ribbon segments) make the broken
  * lane lines; omitting them gives a continuous ribbon.
+ *
+ * The ribbon's `side` is `cross(tangent, up)`, the NEGATIVE of `ROAD_RIGHT`,
+ * so a negative offset lies on the billboard's side of the road.
  *
  * Ribbons are stacked with a small `lift` each so they never z-fight: the
  * road sits above the ground, the markings above the road.

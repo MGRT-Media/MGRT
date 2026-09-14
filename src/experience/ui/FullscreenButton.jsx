@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { scrollProgress } from '../timeline/ScrollTimelineProvider.jsx'
 import { contentValue } from '../timeline/contentProgress.js'
 import { CAMPAIGNS_GATE_T, FILM_FOCUS_T, MONITOR_SNAP_T } from '../timeline/filmActBeats.js'
-import { FILM_MEDIA_SRC } from '../film/CinemaCamera.jsx'
+import { FILM_MEDIA_SRC, lensIgniteAt } from '../film/CinemaCamera.jsx'
 import { DIGITAL_MEDIA_SRC } from '../digital/Monitor.jsx'
 import FullscreenVideoModal from './FullscreenVideoModal.jsx'
 
@@ -44,12 +44,39 @@ function isInRange(progress) {
  * section the flight is passing.
  */
 function isButtonShown() {
-  return contentValue((progress) => (isInRange(progress) ? 1 : 0)) >= 0.5
+  return contentValue((progress) => (isInRange(progress) ? 1 : 0)) >= 0.5 || isFilmPreviewShown()
+}
+
+/**
+ * The Film preview is on screen: faded in more than halfway, by the same curve
+ * that fades it in (`CinemaCamera.jsx`).
+ *
+ * `isInRange` alone waited for progress to reach `FILM_FOCUS_T`, and it only
+ * gets there when the camera has finished settling. The camera eases onto the
+ * lens asymptotically, so that was ~3s after arriving — after the lock's
+ * countdown had already run out — while the preview itself had been playing
+ * in plain view the whole time. The countdown never gated the button; the
+ * camera's last few centimetres did. The preview's own visibility is the
+ * moment the button is meant to follow, in both scroll directions.
+ */
+function isFilmPreviewShown() {
+  return contentValue(lensIgniteAt) >= 0.5
 }
 
 export default function FullscreenButton() {
   const [visible, setVisible] = useState(isButtonShown)
   const [isOpen, setIsOpen] = useState(false)
+  const buttonRef = useRef(null)
+
+  // Closing hands keyboard focus back to the control that opened the video,
+  // rather than dropping it to the document, as long as that control is still
+  // on screen. Stable identity: the modal binds its Escape listener to it.
+  const closeModal = useCallback(() => {
+    setIsOpen(false)
+    if (buttonRef.current?.classList.contains('fullscreen-toggle--visible')) {
+      buttonRef.current.focus({ preventScroll: true })
+    }
+  }, [])
 
   useEffect(() => {
     let rafId
@@ -79,6 +106,7 @@ export default function FullscreenButton() {
   return (
     <>
       <button
+        ref={buttonRef}
         type="button"
         className={`fullscreen-toggle${visible ? ' fullscreen-toggle--visible' : ''}`}
         onClick={() => setIsOpen(true)}
@@ -97,7 +125,7 @@ export default function FullscreenButton() {
           />
         </svg>
       </button>
-      {isOpen && <FullscreenVideoModal src={activeSrc} onClose={() => setIsOpen(false)} />}
+      {isOpen && <FullscreenVideoModal src={activeSrc} onClose={closeModal} />}
     </>
   )
 }
