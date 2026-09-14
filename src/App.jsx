@@ -22,7 +22,9 @@ function Routes() {
 
   return (
     <>
-      <GlobalNav variant={isHome ? 'home' : 'page'} />
+      {/* Internal pages only. On the homepage the closing frame's own links
+          (`ClosingFrame.jsx`) and the wordmark carry the site navigation. */}
+      {!isHome && <GlobalNav />}
       {isHome ? (
         // No fallback: the homepage opens on darkness, and the page
         // background is already that same void, so an empty frame during the

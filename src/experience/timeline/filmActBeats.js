@@ -231,17 +231,17 @@ export const LOCK_CATCH_EASE = 'power4.out'
  *
  * `campaigns` gained a real landmark this round (`CAMPAIGNS_REVEAL_T`, the
  * end of the billboard pull-back), so its mark is now genuinely navigable.
- * `return` is still deliberately absent: the Act 4 dive-back-in is
- * "NOT STARTED" per build-status.md's Phase Progress tracker, so there is
- * no correct coordinate to jump to — that mark stays visually present
- * (hoverable, per the UI spec) but functionally inert rather than
- * fabricating a placeholder position.
+ * `ending` — the closing frame — shares that landmark: it is played over the
+ * settled Campaigns frame rather than being a camera position of its own
+ * (see `endingSequence.js`), so a flight to it lands on Campaigns and the
+ * closing frame runs from there.
  */
 export const SECTION_TARGETS = {
   intro: 0,
   film: FILM_FOCUS_T,
   digital: MONITOR_SNAP_T,
   campaigns: CAMPAIGNS_REVEAL_T,
+  ending: CAMPAIGNS_REVEAL_T,
 }
 
 // Direct-navigation jump duration range, in seconds — scaled by travel

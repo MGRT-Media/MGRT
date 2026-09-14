@@ -15,6 +15,7 @@ import { MONITOR_ANCHOR } from '../digital/Monitor.jsx'
 import { PILLAR_RING_CENTER, PILLAR_RING_RADIUS } from '../Environment.jsx'
 import { dustScene } from '../lighting/volumetricLighting.js'
 import { circleOfConfusionGLSL, depthOfFieldUniforms } from './depthOfFieldShared.js'
+import { isEndingCovered } from '../timeline/endingSequence.js'
 
 /**
  * Depth of field, and the post-processing chain it owns: scene, contact
@@ -482,6 +483,10 @@ export default function DepthOfField() {
     depthOfFieldUniforms.uFarClip.value = activeCamera.far
     depthOfFieldUniforms.uResolution.value.copy(gl.getDrawingBufferSize(drawingBufferScratch))
 
+    // The closing frame covers the canvas completely (`endingSequence.js`), so
+    // there is nothing to draw until it starts to clear. Focus above keeps
+    // damping regardless, so the first frame back is already correct.
+    if (isEndingCovered()) return
     composer.render(delta)
   }, 1)
 

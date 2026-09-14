@@ -22,6 +22,7 @@ import { HERO_T } from './filmActBeats.js'
 import { sectionFlightRequest } from './sectionFlightRequest.js'
 import { createSectionFlight, stepSectionFlight } from './sectionFlightRoute.js'
 import { beginContentBlend, endContentBlend, releaseContentBlend } from './contentProgress.js'
+import { endingCameraSettle, endingProgress } from './endingSequence.js'
 
 // Lowered from 3.5 (both were previously equal) per explicit request to
 // give the camera more perceived "weight and inertia" as it settles, and
@@ -58,6 +59,19 @@ const inverseQuaternionScratch = new THREE.Quaternion()
 
 /** How long content takes to settle back onto the live journey after an interrupted flight. */
 const INTERRUPTED_CONTENT_RELEASE_SECONDS = 0.6
+
+/**
+ * The closing frame's settle (`endingSequence.js`): a small push along the
+ * camera's own view direction, layered on the final write like the lock
+ * wobble, so the path, the damping and the hero sequence never see it. Applied
+ * during flights too, so a flight that leaves the ending starts from the pose
+ * on screen and the settle eases out as the ending clears.
+ */
+function applyEndingSettle(camera) {
+  const settle = endingCameraSettle(endingProgress.value)
+  if (settle === 0) return
+  camera.position.addScaledVector(forwardScratch.set(0, 0, -1).applyQuaternion(camera.quaternion), settle)
+}
 
 function computeTargetQuaternion(outQuaternion, eye, lookAtPoint, up) {
   scratchMatrix.lookAt(eye, lookAtPoint, up)
@@ -225,6 +239,7 @@ export default function ScrollCameraRig() {
       scrollLockWobble.value = 0
       camera.position.copy(dampedPosition.current)
       camera.quaternion.copy(dampedQuaternion.current)
+      applyEndingSettle(camera)
       measureMotion(delta)
       return
     }
@@ -330,6 +345,7 @@ export default function ScrollCameraRig() {
     } else {
       camera.position.copy(pos)
     }
+    applyEndingSettle(camera)
   })
 
   return null

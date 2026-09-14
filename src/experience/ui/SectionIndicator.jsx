@@ -1,26 +1,25 @@
 import { useEffect, useState } from 'react'
 import { scrollProgress } from '../timeline/ScrollTimelineProvider.jsx'
 import { requestNavigate } from '../timeline/sectionNavigationEvent.js'
-import { CAMPAIGNS_GATE_T, FILM_FOCUS_T, MONITOR_SNAP_T, SECTION_TARGETS } from '../timeline/filmActBeats.js'
+import { CAMPAIGNS_GATE_T, FILM_FOCUS_T, MONITOR_SNAP_T } from '../timeline/filmActBeats.js'
+import { endingProgress } from '../timeline/endingSequence.js'
 
-// Five physical markers for the five narrative states (creative-reference.md
-// §7's Act structure: Intro → Film → Digital → Campaigns → Return). Intro
-// and Return are the bookend states and are deliberately unlabeled
-// (`label: null`) even when active — see LABEL_HIDDEN handling below.
-// `key` matches SECTION_TARGETS' keys (filmActBeats.js) — Return simply
-// has no entry there (no real camera landmark exists yet), which is what
-// makes clicking it a no-op below, without a second duplicate "is this
-// navigable" list to keep in sync. Campaigns gained its entry with Act 3.
+// Five physical markers for the five narrative states: Intro → Film →
+// Digital → Campaigns → the closing frame. Intro and the ending are the
+// bookend states and are deliberately unlabeled (`label: null`) even when
+// active. `key` matches SECTION_TARGETS' keys (filmActBeats.js), which is
+// what a click hands to the section flight.
 const SECTIONS = [
   { key: 'intro', label: null, ariaName: 'Intro' },
   { key: 'film', label: 'FILM', ariaName: 'Film' },
   { key: 'digital', label: 'DIGITAL', ariaName: 'Digital' },
   { key: 'campaigns', label: 'CAMPAIGNS', ariaName: 'Campaigns' },
-  { key: 'return', label: null, ariaName: 'Return' },
+  { key: 'ending', label: null, ariaName: 'Ending' },
 ]
 const FILM_INDEX = 1
 const DIGITAL_INDEX = 2
 const CAMPAIGNS_INDEX = 3
+const ENDING_INDEX = 4
 
 /**
  * Which of the five markers is "active" (current-section treatment),
@@ -42,6 +41,12 @@ const CAMPAIGNS_INDEX = 3
  * scroll percentage.
  */
 function getActiveIndex(progress) {
+  // The closing frame plays over Campaigns' own camera position, so scroll
+  // progress cannot tell the two apart; the ending's destination does
+  // (`endingProgress.target`, see `endingSequence.js`). It flips when a
+  // gesture or click commits to entering or leaving, the same moment a
+  // section flight moves scroll for every other mark.
+  if (endingProgress.target === 1) return ENDING_INDEX
   if (progress < FILM_FOCUS_T) return null
   if (progress < MONITOR_SNAP_T) return FILM_INDEX
   // Campaigns takes over once the camera has actually left the monitor and
@@ -61,8 +66,9 @@ function getActiveIndex(progress) {
  * `ScrollTimelineProvider.jsx` (the existing scroll/camera state machine)
  * picks up and turns into a direct section flight — straight to that section,
  * without replaying the ones in between. This component never touches camera/scroll
- * state directly — it only ever reads `scrollProgress.value` (for the
- * active-index display) and emits navigation requests.
+ * state directly — it only ever reads `scrollProgress.value` and
+ * `endingProgress.target` (for the active-index display) and emits navigation
+ * requests.
  *
  * Default appearance stays intentionally minimal (small marks, no visible
  * labels) — hover/focus reveal is handled entirely in CSS
@@ -72,13 +78,6 @@ function getActiveIndex(progress) {
  * which changes rarely (a handful of times across the whole experience),
  * matching `ScrollLockIndicator.jsx`'s established exception to "no React
  * state for scroll-driven values."
- *
- * Return has no entry in `SECTION_TARGETS` (no real camera landmark exists
- * yet — see that constant's own doc comment in filmActBeats.js) — its mark
- * stays visually identical and hoverable (matching the UI spec) but
- * clicking it is a no-op, guarded both here and again inside
- * `ScrollTimelineProvider.jsx`'s own handler. Campaigns became genuinely
- * navigable with Act 3 and needed no change here beyond that entry.
  */
 export default function SectionIndicator() {
   const [activeIndex, setActiveIndex] = useState(() => getActiveIndex(scrollProgress.value))
@@ -102,21 +101,17 @@ export default function SectionIndicator() {
     <nav className="section-indicator" aria-label="Cinematic sections">
       {SECTIONS.map((section, index) => {
         const isActive = index === activeIndex
-        const isNavigable = SECTION_TARGETS[section.key] !== undefined
         return (
           <button
             key={section.key}
             type="button"
-            className={`section-indicator__row${isActive ? ' section-indicator__row--active' : ''}${
-              isNavigable ? '' : ' section-indicator__row--disabled'
-            }`}
-            onClick={() => isNavigable && requestNavigate(section.key)}
-            aria-label={isNavigable ? `Go to ${section.ariaName}` : `${section.ariaName} (not yet available)`}
-            aria-disabled={!isNavigable}
+            className={`section-indicator__row${isActive ? ' section-indicator__row--active' : ''}`}
+            onClick={() => requestNavigate(section.key)}
+            aria-label={`Go to ${section.ariaName}`}
             aria-current={isActive ? 'true' : undefined}
           >
             <span className="section-indicator__line" aria-hidden="true" />
-            {/* Intro/Return (label === null) never show text, even on
+            {/* Intro/the ending (label === null) never show text, even on
                 hover/active — the bookend states are represented by a
                 plain small line, not an expanded-but-empty one. */}
             {section.label && <span className="section-indicator__label">{section.label}</span>}

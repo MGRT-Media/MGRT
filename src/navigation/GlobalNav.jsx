@@ -18,17 +18,15 @@ import { NAV_LINKS } from './navLinks.js'
  * them with `display: none`, not opacity — so a screen reader is never
  * offered the same three links twice.
  *
- * `variant`:
- *   'home' — the cinematic homepage. Links only; no mark, because the MGRT
- *            identity is discovered through the opening sequence.
- *   'page' — internal pages. Adds the MGRT mark linking back to '/', and
- *            shortens "Selected Work" to "Work".
+ * Mounted on internal pages only (see `App.jsx`): the cinematic homepage ends
+ * on its own closing frame, whose links replace this bar there. So it always
+ * carries the MGRT mark linking back to '/', and uses the short labels
+ * ("Work" for "Selected Work").
  */
-export default function GlobalNav({ variant = 'home' }) {
+export default function GlobalNav() {
   const [isOpen, setIsOpen] = useState(false)
   const leadRef = useRef(null)
   const path = useRoute()
-  const isPage = variant === 'page'
 
   // Outside tap and Escape both close. Only bound while open, so the closed
   // menu costs nothing.
@@ -73,11 +71,9 @@ export default function GlobalNav({ variant = 'home' }) {
             <span className="global-nav__bar" />
           </button>
 
-          {isPage && (
-            <RouteLink href="/" className="global-nav__mark">
-              MGRT
-            </RouteLink>
-          )}
+          <RouteLink href="/" className="global-nav__mark">
+            MGRT
+          </RouteLink>
         </div>
 
         <nav
@@ -118,7 +114,7 @@ export default function GlobalNav({ variant = 'home' }) {
                 className="global-nav__link"
                 aria-current={path === link.href ? 'page' : undefined}
               >
-                {isPage ? link.compact : link.label}
+                {link.compact}
               </RouteLink>
             </li>
           ))}

@@ -7,6 +7,7 @@ import SectionIndicator from '../experience/ui/SectionIndicator.jsx'
 import FullscreenButton from '../experience/ui/FullscreenButton.jsx'
 import SiteMark from '../experience/ui/SiteMark.jsx'
 import GrainOverlay from '../experience/ui/GrainOverlay.jsx'
+import ClosingFrame from '../experience/ui/ClosingFrame.jsx'
 import {
   CRITICAL_ASSET_TIMEOUT_MS,
   criticalAssetsSettled,
@@ -39,7 +40,7 @@ import {
  * `loading/SceneReady.jsx` for what finally opens the gate.
  */
 const PHASE = {
-  /** Nothing mounted. The void, with only the global navigation over it. */
+  /** Nothing mounted. The void. */
   PRELOAD: 'preload',
   /** Scene built and warming up, still hidden. */
   WARMUP: 'warmup',
@@ -87,6 +88,7 @@ export default function Home() {
       <SectionIndicator />
       <ScrollLockIndicator />
       <FullscreenButton />
+      <ClosingFrame />
       <GrainOverlay />
       {/* Mounted with the scene rather than before it, so the page has no
           scrollable height while the void is up — the experience cannot be

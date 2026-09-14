@@ -25,7 +25,13 @@ import {
   HERO_TRAVERSAL_DURATION_SECONDS,
   CAMPAIGNS_GATE_T,
 } from './filmActBeats.js'
-import { requestHeroReturn, resumeHeroReveal } from './heroSequence.js'
+import { HERO_STATE, heroPhase, requestHeroReturn, resumeHeroReveal } from './heroSequence.js'
+import {
+  ENDING_EXIT_SECONDS,
+  ENDING_REDUCED_MOTION_SECONDS,
+  ENDING_SECONDS,
+  endingProgress,
+} from './endingSequence.js'
 import { cancelSectionFlight, requestSectionFlight } from './sectionFlightRequest.js'
 
 gsap.registerPlugin(ScrollTrigger)
@@ -317,11 +323,56 @@ export function ScrollSpacer() {
     // navigateToSection's onComplete), not from scrollProgress directly.
     // `chapterModeActive` is the ACT 0 vs. ACT 1+ mode switch itself: false
     // for the continuous intro, true from the instant the camera reaches
-    // Film onward. Campaigns/Return are intentionally absent from
-    // CHAPTER_ORDER — see SECTION_TARGETS' own doc comment for why.
+    // Film onward. Return is intentionally absent from CHAPTER_ORDER — see
+    // SECTION_TARGETS' own doc comment for why. 'ending' is the closing frame
+    // after Campaigns; it has no camera target of its own (see
+    // `endingSequence.js`), so it is entered and left by `enterEnding` /
+    // `leaveEnding` below rather than by a jump.
     let currentChapter = 'intro'
     let chapterModeActive = false
-    const CHAPTER_ORDER = ['film', 'digital', 'campaigns']
+    const CHAPTER_ORDER = ['film', 'digital', 'campaigns', 'ending']
+
+    // A remount (returning from an internal page) starts from the beginning of
+    // the experience, so the closing frame must not still be drawn over it.
+    endingProgress.value = 0
+    endingProgress.target = 0
+    let endingTween = null
+
+    // Always eased from rest: reversing part-way (a gesture the other way, or a
+    // navigation click) turns the sequence round without a jolt, and a reverse
+    // only takes the share of the full duration it has left to cover.
+    const tweenEnding = (to, seconds) => {
+      endingTween?.kill()
+      endingProgress.target = to
+      const distance = Math.abs(to - endingProgress.value)
+      const fullSeconds = prefersReducedMotion ? ENDING_REDUCED_MOTION_SECONDS : seconds
+      endingTween = gsap.to(endingProgress, {
+        value: to,
+        duration: fullSeconds * distance,
+        ease: 'sine.inOut',
+        onComplete: () => {
+          endingTween = null
+        },
+      })
+    }
+
+    const enterEnding = () => {
+      // Only from a settled Campaigns frame: while the billboard reveal is
+      // still running on its own clock, a gesture has nothing to close yet.
+      // A flight that was heading here lets go of the destination with it.
+      if (heroPhase() !== HERO_STATE.IMPACT) {
+        if (endingProgress.value === 0) endingProgress.target = 0
+        return
+      }
+      currentChapter = 'ending'
+      chapterModeActive = true
+      tweenEnding(1, ENDING_SECONDS)
+    }
+
+    const leaveEnding = (seconds = ENDING_SECONDS) => {
+      if (currentChapter === 'ending') currentChapter = 'campaigns'
+      tweenEnding(0, seconds)
+    }
 
     // --- Direct navigation (side nav clicks) ---
     // Set for the duration of a nav-triggered jump; suppresses the
@@ -571,12 +622,9 @@ export function ScrollSpacer() {
     // filmActBeats.js) over the SAME physical camera track scroll already
     // uses — reuses Lenis's own scrollTo tweening rather than a second
     // tween system, so the jump reads as the same camera physically moving
-    // through the same environment, not a teleport. Campaigns/Return have
-    // no real landmark yet (see SECTION_TARGETS' own doc comment) and are
-    // silently a no-op here — SectionIndicator.jsx keeps their marks
-    // visually consistent but never calls this for them... except it does
-    // call requestNavigate unconditionally, so the guard lives here too as
-    // a second line of defense.
+    // through the same environment, not a teleport. Chapter gestures use
+    // this; side-navigation clicks fly instead (`flyToSection`). A key with no
+    // SECTION_TARGETS entry is a no-op.
     // Runs `planJump`'s steps back to back. Every step checks the token, so a
     // newer jump supersedes this one between steps as well as within them.
     const runJump = (trigger, token, targetT, onArrive) => {
@@ -696,6 +744,26 @@ export function ScrollSpacer() {
       const trigger = timeline.scrollTrigger
       if (!trigger) return
 
+      // The closing frame and Campaigns share the camera position, so moving
+      // between the two is the ending played forwards or backwards in place —
+      // no flight — whenever the camera is already resting there.
+      const restingAtCampaigns = flightTargetT === null && !isDirectJumpActive && heroPhase() === HERO_STATE.IMPACT
+      if (sectionKey === 'campaigns' && currentChapter === 'ending') {
+        leaveEnding()
+        return
+      }
+      if (sectionKey === 'ending' && (currentChapter === 'ending' || currentChapter === 'campaigns') && restingAtCampaigns) {
+        enterEnding()
+        return
+      }
+      // Anywhere else the closing frame clears quickly while the flight gets
+      // under way beneath it. A flight TO the ending keeps it: it starts once
+      // the camera has landed on Campaigns.
+      if (sectionKey !== 'ending' && (endingProgress.target > 0 || endingProgress.value > 0 || currentChapter === 'ending')) {
+        leaveEnding(ENDING_EXIT_SECONDS)
+      }
+      if (sectionKey === 'ending') endingProgress.target = 1
+
       // A click mid-flight supersedes that flight's arrival; the rig redirects
       // the camera from wherever it is.
       const token = ++jumpToken
@@ -712,7 +780,12 @@ export function ScrollSpacer() {
           if (token !== jumpToken) return
           flightTargetT = null
           isDirectJumpActive = false
-          arriveAtSection(sectionKey, trigger)
+          if (sectionKey === 'ending') {
+            arriveAtSection('campaigns', trigger)
+            enterEnding()
+          } else {
+            arriveAtSection(sectionKey, trigger)
+          }
         },
       })
     }
@@ -725,6 +798,8 @@ export function ScrollSpacer() {
       ++jumpToken
       isDirectJumpActive = false
       cancelSectionFlight()
+      // A flight to the closing frame that never landed has nothing to show.
+      if (endingProgress.value === 0) endingProgress.target = 0
       currentChapter =
         progress >= CAMPAIGNS_GATE_T ? 'campaigns' : progress >= MONITOR_SNAP_T ? 'digital' : progress >= FILM_FOCUS_T ? 'film' : 'intro'
     }
@@ -941,7 +1016,19 @@ export function ScrollSpacer() {
         returnToAlignedPause()
         return
       }
-      if (nextIndex >= CHAPTER_ORDER.length) return // Campaigns is the last reachable chapter for now
+      if (nextIndex >= CHAPTER_ORDER.length) return // the closing frame is the last chapter
+      // The closing frame is entered and left in place, over the settled
+      // Campaigns frame — never with a camera jump. Gestures are not locked
+      // while it plays, so a gesture the other way reverses it from wherever
+      // it has got to.
+      if (CHAPTER_ORDER[nextIndex] === 'ending') {
+        enterEnding()
+        return
+      }
+      if (currentChapter === 'ending') {
+        leaveEnding()
+        return
+      }
       navigateToSection(CHAPTER_ORDER[nextIndex])
     }
 
@@ -994,6 +1081,9 @@ export function ScrollSpacer() {
       if (lensHoldTimeoutId) clearTimeout(lensHoldTimeoutId)
       if (chapterGestureDecayTimeoutId) clearTimeout(chapterGestureDecayTimeoutId)
       gsap.killTweensOf(scrollProgress)
+      endingTween?.kill()
+      endingProgress.value = 0
+      endingProgress.target = 0
       window.removeEventListener('wheel', onLensHoldWheel, { capture: true })
       window.removeEventListener('touchmove', onLensHoldWheel, { capture: true })
       window.removeEventListener('wheel', onIntroTriggerWheel, { capture: true })
