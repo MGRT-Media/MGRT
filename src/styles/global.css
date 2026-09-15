@@ -348,6 +348,205 @@ html.lenis-smooth {
 }
 
 /*
+ * Film caption (FilmCaption.jsx) — the Film section's editorial copy,
+ * bottom-left, over a soft local shade rather than a card.
+ *
+ * Inset past the side navigation's column and kept narrower than the gap to
+ * the centred cinema camera, so the camera, its preview and the fullscreen
+ * button stay clear. Below the wordmark and navigation (z-index 5) and the
+ * grain (6); it never shares the screen with the closing frame (also 4).
+ *
+ * The shade is the caption's own `::before`, so it fades with the copy and,
+ * like the copy, takes no pointer events. It runs off the screen's left and
+ * bottom edges and falls to fully transparent well inside its top and right
+ * edges, so no edge of it is ever drawn. `visibility` follows the fade out
+ * (delayed by its length) so hidden copy is also gone for assistive tech.
+ */
+:root {
+  /* The side navigation's own column, and the fullscreen button's baseline. */
+  --film-caption-x: 44px;
+  --film-caption-y: 48px;
+  --film-caption-fade: 0.9s;
+}
+
+.film-caption {
+  position: fixed;
+  left: var(--film-caption-x);
+  bottom: var(--film-caption-y);
+  z-index: 4;
+  /* The settled Film frame is a fixed vertical field of view, so the camera
+     body is ~94vh wide around the centre: this is the space left of it, less
+     the inset and 32px of air. */
+  max-width: clamp(200px, calc(50vw - 47vh - var(--film-caption-x) - 32px), 380px);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(6px);
+  transition: opacity 0.6s var(--nav-ease), transform 0.6s var(--nav-ease), visibility 0s linear 0.6s;
+}
+
+.film-caption--visible {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  transition: opacity var(--film-caption-fade) var(--nav-ease), transform var(--film-caption-fade) var(--nav-ease),
+    visibility 0s;
+}
+
+.film-caption::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  left: calc(-1 * var(--film-caption-x) - 24px);
+  bottom: calc(-1 * var(--film-caption-y) - 24px);
+  right: -200px;
+  top: -150px;
+  background: radial-gradient(
+    58% 62% at 36% 70%,
+    rgba(var(--color-closing-rgb), 0.66) 0%,
+    rgba(var(--color-closing-rgb), 0.52) 30%,
+    rgba(var(--color-closing-rgb), 0.28) 55%,
+    rgba(var(--color-closing-rgb), 0.09) 78%,
+    rgba(var(--color-closing-rgb), 0) 100%
+  );
+  pointer-events: none;
+}
+
+.film-caption__label {
+  margin: 0 0 14px;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: rgba(var(--color-warm-rgb), 0.62);
+}
+
+.film-caption__description {
+  margin: 0 0 12px;
+  font-family: 'Cormorant', Georgia, serif;
+  font-weight: 400;
+  font-size: clamp(24px, 1.9vw, 30px);
+  line-height: 1.14;
+  letter-spacing: 0.01em;
+  color: rgba(var(--color-warm-rgb), 0.94);
+  text-wrap: balance;
+}
+
+.film-caption__service {
+  white-space: nowrap;
+}
+
+.film-caption__services {
+  margin: 0;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: 12px;
+  line-height: 1.5;
+  letter-spacing: 0.06em;
+  color: rgba(var(--color-warm-rgb), 0.74);
+}
+
+/* Narrower than 16:10 there is no clear column beside the camera body, so the
+   copy keeps to the dark lower corner of the body instead: below the preview,
+   and clear of the fullscreen button in the centre. */
+@media (min-width: 641px) and (max-aspect-ratio: 31/20) {
+  .film-caption {
+    max-width: min(380px, calc(50vw - var(--film-caption-x) - 64px));
+  }
+}
+
+/* Landscape phones and short windows: the side navigation's lower marks reach
+   down into this corner, so the copy steps in past them and tightens. */
+@media (min-width: 641px) and (max-height: 540px) {
+  :root {
+    --film-caption-x: 72px;
+    --film-caption-y: 24px;
+  }
+
+  .film-caption {
+    max-width: clamp(180px, calc(50vw - 47vh - var(--film-caption-x) - 20px), 300px);
+  }
+
+  .film-caption__label {
+    margin-bottom: 6px;
+    font-size: 10px;
+  }
+
+  .film-caption__description {
+    margin-bottom: 6px;
+    font-size: 20px;
+  }
+
+  .film-caption__services {
+    font-size: 11px;
+  }
+}
+
+/* On a phone the preview fills the upper frame, so the copy sits below it,
+   across the width, and above the fullscreen button (36px tall, 36px up). */
+@media (max-width: 640px) {
+  :root {
+    --film-caption-x: 18px;
+    --film-caption-y: 90px;
+  }
+
+  .film-caption {
+    right: var(--film-caption-x);
+    max-width: none;
+  }
+
+  .film-caption::before {
+    right: -24px;
+    top: -60px;
+    background: radial-gradient(
+      90% 70% at 40% 62%,
+      rgba(var(--color-closing-rgb), 0.62) 0%,
+      rgba(var(--color-closing-rgb), 0.46) 35%,
+      rgba(var(--color-closing-rgb), 0.18) 68%,
+      rgba(var(--color-closing-rgb), 0) 100%
+    );
+  }
+
+  .film-caption__label {
+    margin-bottom: 10px;
+    font-size: 10px;
+  }
+
+  .film-caption__description {
+    margin-bottom: 8px;
+    font-size: 23px;
+  }
+
+  .film-caption__services {
+    font-size: 11px;
+    letter-spacing: 0.04em;
+  }
+}
+
+@media (max-width: 640px) and (max-height: 700px) {
+  :root {
+    --film-caption-y: 80px;
+  }
+
+  .film-caption__label {
+    margin-bottom: 6px;
+  }
+
+  .film-caption__description {
+    margin-bottom: 4px;
+    font-size: 20px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .film-caption,
+  .film-caption--visible {
+    transform: none;
+    transition: none;
+  }
+}
+
+/*
  * Full-viewport video pop-up (FullscreenVideoModal.jsx) — a custom CTA
  * overlay, not browser-native fullscreen, per explicit request. Sits
  * above everything else in this experience (z-index 50 vs. the highest
@@ -539,6 +738,7 @@ html.lenis-smooth {
   /* Warm charcoal: the void (#0d0d0d) pulled a touch toward the room's warm
      light, so the frame ends in the film's own colour rather than on black. */
   --color-closing: #15120e;
+  --color-closing-rgb: 21, 18, 14;
 }
 
 .closing-frame {

@@ -5,6 +5,7 @@ import { ScrollSpacer } from '../experience/timeline/ScrollTimelineProvider.jsx'
 import ScrollLockIndicator from '../experience/ui/ScrollLockIndicator.jsx'
 import SectionIndicator from '../experience/ui/SectionIndicator.jsx'
 import FullscreenButton from '../experience/ui/FullscreenButton.jsx'
+import FilmCaption from '../experience/ui/FilmCaption.jsx'
 import SiteMark from '../experience/ui/SiteMark.jsx'
 import GrainOverlay from '../experience/ui/GrainOverlay.jsx'
 import ClosingFrame from '../experience/ui/ClosingFrame.jsx'
@@ -87,6 +88,7 @@ export default function Home() {
       <SiteMark />
       <SectionIndicator />
       <ScrollLockIndicator />
+      <FilmCaption />
       <FullscreenButton />
       <ClosingFrame />
       <GrainOverlay />

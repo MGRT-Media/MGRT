@@ -2,6 +2,7 @@ import { useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { isExteriorActive } from '../timeline/heroSequence.js'
 import { EXTERIOR_LAYER } from './layers.js'
+import { ENVIRONMENT_INTENSITY, FOG_DENSITY, SKY_ROTATION_Y, exteriorAtmosphere } from './exteriorAtmosphere.js'
 
 // The exterior needs a far plane deep enough to contain its ground plane,
 // which extends much further than anything the interior ever did. Rather
@@ -16,29 +17,18 @@ const EXTERIOR_FAR = 400
 /**
  * The exterior's own atmosphere, applied with the layer swap.
  *
- * Until this existed the exterior was rendered through the ROOM's atmosphere,
- * and that is what turned the whole act grey:
+ * The room and the Campaigns world share one scene, so fog and environment
+ * lighting are shared state. While the exterior is on screen it takes its own
+ * daylight — the supplied sky as environment lighting, turned to its sun, and a
+ * haze coloured by that sky's horizon at a density suited to distances in the
+ * hundreds of units (`exteriorAtmosphere.js`). The room's values are read from
+ * the scene when the exterior takes over and put back when it hands back,
+ * rather than duplicated here, so nothing about the room can drift.
  *
- *  - Fog. `lightingParams.fog` is tuned for a 14-unit room (density 0.028). The
- *    exterior works at tens to hundreds of units, where that density is already
- *    69% fog colour at the billboard's 39 and over 93% across the road — every
- *    lit surface out there was mostly the one flat grey.
- *    0.0065 gives about 6% at the billboard, 30% at 90 units down the road and
- *    94% by the 250-unit horizon, so distance still dissolves into the same
- *    haze the night sky and river are graded to (the colour is unchanged) but
- *    the road and structure keep their own values up close.
- *  - Environment lighting. `scene.environment` is the room's DAYLIGHT sky
- *    (`SceneEnvironment.jsx`). Every standard material outside received it at
- *    full strength, and its specular term does not scale with albedo, so a
- *    uniform blue-grey sheen sat over dark metal and sand alike, flattening them into one tone. The night exterior has no such sky;
- *    it is lit by its own moonlight and fill (`ExteriorEnvironment.jsx`).
- *
- * The room's values are read from the scene when the exterior takes over and
- * put back when it hands back, rather than duplicated here, so they cannot
- * drift from `SceneEnvironment.jsx` and `lightingParams`.
+ * Applied every exterior frame rather than once, because the sky's lighting
+ * file may still be arriving when the exterior first appears — the frame it
+ * lands, the world is lit by it. The assignments cost nothing.
  */
-const EXTERIOR_FOG_DENSITY = 0.0065
-const EXTERIOR_ENVIRONMENT_INTENSITY = 0
 
 /**
  * The single point where Act 3's reveal actually happens: at
@@ -88,24 +78,46 @@ export default function CampaignsLayerSwitch() {
      * entire hold and the exterior appears only as the pull-back starts.
      */
     const exterior = isExteriorActive()
-    if (exterior === showingExterior.current) return
-    const wasExterior = showingExterior.current
-    showingExterior.current = exterior
+    if (exterior !== showingExterior.current) {
+      const wasExterior = showingExterior.current
+      showingExterior.current = exterior
 
-    camera.layers.set(exterior ? EXTERIOR_LAYER : 0)
-    camera.far = exterior ? EXTERIOR_FAR : interiorFar.current
-    camera.updateProjectionMatrix()
+      camera.layers.set(exterior ? EXTERIOR_LAYER : 0)
+      camera.far = exterior ? EXTERIOR_FAR : interiorFar.current
+      camera.updateProjectionMatrix()
 
-    if (exterior) {
-      interiorAtmosphere.current = {
-        fogDensity: scene.fog?.density,
-        environmentIntensity: scene.environmentIntensity,
+      if (exterior) {
+        interiorAtmosphere.current = {
+          fogDensity: scene.fog?.density,
+          fogColor: scene.fog?.color.clone(),
+          environment: scene.environment,
+          environmentIntensity: scene.environmentIntensity,
+          environmentRotationY: scene.environmentRotation.y,
+        }
+      } else if (wasExterior && interiorAtmosphere.current) {
+        const room = interiorAtmosphere.current
+        if (scene.fog) {
+          scene.fog.density = room.fogDensity
+          scene.fog.color.copy(room.fogColor)
+        }
+        scene.environment = room.environment
+        scene.environmentIntensity = room.environmentIntensity
+        scene.environmentRotation.y = room.environmentRotationY
       }
-      if (scene.fog) scene.fog.density = EXTERIOR_FOG_DENSITY
-      scene.environmentIntensity = EXTERIOR_ENVIRONMENT_INTENSITY
-    } else if (wasExterior && interiorAtmosphere.current) {
-      if (scene.fog) scene.fog.density = interiorAtmosphere.current.fogDensity
-      scene.environmentIntensity = interiorAtmosphere.current.environmentIntensity
+    }
+
+    if (!exterior) return
+    if (scene.fog) {
+      scene.fog.density = FOG_DENSITY
+      scene.fog.color.copy(exteriorAtmosphere.fogColor)
+    }
+    if (exteriorAtmosphere.environment) {
+      scene.environment = exteriorAtmosphere.environment
+      scene.environmentIntensity = ENVIRONMENT_INTENSITY
+      scene.environmentRotation.y = SKY_ROTATION_Y
+    } else {
+      // Until the sky's lighting arrives, nothing rather than the room's sky.
+      scene.environmentIntensity = 0
     }
   })
 

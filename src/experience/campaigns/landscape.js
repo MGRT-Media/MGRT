@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { ROAD_S_FAR, ROAD_S_NEAR, groundY, roadFrame, roadFramePoint } from './highway.js'
 
 /**
- * The desert floor and the river cut through it — shared by the ground mesh
+ * The ground and the river cut through it — shared by the ground mesh
  * and the water, which have to agree about where the bed is.
  *
  * The terrain is a height function rather than a mesh: everything that needs
@@ -13,9 +13,9 @@ import { ROAD_S_FAR, ROAD_S_NEAR, groundY, roadFrame, roadFramePoint } from './h
  * drift apart.
  */
 
-// Gentle, long-wavelength dunes. Amplitude is small on purpose: the shot is
-// a wide night landscape and this only has to break the flatness, not
-// become scenery in its own right.
+// Gentle, long-wavelength undulation. Amplitude is small on purpose: the shot
+// is a wide landscape and this only has to break the flatness, not become
+// scenery in its own right — the distant hills carry that.
 export function duneHeight(x, z) {
   return (
     1.9 * Math.sin(x * 0.021 + 1.3) * Math.cos(z * 0.017 - 0.4) +
@@ -58,7 +58,7 @@ export const RIVER_WATER_Y = groundY - RIVER_DEPTH * 0.55
 // re-walking the curve for every one of ~9,000 vertices.
 const RIVER_SAMPLES = RIVER_CURVE.getSpacedPoints(160)
 
-function distanceToRiver(x, z) {
+export function distanceToRiver(x, z) {
   let best = Infinity
   for (const sample of RIVER_SAMPLES) {
     const d = (x - sample.x) * (x - sample.x) + (z - sample.z) * (z - sample.z)

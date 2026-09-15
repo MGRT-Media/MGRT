@@ -105,7 +105,10 @@ const CENTRELINE_CURVE = new THREE.CatmullRomCurve3(CENTRELINE_POINTS, false, 'c
  */
 export function ribbonGeometry({ offset = 0, halfWidth, lift, segments = 160, dashLength = 0, gapLength = 0 }) {
   const positions = []
+  const uvs = []
   const indices = []
+  const previous = new THREE.Vector3()
+  let along = 0
   const up = new THREE.Vector3(0, 1, 0)
   const point = new THREE.Vector3()
   const tangent = new THREE.Vector3()
@@ -122,6 +125,11 @@ export function ribbonGeometry({ offset = 0, halfWidth, lift, segments = 160, da
       cx - side.x * halfWidth, groundY + lift, cz - side.z * halfWidth,
       cx + side.x * halfWidth, groundY + lift, cz + side.z * halfWidth,
     )
+    // UVs in metres: u across, measured from the centreline, and v along the
+    // road, so a material's tile size is a plain repeat and never stretches.
+    if (i > 0) along += point.distanceTo(previous)
+    previous.copy(point)
+    uvs.push(offset - halfWidth, along, offset + halfWidth, along)
   }
 
   const period = dashLength + gapLength
@@ -133,6 +141,7 @@ export function ribbonGeometry({ offset = 0, halfWidth, lift, segments = 160, da
 
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
   geometry.setIndex(indices)
   geometry.computeVertexNormals()
   return geometry

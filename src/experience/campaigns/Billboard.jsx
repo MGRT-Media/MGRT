@@ -591,7 +591,9 @@ export default function Billboard() {
           surround rather than z-fighting with it. Outside the face's own
           bounds, so it is off-screen at the swap and only appears with the
           reveal. */}
-      <mesh position={[0, 0, -0.05]}>
+      {/* Casts the board's shadow onto the ground in daylight (the image face
+          is unlit and does not). */}
+      <mesh position={[0, 0, -0.05]} castShadow>
         <planeGeometry args={[BILLBOARD_WIDTH + FRAME_THICKNESS * 2, BILLBOARD_HEIGHT + FRAME_THICKNESS * 2]} />
         <meshStandardMaterial color="#1c1c1f" roughness={0.85} metalness={0.15} />
       </mesh>

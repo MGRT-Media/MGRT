@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { videoModalState } from './videoModalState.js'
 
 /**
  * Full-viewport video pop-up CTA (FullscreenButton.jsx's own modal) — per
@@ -18,6 +19,13 @@ import { useEffect, useRef } from 'react'
 export default function FullscreenVideoModal({ src, onClose }) {
   const dialogRef = useRef(null)
   const closeButtonRef = useRef(null)
+
+  useEffect(() => {
+    videoModalState.open = true
+    return () => {
+      videoModalState.open = false
+    }
+  }, [])
 
   useEffect(() => {
     closeButtonRef.current?.focus()
