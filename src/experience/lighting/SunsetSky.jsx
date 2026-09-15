@@ -24,29 +24,18 @@ import { loadSkyTexture, SKY_ROTATION_Y } from './skyEnvironment.js'
  * **What you actually see is the HDRI**, sampled as an equirectangular map on
  * this same dome rather than through `scene.background`. Three's background
  * would render the photograph correctly with less code, but it is a property
- * of the scene, not of an object, so no layer can hide it — and Act 3 hides
- * this act by moving the camera to `EXTERIOR_LAYER`. A daylight sky bleeding
- * through the night exterior is the one failure that would be invisible in
- * every frame I could check and obvious in the finished sequence. Keeping the
- * sky on a mesh keeps it subject to the same layer swap as everything else.
+ * of the scene, not of an object: a mesh can be culled, layered, and ordered
+ * like everything else in the room, where a background cannot.
  *
  * The gradient below is not dead code: it is what the aperture shows until the
  * HDRI finishes downloading, and what it falls back to permanently if the file
  * never arrives. Blended by `uSkyMix` rather than swapped, so the upgrade is a
  * single frame's change of a uniform rather than a rebuild.
- *
- * **Layer 0, deliberately.** `CampaignsLayerSwitch` moves the camera to
- * `EXTERIOR_LAYER` for Act 3, which hides everything on the default layer. So
- * this dome disappears at exactly the moment `campaigns/NightSky.jsx` takes
- * over, with no gate, no scroll subscription and nothing to keep in sync — the
- * night sky and the day sky can never both be on screen because the existing
- * layer swap already guarantees it.
  */
 
 /**
  * Comfortably outside the room and comfortably inside the interior camera's
- * `far` of 100 — the dome only has to survive Acts 1 and 2, where the camera
- * never leaves the building. `NightSky`'s own 360 would be clipped here.
+ * `far` of 100 — the camera never leaves the building.
  */
 const SKY_RADIUS = 70
 

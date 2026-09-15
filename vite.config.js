@@ -129,10 +129,6 @@ export default defineConfig({
          * returning visitor re-downloads only what actually moved instead of
          * the whole megabyte, and the two can be fetched in parallel on a
          * first visit.
-         *
-         * Act 3 is not listed here — it is already its own chunk by virtue of
-         * being dynamically imported in `CampaignsGate`, and naming it would
-         * force it back into the static graph.
          */
         manualChunks(id) {
           if (!id.includes('node_modules')) return undefined

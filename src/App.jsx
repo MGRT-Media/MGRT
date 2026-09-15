@@ -3,6 +3,8 @@ import { RouteProvider, useRoute } from './router/Router.jsx'
 import GlobalNav from './navigation/GlobalNav.jsx'
 import { PAGE_TITLES } from './navigation/navLinks.js'
 import BlankPage from './pages/BlankPage.jsx'
+import LoadErrorBoundary from './experience/loading/LoadErrorBoundary.jsx'
+import { revealStartupCover, showStartupFailure } from './experience/loading/startupCover.js'
 
 /**
  * Lazy on purpose, and the single most important line in this file: it is
@@ -20,19 +22,26 @@ function Routes() {
     document.title = isHome || !pageTitle ? 'MGRT Media' : `${pageTitle} — MGRT Media`
   }, [isHome, pageTitle])
 
+  // The startup cover in `index.html` belongs to the experience. Any other
+  // page has nothing to fade in, so it goes as soon as that page renders.
+  useEffect(() => {
+    if (!isHome) revealStartupCover({ immediate: true })
+  }, [isHome])
+
   return (
     <>
-      {/* Internal pages only. On the homepage the closing frame's own links
-          (`ClosingFrame.jsx`) and the wordmark carry the site navigation. */}
+      {/* Internal pages only. The homepage carries its own marks: the
+          wordmark (back to start) and the side navigation. */}
       {!isHome && <GlobalNav />}
       {isHome ? (
-        // No fallback: the homepage opens on darkness, and the page
-        // background is already that same void, so an empty frame during the
-        // chunk fetch reads as the start of the experience rather than as a
-        // loading state.
-        <Suspense fallback={null}>
-          <Home />
-        </Suspense>
+        // No fallback: the startup cover from `index.html` is already on
+        // screen during the chunk fetch. If the chunk cannot be fetched at
+        // all, the cover offers a retry rather than staying black forever.
+        <LoadErrorBoundary name="Home" onError={showStartupFailure}>
+          <Suspense fallback={null}>
+            <Home />
+          </Suspense>
+        </LoadErrorBoundary>
       ) : (
         <BlankPage title={pageTitle ?? 'Page not found'} />
       )}

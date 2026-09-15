@@ -144,7 +144,6 @@ APPLICATION
 │   ├── Atmosphere
 │   ├── Film Object
 │   ├── Digital Monitor
-│   ├── Billboard Reveal (Exterior + Render Target)
 │   ├── Typography
 │   └── Timeline Controller
 │
@@ -162,7 +161,7 @@ APPLICATION
 The cinematic layer should not become tightly coupled to the practical website layer. This allows the cinematic experience to remain a focused immersive environment while the practical content remains maintainable and accessible.
 
 ### Persistent scene
-The primary Three.js scene should remain mounted throughout the cinematic sequence. Do not repeatedly mount and unmount the entire WebGL scene as the visitor moves between Film, Digital, and Campaigns.
+The primary Three.js scene should remain mounted throughout the cinematic sequence. Do not repeatedly mount and unmount the entire WebGL scene as the visitor moves between Film, Digital, and the MGRT hero.
 
 Objects may be moved, hidden through physical occlusion, repositioned, scaled, removed from rendering when appropriate, or revealed progressively — but the underlying environment should remain coherent.
 
@@ -213,14 +212,12 @@ SCENE
 ├── Digital
 │   └── Physical Monitor
 │
-├── Campaigns (Billboard Reveal)
-│   ├── Exterior Environment (4-lane highway, curving right; billboard on right shoulder)
-│   └── Billboard Surface (renders the live Interior Environment via render-to-texture)
+├── MGRT Hero (wall inscription — the journey's final frame)
 │
 └── Typography / Spatial UI
 ```
 
-This is a **logical organization**, not a requirement that every item become a separate React component or scene graph node. Note that Campaigns does not introduce new interior content — the Interior Room defined above is the same scene graph rendered onto the Billboard Surface; see "Billboard reveal (render-to-texture)" below.
+This is a **logical organization**, not a requirement that every item become a separate React component or scene graph node.
 
 ### Persistent architecture
 The architectural environment should remain present through the entire cinematic journey. The same floor, structural forms, light source, atmospheric space, material language, and spatial scale should connect the acts.
@@ -241,49 +238,36 @@ The camera system should support continuous control of position, rotation, field
 
 Camera movement should be deterministic and reversible. The implementation must allow the visitor to scroll forward to progress the timeline and scroll backward to reverse it, without entering invalid intermediate states.
 
-### Billboard reveal (render-to-texture)
+### Former billboard reveal (removed)
 
-The Campaigns reveal requires the Interior Room to remain visible, live, and unmodified while the camera pulls back into an Exterior Environment and that same Interior Room becomes visible on a Billboard Surface. This must be implemented as a render-to-texture (or equivalent render-target) technique: the Interior Room is rendered to a texture every frame, and that texture is applied as the material on the Billboard Surface geometry within the Exterior Environment.
-
-**Requirements:**
-
-- The Interior Room render target must update continuously and in real time — it must never be replaced by a static screenshot, baked image, or pre-rendered video once the pull-back begins.
-- The primary camera and the Interior Room's own render remain two logically separate cameras: the visitor's camera moves through the Exterior Environment, while an internal camera renders the Interior Room to the texture. Both must derive their state from the same master cinematic timeline (§7) so they never desynchronize.
-- The boundary crossing — camera passing through the Billboard Surface, in either direction — must be a single continuous camera movement. Do not implement this as two separate scenes with a cut, fade, or load boundary between them.
-- Act 4's dive-back-in re-enters the same Interior Room scene graph that was being rendered to the billboard texture, not a duplicate or newly instantiated copy. The visitor is returning to the same environment, not a rebuilt one.
-- This technique is a genuine GPU cost (effectively rendering the scene twice per frame during the reveal and return). See §15 for adaptive quality handling specific to the render target.
-- The pull-back's camera path is not a single unstructured recession — per `experience-design.md` §9, it has three defined stages: (1) passing back out through the existing Interior Room pillar ring, reusing that geometry as the threshold rather than introducing new objects; (2) holding at a distance where the room and pillar ring read as one complete structure; (3) continuing back until the Billboard Surface and Exterior Environment are legible. Camera-path implementation should expose these as identifiable stage boundaries (e.g. named keyframes/progress ranges) rather than one opaque interpolation, so each stage's framing can be tuned and reviewed independently.
-- The Exterior Environment's placeholder/provisional geometry (Phase 1E) and final geometry (Phase 2) should target a four-lane highway with a gentle rightward curve, with the Billboard Surface positioned on the road's right-hand shoulder — not a generic street or plaza. This affects road/shoulder geometry, billboard support-structure placement, and the exterior camera's framing during stage 3 above.
-
-This is the highest-risk single mechanism in the project and should be prototyped and proven early — see `build-workflow.md` for the corresponding foundation phase.
+The Campaigns act — a render-to-texture billboard reveal onto an exterior highway, the Return dive back through it, and the closing frame after it — was removed on 2026-09-15, together with its exterior environment, assets, loading code and navigation. The experience now ends at the MGRT hero inside the room. See `build-status.md` for the removal record.
 
 ### Scene state
 The cinematic sequence should use a normalized progress value:
 
 ```text
-0.0 ─────────────────────────────── 1.0
-OPENING                          RETURN
+0.0 ────────────────────────── 0.9
+OPENING                  MGRT HERO (END)
 ```
 
-Acts occupy defined portions of this timeline. Conceptually:
+As implemented (`src/experience/timeline/filmActBeats.js`):
 
 ```text
-0.00 — 0.15    Film discovery
-0.15 — 0.35    Film
-0.35 — 0.55    Digital
-0.55 — 0.80    Campaigns
-0.80 — 1.00    Return
+0.00 — 0.12    Exterior orbit outside the pillars (intro cinematic)
+0.12 — 0.45    Descent to the Film lens (Film at 0.45)
+0.45 — 0.60    Film → Digital hand-off (Digital at 0.60)
+0.60 — 0.90    Traversal to the MGRT hero (hero at 0.90)
 ```
 
-These values are illustrative only. The exact ranges belong to `experience-design.md` and should be tuned during implementation and performance testing.
+The journey ends at `JOURNEY_END_T` (= `HERO_T`, 0.9). These values kept the positions they had when the timeline continued to 1.0, so the pacing of every remaining move is unchanged; the camera path, its distance tables, the scroll-to-progress mapping and the page's scroll length (`3 × 0.9` viewport heights) all end at 0.9, and progress is clamped there.
 
 The important architectural rule is that **the experience is driven by continuous progress rather than independent section triggers**.
 
 ### Scope of the normalized timeline
 
-The 0.0–1.0 normalized progress value maps only to the scroll-driven cinematic sequence — Film through Return, including the final MGRT identity and brief stillness. It does not extend into the Explore layer.
+The normalized progress value maps only to the scroll-driven cinematic sequence — the opening through the MGRT hero. It does not extend into the Explore layer.
 
-Reaching progress 1.0 signals that the cinematic sequence is complete. The transition into Explore (Work / About / Contact) is a separate application-level state change, consistent with the Application Architecture in Section 4, which treats the Cinematic Experience and the Explore Layer as separate branches — not a continuation of the same normalized progress value. Implementations should not attempt to extend the cinematic progress scale past 1.0 to represent the Explore transition.
+Reaching the hero (`JOURNEY_END_T`) signals that the cinematic sequence is complete. Any transition into Explore (Work / About / Contact) is a separate application-level state change, consistent with the Application Architecture in Section 4 — not a continuation of the same progress value.
 
 ### No unnecessary scene complexity
 The scene should not contain geometry, lights, textures, effects, or animation systems that do not contribute meaningfully to the cinematic composition.
@@ -359,7 +343,7 @@ Animation should be driven primarily by **cinematic state**, not by a large coll
 The primary experience should have one master timeline representing the visitor's progression through the world.
 
 ```text
-0.00 ── INITIAL REVEAL ── FILM ── DIGITAL ── CAMPAIGNS ── RETURN ── 1.00
+0.00 ── INITIAL REVEAL ── FILM ── DIGITAL ── MGRT HERO ── 0.90 (end)
 ```
 
 Individual properties derive their values from this timeline: camera position, camera rotation, camera field of view, object position, object rotation, object scale, light intensity, light position, light color temperature, fog density, particle visibility, screen brightness, and typography opacity/position.
@@ -395,7 +379,6 @@ Camera Controller     → camera position / rotation / FOV
 Lighting Controller    → light position / intensity / color
 Film Controller        → camera object state / media
 Digital Controller     → monitor state / screen content
-Campaign Controller    → billboard pull-back / render-target coordination / exterior environment state
 Atmosphere Controller  → particles / fog
 ```
 
@@ -577,7 +560,7 @@ The environment should remain predominantly dark, with light gaining impact thro
 
 ## 11. Portfolio Media Implementation
 
-Portfolio media is part of the cinematic environment rather than a conventional portfolio component. Film, Digital, and Campaign content should be rendered in ways that preserve the physical relationship between the media and the surrounding environment.
+Portfolio media is part of the cinematic environment rather than a conventional portfolio component. Film and Digital content should be rendered in ways that preserve the physical relationship between the media and the surrounding environment.
 
 ### Film media
 Film content may be presented as video surfaces, projected imagery, or media associated with the cinema camera and lens transition.
@@ -590,9 +573,6 @@ Only media contributing to the current cinematic moment should require active pl
 Digital work should be presented primarily through the physical monitor. The monitor may display website imagery, short screen recordings, digital interface sequences, selected project visuals, or interactive demonstrations where technically appropriate.
 
 The monitor should remain a physical 3D object. Screen content should not cause the monitor to behave like a conventional embedded website.
-
-### Campaigns
-Campaigns has no curated media of its own to load or play back. The Campaigns act is produced entirely by the billboard reveal mechanism — see §5, "Billboard reveal (render-to-texture)" — rather than by displaying additional portfolio assets.
 
 ### Media playback
 Media playback should be controlled by cinematic state rather than arbitrary DOM visibility.
@@ -665,18 +645,18 @@ Assets should be divided into priority levels.
 
 **Near-term** (required shortly after the opening): cinema camera, Film media, monitor, Digital media.
 
-**Deferred** (required later in the experience): exterior environment geometry and materials, the billboard render-target setup, secondary environmental details, lower-priority effects.
+**Deferred** (required later in the experience): secondary environmental details and lower-priority effects. (Everything the room shows is visible in the opening frame, so all models and surfaces load before the reveal; the chapter videos load only when their beat plays.)
 
 ### Progressive loading
 
 ```text
-ESSENTIAL ENVIRONMENT → INITIAL EXPERIENCE → FILM ASSETS → DIGITAL ASSETS → CAMPAIGN ASSETS
+ESSENTIAL ENVIRONMENT → INITIAL EXPERIENCE → FILM MEDIA → DIGITAL MEDIA
 ```
 
 The visitor should be able to begin the experience without waiting for every downstream asset to be fully loaded. However, the cinematic timeline must never reveal an asset before its required resources are ready.
 
 ### No visible loading interruptions
-Do not introduce loading screens between Film, Digital, and Campaigns. If an asset is not ready when its cinematic moment approaches, the implementation should use an appropriate fallback or controlled pacing rather than exposing a broken state.
+Do not introduce loading screens between Film, Digital, and the hero. If an asset is not ready when its cinematic moment approaches, the implementation should use an appropriate fallback or controlled pacing rather than exposing a broken state.
 
 ### 3D asset optimization
 Models should be optimized before entering the application: polygon reduction, mesh compression, texture compression, removal of invisible geometry, material consolidation, efficient UV layouts, shared materials, removal of unused animation data, and appropriate LOD generation.
@@ -697,7 +677,7 @@ Mobile is not implemented as a scaled desktop scene. The mobile experience is a 
 The same sequence must remain:
 
 ```text
-ACT 0 → FILM → DIGITAL → CAMPAIGNS → RETURN → EXPLORE
+ACT 0 → FILM → DIGITAL → MGRT HERO
 ```
 
 The implementation may change camera framing, object placement, scale, visibility, environmental detail, and rendering quality.
@@ -740,10 +720,10 @@ LEVEL 5  Essential cinematic fallback
 The goal is to preserve the story at every level.
 
 ### Features that may be reduced
-Particle count, volumetric resolution, shadow resolution, reflection quality, texture resolution, geometry complexity, post-processing, depth-of-field quality, secondary lights, atmospheric effects, screen effects, and the resolution or update rate of the billboard render target (§5/§6).
+Particle count, volumetric resolution, shadow resolution, reflection quality, texture resolution, geometry complexity, post-processing, depth-of-field quality, secondary lights, atmospheric effects, and screen effects.
 
 ### Features that should be protected
-Core camera movement, major object visibility, narrative progression, lighting continuity, the Film → Digital transition, the Campaign reveal itself (the billboard reveal must occur, live and continuous, even if the render target's resolution is reduced), the final MGRT identity, and basic typography hierarchy.
+Core camera movement, major object visibility, narrative progression, lighting continuity, the Film → Digital transition, the final MGRT identity, and basic typography hierarchy.
 
 ### Adaptive quality should be measured
 Quality changes should be based on meaningful performance signals rather than arbitrary device labels whenever practical — sustained frame-rate degradation, rendering time, GPU pressure indicators where available, device capability, viewport size, or memory constraints.
@@ -820,7 +800,7 @@ Interactive controls must be keyboard accessible, including audio controls, skip
 Focus states must remain visible and understandable. The 3D environment must not interfere with keyboard navigation or trap focus.
 
 ### Reduced motion
-The implementation must respect the user's `prefers-reduced-motion` preference. Reduced motion should provide a substantially simplified cinematic presentation while preserving MGRT identity, Film/Digital/Campaigns structure, major objects, content hierarchy, lighting language, and practical navigation.
+The implementation must respect the user's `prefers-reduced-motion` preference. Reduced motion should provide a substantially simplified cinematic presentation while preserving MGRT identity, Film/Digital structure, major objects, content hierarchy, lighting language, and practical navigation.
 
 ### Reduced-motion strategy
 
@@ -956,9 +936,7 @@ The technical architecture is considered successfully implemented when:
 - Scroll deterministically controls the cinematic timeline.
 - Forward and reverse scrolling remain stable.
 - Film → Digital contains no visible lighting, exposure, fog, or scene snap.
-- Campaigns reveals the preceding world as a live billboard, with no cut or freeze in the render, and Act 4 dives back into that same environment.
-- Act 4 returns to the original environment.
-- The final MGRT identity appears in a valid stable state.
+- The MGRT hero is the stable final frame: scrolling past it leaves camera and lighting unchanged.
 - The cinematic sequence can transition into the practical website.
 - Portfolio media does not overwhelm rendering or network performance.
 - Audio, if implemented, remains subtle and optional.

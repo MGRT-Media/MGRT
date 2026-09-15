@@ -352,38 +352,60 @@ const BRASS_REPEAT = [0.42, 0.38]
 export const BRASS_URLS = [assetUrl(`${BRASS_BASE}/albedo.jpg`), assetUrl(`${BRASS_BASE}/roughness.jpg`)]
 
 /**
- * Fire-and-forget, like the scanned stone: nothing suspends on it. Each load
- * is registered with `assetReadiness` so the loading gate can wait for the
- * swap instead of letting the letters change material in full view.
+ * The two maps, decoded once and shared.
+ *
+ * `criticalAssets.js` starts this before the scene mounts, and the material
+ * below takes the same textures when it is built, so each file is requested
+ * and decoded exactly once. (The preflight used to warm the bytes with a
+ * separate `fetch`, and the material then requested them again through its own
+ * loader: two requests per file whenever the HTTP cache could not serve the
+ * second.) Resolves `null` for a map that failed, never rejects.
+ */
+let brassMaps = null
+
+export function preloadBrassMaps() {
+  if (!brassMaps) {
+    const loader = new THREE.TextureLoader()
+    const load = (url, colorSpace) =>
+      new Promise((resolve) => {
+        loader.load(
+          url,
+          (texture) => {
+            // Clamped, not repeating: this is a crop, and wrapping it would fold
+            // the far side of the pan back into the letters.
+            texture.wrapS = THREE.ClampToEdgeWrapping
+            texture.wrapT = THREE.ClampToEdgeWrapping
+            texture.offset.set(BRASS_OFFSET[0], BRASS_OFFSET[1])
+            texture.repeat.set(BRASS_REPEAT[0], BRASS_REPEAT[1])
+            texture.colorSpace = colorSpace ?? THREE.NoColorSpace
+            texture.anisotropy = 8
+            resolve(texture)
+          },
+          undefined,
+          () => resolve(null),
+        )
+      })
+    brassMaps = Promise.all([load(BRASS_URLS[0], THREE.SRGBColorSpace), load(BRASS_URLS[1])]).then(
+      ([map, roughnessMap]) => ({ map, roughnessMap }),
+    )
+  }
+  return brassMaps
+}
+
+/**
+ * Fire-and-forget, like the scanned stone: nothing suspends on it. The swap is
+ * registered with `assetReadiness` so the loading gate can wait for it instead
+ * of letting the letters change material in full view. A missing file leaves
+ * the flat tint in place rather than a black inlay.
  */
 function loadBrassMaps(material) {
-  const loader = new THREE.TextureLoader()
-  const apply = (slot, file, colorSpace) => {
-    trackAssetUpgrade(new Promise((resolve) => {
-    loader.load(
-      assetUrl(`${BRASS_BASE}/${file}`),
-      (texture) => {
-        // Clamped, not repeating: this is a crop, and wrapping it would fold
-        // the far side of the pan back into the letters.
-        texture.wrapS = THREE.ClampToEdgeWrapping
-        texture.wrapT = THREE.ClampToEdgeWrapping
-        texture.offset.set(BRASS_OFFSET[0], BRASS_OFFSET[1])
-        texture.repeat.set(BRASS_REPEAT[0], BRASS_REPEAT[1])
-        texture.colorSpace = colorSpace ?? THREE.NoColorSpace
-        texture.anisotropy = 8
-        material[slot] = texture
-        material.needsUpdate = true
-        resolve()
-      },
-      undefined,
-      // A missing file leaves the flat tint in place rather than a black
-      // inlay — and resolves, so a missing texture cannot stall the gate.
-      () => resolve(),
-    )
-    }))
-  }
-  apply('map', 'albedo.jpg', THREE.SRGBColorSpace)
-  apply('roughnessMap', 'roughness.jpg')
+  trackAssetUpgrade(
+    preloadBrassMaps().then(({ map, roughnessMap }) => {
+      if (map) material.map = map
+      if (roughnessMap) material.roughnessMap = roughnessMap
+      if (map || roughnessMap) material.needsUpdate = true
+    }),
+  )
 }
 
 /** Where the cutout's edge falls within that chamfer. */

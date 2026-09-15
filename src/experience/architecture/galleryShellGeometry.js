@@ -25,11 +25,10 @@ import { mergeVertices, toCreasedNormals } from 'three/examples/jsm/utils/Buffer
  * **Two openings are cut from the sheet**, both by skipping cells in the
  * parametric grid rather than by boolean geometry:
  *
- * - The **front mouth**, so the Campaigns pull-back can leave the room.
- *   The camera exits at a bearing of 11.1 degrees from +Z (measured off
- *   the real path, not assumed); `OPENING_HALF_ANGLE` is set far wider so
- *   the frame never catches the opening's edge on the way out. It is an
- *   arch rather than a full-height gap — see `MOUTH_HEIGHT`.
+ * - The **front mouth**, an arch in the front wall. It was first cut for a
+ *   camera move that left the room, and is kept as part of the hall's
+ *   approved architecture. It is an arch rather than a full-height gap —
+ *   see `MOUTH_HEIGHT`.
  * A third opening, the **breach**, used to be cut from the +X wall — the
  * fractured hole the old artificial key light streamed through. That lighting
  * concept is gone, and with it the reason for the hole; the sun now enters
@@ -89,19 +88,14 @@ const VAULT_Z_TUCK = 0.35
 // anyway, so this is the correct form as well as the robust one.
 const VAULT_RIDGE_SCALE = 0.05
 
-// Half-width of the front mouth, in degrees off +Z. The camera leaves at
-// 11.1 degrees; this is set well past that so no edge enters frame.
+// Half-width of the front mouth, in degrees off +Z.
 const OPENING_HALF_ANGLE = THREE.MathUtils.degToRad(42)
 
 // The mouth is an ARCH, not a full-height gap, and that is structural
 // rather than decorative. Cutting it full height would carry the opening
-// up through the vault and leave a hole in the roof directly above it —
-// which is the same defect `campaigns/RoomCeiling.jsx` existed to patch:
-// during the Campaigns pull-back the camera retreats until the room's
-// upper boundary rises into frame, and an open roof there stops the room
-// reading as an interior. Closing the shell above this height means the
-// vault is continuous all the way round, so that component is no longer
-// needed at all and has been removed.
+// up through the vault and leave a hole in the roof directly above it, and
+// an open roof stops the room reading as an interior. Closing the shell
+// above this height means the vault is continuous all the way round.
 //
 // 7.0 -> 4.5, following the springing down by the same factor: the mouth is
 // cut where `yMid < MOUTH_HEIGHT`, so leaving it at 7.0 under a 5.6 springing
@@ -754,8 +748,7 @@ export function buildGalleryShellGeometry() {
   // otherwise be left as a narrow open slot running the length of the
   // ridge — a hole in the roof, found by a straight-up ray test from the
   // floor rather than by looking at it, since from inside the room the
-  // slot is edge-on and nearly invisible until the Campaigns pull-back
-  // puts the ceiling in frame.
+  // slot is edge-on and nearly invisible.
   //
   // The two long sides of that slot are mirror images: the vertex at
   // +theta and the one at -theta share a z and differ only in the sign of

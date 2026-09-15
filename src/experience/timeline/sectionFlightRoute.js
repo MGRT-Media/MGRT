@@ -1,7 +1,5 @@
 import * as THREE from 'three'
 import {
-  HERO_T,
-  SECTION_FLIGHT_EXTERIOR_SECONDS,
   SECTION_FLIGHT_MAX_SECONDS,
   SECTION_FLIGHT_MIN_SECONDS,
   SECTION_FLIGHT_PACE,
@@ -13,7 +11,6 @@ import {
   pathProgressAtArcLength,
   sampleCameraPathInto,
 } from './cameraPath.js'
-import { isHeroCaptured, requestHeroCapture, setHeroFlightExterior } from './heroSequence.js'
 import { setContentBlendWeight } from './contentProgress.js'
 
 /**
@@ -26,9 +23,7 @@ import { setContentBlendWeight } from './contentProgress.js'
  * camera's lens or the monitor's screen on the way somewhere else, the flight
  * leaves the path before that approach and bridges to where the route carries
  * on (`SECTION_BYPASSES`), with a curve that matches the path's direction at
- * both ends. Crossing between the room and the exterior still goes through
- * the hero pose: it is the only place the billboard stands in for the wall
- * invisibly, so a flight in or out of Campaigns stops there for the hand-over.
+ * both ends.
  *
  * **Timing.** Each move between stops is one ease — smootherstep over its
  * whole length — so the camera accelerates once and settles once however many
@@ -73,10 +68,9 @@ const TURN_COST_SPREAD = 2
 /**
  * Velocity a redirect cannot carry along its new route (a sideways or reversing
  * component) is blended out instead; capped so that momentum cannot carry the
- * camera far off the route. The exterior is open space, so it keeps more.
+ * camera far off the route.
  */
-const MAX_CARRIED_SPEED_INTERIOR = 14
-const MAX_CARRIED_SPEED_EXTERIOR = 30
+const MAX_CARRIED_SPEED = 14
 /**
  * Peak deceleration while a redirect sheds the velocity it cannot carry. The
  * blend's Hermite curve peaks at four times speed over its duration, which
@@ -92,8 +86,6 @@ const SETTLE_SECONDS = 0.8
 /** The share of an interior move over which content fades from origin to destination. */
 const CONTENT_FADE_START = 0.15
 const CONTENT_FADE_END = 0.85
-/** Give up waiting for the billboard capture after this long rather than hanging at the hero. */
-const PORTAL_TIMEOUT_MS = 8000
 
 const lookAtScratch = new THREE.Vector3()
 const lookPositionScratch = new THREE.Vector3()
@@ -230,19 +222,21 @@ function interiorLegs(originT, targetT) {
   return legs.length > 0 ? legs : [pathLeg(originT, targetT)]
 }
 
-function move(legs, exterior, weightFrom, weightTo, fixedSeconds) {
+function move(legs) {
   const length = legs.reduce((sum, leg) => sum + leg.length, 0)
   const travelSeconds = THREE.MathUtils.clamp(length / SECTION_FLIGHT_PACE, SECTION_FLIGHT_MIN_SECONDS, SECTION_FLIGHT_MAX_SECONDS)
   const lookWindow = THREE.MathUtils.clamp(
-    (length / (fixedSeconds ?? travelSeconds)) * LOOK_SMOOTHING_SECONDS,
+    (length / travelSeconds) * LOOK_SMOOTHING_SECONDS,
     LOOK_SMOOTHING_MIN,
     LOOK_SMOOTHING_MAX,
   )
-  const result = { legs, exterior, weightFrom, weightTo, length, lookWindow }
+  const result = { legs, length, lookWindow }
   measurePace(result)
-  const seconds =
-    fixedSeconds ??
-    THREE.MathUtils.clamp(result.paceTotal / SECTION_FLIGHT_PACE, SECTION_FLIGHT_MIN_SECONDS, SECTION_FLIGHT_MAX_SECONDS)
+  const seconds = THREE.MathUtils.clamp(
+    result.paceTotal / SECTION_FLIGHT_PACE,
+    SECTION_FLIGHT_MIN_SECONDS,
+    SECTION_FLIGHT_MAX_SECONDS,
+  )
   result.durationMs = seconds * 1000
   return result
 }
@@ -364,13 +358,12 @@ function sampleMove(activeMove, distance, outPosition, outQuaternion) {
 /**
  * Plans a flight to `targetT`.
  *
- * `originT` is the journey progress nearest the camera and `originExterior`
- * whether the exterior is showing. `position`/`quaternion`/`velocity` are the
- * camera's real current state, blended out at the start.
+ * `originT` is the journey progress nearest the camera.
+ * `position`/`quaternion`/`velocity` are the camera's real current state,
+ * blended out at the start.
  */
 export function createSectionFlight({
   originT,
-  originExterior,
   targetT,
   position,
   quaternion,
@@ -379,36 +372,15 @@ export function createSectionFlight({
   immediate,
   now,
 }) {
-  const targetExterior = targetT >= 1 - EPSILON
-  const moves = []
-  if (originExterior) {
-    const exteriorFrom = Math.max(originT, HERO_T)
-    if (targetExterior) {
-      moves.push(move([pathLeg(exteriorFrom, 1)], true, 0, 1, SECTION_FLIGHT_EXTERIOR_SECONDS * ((1 - exteriorFrom) / (1 - HERO_T))))
-    } else {
-      moves.push(move([pathLeg(exteriorFrom, HERO_T)], true, 0, 0, SECTION_FLIGHT_EXTERIOR_SECONDS * ((exteriorFrom - HERO_T) / (1 - HERO_T))))
-      moves.push(move(interiorLegs(HERO_T, targetT), false, 0, 1))
-    }
-  } else {
-    const interiorFrom = Math.min(originT, HERO_T)
-    if (targetExterior) {
-      moves.push(move(interiorLegs(interiorFrom, HERO_T), false, 0, 1))
-      moves.push(move([pathLeg(HERO_T, 1)], true, 1, 1, SECTION_FLIGHT_EXTERIOR_SECONDS))
-    } else {
-      moves.push(move(interiorLegs(interiorFrom, targetT), false, 0, 1))
-    }
-  }
+  const moves = [move(interiorLegs(originT, targetT))]
   if (immediate) moves.forEach((m) => (m.durationMs = 0))
 
   const flight = {
     targetT,
-    targetExterior,
     moves,
     moveIndex: 0,
     moveStartedAt: now,
-    exterior: originExterior,
     progress: originT,
-    portal: null,
     // The camera's real state at the start, blended out over `redirectMs`.
     offset: new THREE.Vector3(),
     carriedVelocity: new THREE.Vector3(),
@@ -444,9 +416,9 @@ export function createSectionFlight({
     flight.carriedVelocity
       .copy(velocity)
       .addScaledVector(routeDirection, -carried)
-      .clampLength(0, firstMove.exterior ? MAX_CARRIED_SPEED_EXTERIOR : MAX_CARRIED_SPEED_INTERIOR)
+      .clampLength(0, MAX_CARRIED_SPEED)
   } else {
-    flight.carriedVelocity.copy(velocity).clampLength(0, originExterior ? MAX_CARRIED_SPEED_EXTERIOR : MAX_CARRIED_SPEED_INTERIOR)
+    flight.carriedVelocity.copy(velocity).clampLength(0, MAX_CARRIED_SPEED)
   }
 
   if (offRoute || flight.carriedVelocity.lengthSq() > 1e-4 || flight.carriedAngularVelocity.lengthSq() > 1e-4) {
@@ -468,24 +440,9 @@ export function createSectionFlight({
  * Advances the flight to `now` and writes the camera pose. Returns true on the
  * frame it arrives, with the pose exactly the destination's composition.
  */
-export function stepSectionFlight(flight, now, aspect, outPosition, outQuaternion) {
+export function stepSectionFlight(flight, now, outPosition, outQuaternion) {
   for (;;) {
     const activeMove = flight.moves[flight.moveIndex]
-
-    if (flight.portal) {
-      // Parked on the hero pose, waiting for the billboard to hold the frame it
-      // is about to stand in for.
-      sampleMove(activeMove, 0, outPosition, outQuaternion)
-      const ready = isHeroCaptured(aspect) && flight.portal.frames >= 2
-      if (!ready && now - flight.portal.startedAt < PORTAL_TIMEOUT_MS) {
-        flight.portal.frames += 1
-        return false
-      }
-      setHeroFlightExterior(true)
-      flight.exterior = true
-      flight.portal = null
-      flight.moveStartedAt = now
-    }
 
     const elapsed = now - flight.moveStartedAt
     const t = activeMove.durationMs > 0 ? THREE.MathUtils.clamp(elapsed / activeMove.durationMs, 0, 1) : 1
@@ -493,10 +450,8 @@ export function stepSectionFlight(flight, now, aspect, outPosition, outQuaternio
     flight.progress = sampleMove(activeMove, distanceAtPace(activeMove, eased), outPosition, outQuaternion)
 
     const fade =
-      activeMove.length > EPSILON && !activeMove.exterior
-        ? THREE.MathUtils.smoothstep(eased, CONTENT_FADE_START, CONTENT_FADE_END)
-        : eased
-    setContentBlendWeight(THREE.MathUtils.lerp(activeMove.weightFrom, activeMove.weightTo, fade))
+      activeMove.length > EPSILON ? THREE.MathUtils.smoothstep(eased, CONTENT_FADE_START, CONTENT_FADE_END) : eased
+    setContentBlendWeight(fade)
 
     if (flight.moveIndex === 0 && flight.redirectMs > 0 && elapsed < flight.redirectMs) {
       // Hermite blend out of the camera's starting state: the full offset and
@@ -524,13 +479,5 @@ export function stepSectionFlight(flight, now, aspect, outPosition, outQuaternio
     if (flight.moveIndex === flight.moves.length - 1) return true
     flight.moveIndex += 1
     flight.moveStartedAt = now
-    const nextMove = flight.moves[flight.moveIndex]
-    if (nextMove.exterior && !flight.exterior) {
-      requestHeroCapture()
-      flight.portal = { startedAt: now, frames: 0 }
-    } else if (!nextMove.exterior && flight.exterior) {
-      setHeroFlightExterior(false)
-      flight.exterior = false
-    }
   }
 }

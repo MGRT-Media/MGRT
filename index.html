@@ -17,8 +17,77 @@
       href="https://fonts.googleapis.com/css2?family=Cormorant:wght@400;500&display=swap"
       rel="stylesheet"
     />
+    <!--
+      The black the opening fades in from. Painted with the HTML itself, so the
+      page is the void from its first frame; the scene renders underneath it
+      and `src/experience/loading/startupCover.js` fades it away once the
+      opening is ready, then removes it. It carries no branding and no
+      progress: its only content is an error message, shown if the experience
+      cannot start at all. Inline because the app's stylesheet arrives with the
+      bundle, which is part of what is being waited for.
+    -->
+    <style>
+      .startup-cover {
+        --startup-warm: 255, 241, 220;
+        position: fixed;
+        inset: 0;
+        z-index: 20;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        padding: 0 24px;
+        background: #0d0d0d;
+        /* A hair short of opaque, which no one can see against a black scene.
+           A fully opaque, unchanging layer lets the browser skip drawing the
+           canvas underneath it, and the canvas's first real presentation then
+           lands on the first frame of the reveal as a ~100ms stall. */
+        opacity: 0.999;
+        transition: opacity 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+      }
+      .startup-cover--revealing {
+        opacity: 0;
+        pointer-events: none;
+      }
+      .startup-cover__message {
+        margin: 0;
+        font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+        font-size: 11px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        text-align: center;
+        color: rgba(var(--startup-warm), 0.6);
+      }
+      .startup-cover__retry {
+        margin: 0;
+        padding: 12px 4px;
+        border: 0;
+        border-bottom: 1px solid rgba(var(--startup-warm), 0.42);
+        background: none;
+        font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+        font-size: 11px;
+        letter-spacing: 0.24em;
+        text-transform: uppercase;
+        color: rgba(var(--startup-warm), 0.92);
+        cursor: pointer;
+      }
+      .startup-cover__retry:focus-visible {
+        outline: 1px solid rgba(var(--startup-warm), 0.6);
+        outline-offset: 4px;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .startup-cover {
+          transition: none;
+        }
+      }
+    </style>
   </head>
   <body>
+    <div id="startup-cover" class="startup-cover">
+      <p class="startup-cover__message" role="alert" hidden>The experience could not load</p>
+      <button type="button" class="startup-cover__retry" hidden>Try again</button>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

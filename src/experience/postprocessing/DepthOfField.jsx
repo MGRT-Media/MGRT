@@ -7,7 +7,7 @@ import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js'
 import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js'
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
 import { Pass } from 'three/examples/jsm/postprocessing/Pass.js'
-import { CAMPAIGNS_SWAP_DISTANCE, campaignsRailDistance, HERO_LOOKAT } from '../timeline/cameraPath.js'
+import { HERO_LOOKAT } from '../timeline/cameraPath.js'
 import { contentValue } from '../timeline/contentProgress.js'
 import { HERO_T } from '../timeline/filmActBeats.js'
 import { CAMERA_ANCHOR } from '../film/CinemaCamera.jsx'
@@ -15,7 +15,6 @@ import { MONITOR_ANCHOR } from '../digital/Monitor.jsx'
 import { PILLAR_RING_CENTER, PILLAR_RING_RADIUS } from '../Environment.jsx'
 import { dustScene } from '../lighting/volumetricLighting.js'
 import { circleOfConfusionGLSL, depthOfFieldUniforms } from './depthOfFieldShared.js'
-import { isEndingCovered } from '../timeline/endingSequence.js'
 
 /**
  * Depth of field, and the post-processing chain it owns: scene, contact
@@ -32,8 +31,8 @@ import { isEndingCovered } from '../timeline/endingSequence.js'
  * The path's own `lookAt` was the obvious candidate and is WRONG, which is
  * worth recording because it looks right. It is a direction marker, not a
  * subject: measured along the real path it sits 0.17 ahead of the camera
- * at the Film beat and a fixed 0.67 ahead for the whole of Digital and
- * Campaigns. Focusing there would have put the focal plane inside the
+ * at the Film beat and a fixed 0.67 ahead for the whole of Digital.
+ * Focusing there would have put the focal plane inside the
  * camera's own near field and thrown the entire room out of focus at every
  * beat after t = 0.45.
  *
@@ -107,8 +106,7 @@ const MIN_APERTURE_SCALE = 0.15
  * changes what it is about.
  *
  * Keyed off the camera's radius from `PILLAR_RING_CENTER` rather than scroll
- * progress, so it stays correct no matter how the path is re-timed later —
- * the same reason the Campaigns fade below keys off rail distance.
+ * progress, so it stays correct no matter how the path is re-timed later.
  *
  * The band straddles the ring: fully pillar-focused a couple of units out,
  * fully subject-focused just inside, with `FOCUS_DAMP_LAMBDA` smoothing the
@@ -130,8 +128,7 @@ const FILM_SUBJECT = new THREE.Vector3().fromArray(CAMERA_ANCHOR.frontFacePositi
 const DIGITAL_SUBJECT = new THREE.Vector3().fromArray(MONITOR_ANCHOR.screenWorldPosition)
 
 /**
- * The MGRT wordmark — the focus subject for the hero and the whole billboard
- * reveal.
+ * The MGRT wordmark — the focus subject for the hero.
  *
  * Without it this shot had no subject at all. The focus target is a blend of
  * the Film/Digital props and the colonnade's near arc, weighted by how far
@@ -140,55 +137,19 @@ const DIGITAL_SUBJECT = new THREE.Vector3().fromArray(MONITOR_ANCHOR.screenWorld
  * wall it is looking at is 5.81 away. The hero was focused on a colonnade
  * that is not in the frame, and `pillarDistance` grows as the camera pulls
  * back, which is exactly the sharp-soft-sharp breathing.
- *
- * One subject serves both sides of the hand-over: the billboard stands on the
- * wall's own plane, so camera-to-wall and camera-to-billboard are the same
- * number. Focus therefore tracks the real subject distance continuously
- * through the swap, with nothing to jump.
  */
 const HERO_SUBJECT = HERO_LOOKAT.clone()
 
 /**
  * How the hero subject takes over. Fully in by the time the camera is square
  * on the wall, so the rack happens during the approach — where a focus pull
- * belongs — and not during the hold or the reveal, which must both be steady.
+ * belongs — and not once the camera rests on the wordmark, which must be steady.
  */
 const HERO_FOCUS_START = 0.82
 
 function heroFocusWeightAt(progress) {
   return THREE.MathUtils.smoothstep(progress, HERO_FOCUS_START, HERO_T)
 }
-
-/**
- * Depth of field must be OFF at the Campaigns hand-over, and this is not a
- * taste decision.
- *
- * The reveal works because the billboard's surface and the room it replaces
- * are the same image at the instant they trade places (`Billboard.jsx`).
- * They are not, however, at the same depth: the room recedes for tens of
- * units behind the camera's subject, while the billboard standing in for it
- * is a flat quad 5.9 away. A depth-driven blur therefore treats the two
- * completely differently — the real room would soften with distance and the
- * billboard would not — and the swap that the whole act is built around
- * would show as a visible snap into or out of focus.
- *
- * So the effect is ramped to nothing before the crossing and stays off for
- * the rest of the act. Keyed off the camera's own rail distance rather than
- * scroll progress, for the same reason the swap itself is: progress can fall
- * back below a gate while the camera is still past it. Costs nothing
- * visually — by then the shot is a wide exterior, which is exactly where a
- * shallow focus has least to offer.
- *
- * The window is set against the path's real rail distances rather than
- * chosen: Acts 0-2 reach 7.75 at most (the intro, at t = 0.067), and the
- * swap is at 10. Fading between those two means the effect is untouched
- * for the whole approach and provably zero before the hand-over. An
- * earlier window starting at 1 was measured to cut the intro's own focus
- * to near nothing, since the intro camera happens to sit far along this
- * same axis.
- */
-const FADE_START_DISTANCE = 8.0
-const FADE_END_DISTANCE = CAMPAIGNS_SWAP_DISTANCE - 0.4
 
 /**
  * The stock bokeh pass, with the two things that made the opening shot's blur
@@ -296,7 +257,7 @@ class DepthAwareBokehPass extends BokehPass {
  * circle of confusion (see `volumetricLighting.js`'s `buildDust`), where a
  * gathering blur would average each speck away. Before the output pass, so it
  * is tone-mapped with everything else. One draw call, from a scene holding only
- * the dust. Skipped outside the room, where the camera is on the exterior layer.
+ * the dust.
  */
 class DustPass extends Pass {
   constructor(scene, camera) {
@@ -307,7 +268,6 @@ class DustPass extends Pass {
   }
 
   render(renderer, writeBuffer, readBuffer) {
-    if (!this.camera.layers.isEnabled(0)) return
     const autoClear = renderer.autoClear
     renderer.autoClear = false
     renderer.setRenderTarget(this.renderToScreen ? null : readBuffer)
@@ -385,9 +345,7 @@ export default function DepthOfField() {
 
     // Tone mapping and the output colour-space conversion move here.
     // Three applies neither when rendering into a render target, so
-    // without this pass the whole scene would arrive raw and linear — see
-    // `campaigns/Billboard.jsx`, which hit exactly this and documents it.
-    // With it, every material is tone-mapped exactly once, at the end,
+    // without this pass the whole scene would arrive raw and linear. With it, every material is tone-mapped exactly once, at the end,
     // which is what it was getting before this pipeline existed.
     composerInstance.addPass(new OutputPass())
 
@@ -406,8 +364,6 @@ export default function DepthOfField() {
   useEffect(() => () => composer.dispose(), [composer])
 
   // Priority > 0 hands the render loop over from R3F to this callback.
-  // `Billboard.jsx`'s render-to-texture pass runs at the default priority 0,
-  // so it still completes before this composes the frame.
   useFrame(({ camera: activeCamera }, delta) => {
     const subjectDistance = Math.min(
       activeCamera.position.distanceTo(FILM_SUBJECT),
@@ -430,7 +386,7 @@ export default function DepthOfField() {
     const approachDistance = THREE.MathUtils.lerp(subjectDistance, pillarDistance, outsideRing)
 
     // Hand the subject over to MGRT as the hero composition arrives, and keep
-    // it there for the hold and the entire pull-back.
+    // it there while the camera rests on the wordmark.
     // Content progress (see `contentProgress.js`), so a section flight past the
     // hero does not rack focus onto a wall it is not stopping at.
     const heroWeight = contentValue(heroFocusWeightAt, 'rendered')
@@ -445,10 +401,6 @@ export default function DepthOfField() {
         ? targetDistance
         : THREE.MathUtils.damp(focusDistance.current, targetDistance, FOCUS_DAMP_LAMBDA, delta)
 
-    const railDistance = campaignsRailDistance(activeCamera.position)
-    const strength =
-      1 - THREE.MathUtils.smoothstep(railDistance, FADE_START_DISTANCE, FADE_END_DISTANCE)
-
     // See SHALLOW_FOCUS_DISTANCE: stop down as the subject gets further away,
     // so wide shots hold the architecture and close-ups stay shallow.
     const apertureScale = THREE.MathUtils.clamp(
@@ -458,17 +410,15 @@ export default function DepthOfField() {
     )
 
     bokeh.uniforms.focus.value = focusDistance.current
-    bokeh.uniforms.aperture.value = APERTURE * apertureScale * strength
-    bokeh.uniforms.maxblur.value = MAX_BLUR * strength
+    bokeh.uniforms.aperture.value = APERTURE * apertureScale
+    bokeh.uniforms.maxblur.value = MAX_BLUR
     bokeh.uniforms.focusRange.value = THREE.MathUtils.clamp(
       focusDistance.current * FOCUS_RANGE_FRACTION,
       FOCUS_RANGE_MIN,
       FOCUS_RANGE_MAX,
     )
-    // The camera's far plane is not constant — `CampaignsLayerSwitch.jsx`
-    // raises it at the swap so the exterior fits. The bokeh shader
-    // linearises depth against these, so a stale pair would mis-read every
-    // depth in the frame from that point on.
+    // The bokeh shader linearises depth against the camera's own clip planes,
+    // read live so they can never go stale against the camera.
     bokeh.uniforms.nearClip.value = activeCamera.near
     bokeh.uniforms.farClip.value = activeCamera.far
 
@@ -483,10 +433,6 @@ export default function DepthOfField() {
     depthOfFieldUniforms.uFarClip.value = activeCamera.far
     depthOfFieldUniforms.uResolution.value.copy(gl.getDrawingBufferSize(drawingBufferScratch))
 
-    // The closing frame covers the canvas completely (`endingSequence.js`), so
-    // there is nothing to draw until it starts to clear. Focus above keeps
-    // damping regardless, so the first frame back is already correct.
-    if (isEndingCovered()) return
     composer.render(delta)
   }, 1)
 

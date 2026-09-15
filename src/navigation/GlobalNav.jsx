@@ -18,9 +18,9 @@ import { NAV_LINKS } from './navLinks.js'
  * them with `display: none`, not opacity — so a screen reader is never
  * offered the same three links twice.
  *
- * Mounted on internal pages only (see `App.jsx`): the cinematic homepage ends
- * on its own closing frame, whose links replace this bar there. So it always
- * carries the MGRT mark linking back to '/', and uses the short labels
+ * Mounted on internal pages only (see `App.jsx`); the cinematic homepage keeps
+ * to its own wordmark and side navigation. So it always carries the MGRT mark
+ * linking back to '/', and uses the short labels
  * ("Work" for "Selected Work").
  */
 export default function GlobalNav() {

@@ -10,7 +10,7 @@ import {
   useModel,
   useTreatedMaterials,
 } from '../models/modelAssets.js'
-import { contentValue } from '../timeline/contentProgress.js'
+import { contentCondition, contentValue } from '../timeline/contentProgress.js'
 import { MONITOR_SNAP_T, DIGITAL_IGNITE_RISE } from '../timeline/filmActBeats.js'
 import { BEAM_CENTER, YAW_DEGREES, MONITOR_PLINTH } from './plinthAnchor.js'
 import { assetUrl } from '../assets/assetUrl.js'
@@ -368,6 +368,22 @@ function monitorIgniteAt(p) {
   return THREE.MathUtils.smoothstep(p, MONITOR_SNAP_T - DIGITAL_IGNITE_RISE, MONITOR_SNAP_T)
 }
 
+/**
+ * Where playback stops on the way to the hero.
+ *
+ * The screen stays lit after Digital, so it never visibly switches off behind
+ * the departing camera. But by this point of the approach the camera has
+ * turned onto the wall and the monitor is out of shot, and the hero is where
+ * the journey ends — so the clip would otherwise keep streaming and decoding
+ * for as long as the visitor rests there. It holds its last frame instead,
+ * and restarts on the way back.
+ */
+const PLAYBACK_END_T = 0.8
+
+function isPlaybackRange(p) {
+  return p < PLAYBACK_END_T
+}
+
 export default function Monitor() {
   // A plain <video> element (not React state) driving a THREE.VideoTexture
   // — muted/playsInline/loop so autoplay is permitted and the clip repeats
@@ -395,11 +411,9 @@ export default function Monitor() {
     return el
   }, [])
   const videoTexture = useMemo(() => new THREE.VideoTexture(video), [video])
-  // `coverTransmittance` is what the glass pane below leaves of this screen,
-  // measured off a flat test colour rendered through it (0.76 of the value
-  // the shader writes). It exists only so the Campaigns billboard's copy of
-  // this screen matches the direct view — see `screenVideoMaterial.js`. If
-  // the glass's opacity or colour changes, re-measure it.
+  // `coverTransmittance` is what a glass pane in front of the screen would
+  // leave of it — see `screenVideoMaterial.js`. The video is on the model's
+  // own screen mesh with no pane, so it is 1.
   const screenMaterial = useMemo(
     () =>
       createScreenVideoMaterial(videoTexture, screenWidth / screenHeight, {
@@ -446,7 +460,7 @@ export default function Monitor() {
     const ignite = contentValue(monitorIgniteAt)
     screenMaterial.uniforms.uIgnite.value = ignite
 
-    const shouldPlay = ignite > 0.02
+    const shouldPlay = ignite > 0.02 && contentCondition(isPlaybackRange)
     if (shouldPlay && !wasPlaying.current) {
       video.currentTime = 0
       video.play().catch(() => {})

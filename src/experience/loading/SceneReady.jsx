@@ -43,10 +43,9 @@ const WARMUP_FRAMES = 1
  * stone and brass replacing their stand-ins, the HDRI replacing the generated
  * environment, and the first frame's shader compilation.
  *
- * Plain `requestAnimationFrame` rather than `useFrame`, for the reason
- * `CampaignsGate` documents: `DepthOfField` takes the loop over at priority 1,
- * and a later subscription on a component that renders nothing was observed
- * never to be driven.
+ * Plain `requestAnimationFrame` rather than `useFrame`: `DepthOfField` takes
+ * the loop over at priority 1, and a later subscription on a component that
+ * renders nothing was observed never to be driven.
  */
 export default function SceneReady({ onReady }) {
   const gl = useThree((state) => state.gl)

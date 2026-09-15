@@ -217,12 +217,9 @@ export const lightingParams = {
     normalBias: 0.04,
   },
   /**
-   * NOTE: fog is deliberately untouched this phase. `fog.color` is not local
-   * to this room — `campaigns/River.jsx` and `campaigns/NightSky.jsx` both
-   * read it to build the Act 3 NIGHT exterior, so warming it for a sunlit
-   * interior would recolour a night sky. It is the largest remaining lever on
-   * distant-surface darkness (at 24 units it mixes 36% of this dark grey into
-   * everything) and it belongs to the atmosphere pass, with a per-act value.
+   * NOTE: fog is deliberately untouched this phase. It is the largest
+   * remaining lever on distant-surface darkness (at 24 units it mixes 36% of
+   * this dark grey into everything) and it belongs to the atmosphere pass.
    */
   fog: {
     color: '#2c2c30',

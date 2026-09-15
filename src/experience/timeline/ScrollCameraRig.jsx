@@ -9,20 +9,10 @@ import {
   sampleCameraPathInto,
   setHeroAspect,
 } from './cameraPath.js'
-import {
-  HERO_ARRIVAL_EPSILON,
-  advanceHeroSequence,
-  cameraProgress,
-  isExteriorActive,
-  isHeroFrozen,
-  renderedProgress,
-  syncHeroSequence,
-} from './heroSequence.js'
-import { HERO_T } from './filmActBeats.js'
+import { advanceJourney, cameraProgress, renderedProgress, syncJourney } from './journeyProgress.js'
 import { sectionFlightRequest } from './sectionFlightRequest.js'
 import { createSectionFlight, stepSectionFlight } from './sectionFlightRoute.js'
 import { beginContentBlend, endContentBlend, releaseContentBlend } from './contentProgress.js'
-import { endingCameraSettle, endingProgress } from './endingSequence.js'
 
 // Lowered from 3.5 (both were previously equal) per explicit request to
 // give the camera more perceived "weight and inertia" as it settles, and
@@ -49,8 +39,6 @@ const forwardScratch = new THREE.Vector3()
 // per-frame path does not use the allocating sampler.
 const pathPositionScratch = new THREE.Vector3()
 const pathLookAtScratch = new THREE.Vector3()
-const heroPoseScratch = new THREE.Vector3()
-const HERO_SAMPLE_SCRATCH = { value: 0 }
 const handBackPathScratch = new THREE.Vector3()
 const previousPositionScratch = new THREE.Vector3()
 const previousQuaternionScratch = new THREE.Quaternion()
@@ -59,19 +47,6 @@ const inverseQuaternionScratch = new THREE.Quaternion()
 
 /** How long content takes to settle back onto the live journey after an interrupted flight. */
 const INTERRUPTED_CONTENT_RELEASE_SECONDS = 0.6
-
-/**
- * The closing frame's settle (`endingSequence.js`): a small push along the
- * camera's own view direction, layered on the final write like the lock
- * wobble, so the path, the damping and the hero sequence never see it. Applied
- * during flights too, so a flight that leaves the ending starts from the pose
- * on screen and the settle eases out as the ending clears.
- */
-function applyEndingSettle(camera) {
-  const settle = endingCameraSettle(endingProgress.value)
-  if (settle === 0) return
-  camera.position.addScaledVector(forwardScratch.set(0, 0, -1).applyQuaternion(camera.quaternion), settle)
-}
 
 function computeTargetQuaternion(outQuaternion, eye, lookAtPoint, up) {
   scratchMatrix.lookAt(eye, lookAtPoint, up)
@@ -145,7 +120,7 @@ export default function ScrollCameraRig() {
   function handBackFromFlight() {
     const active = flight.current
     flight.current = null
-    syncHeroSequence(active.progress, active.exterior)
+    syncJourney(active.progress)
     arcPosition.current = pathArcLengthAt(active.progress)
     cameraProgress.value = active.progress
     sampleCameraPathInto(active.progress, handBackPathScratch, pathLookAtScratch)
@@ -175,9 +150,6 @@ export default function ScrollCameraRig() {
       heroAspect.current = camera.aspect
       setHeroAspect(camera.aspect)
       arcPosition.current = pathArcLengthAt(progressBefore)
-      // The canonical hero pose for this viewport, cached so arrival can be
-      // measured every frame without re-walking the path.
-      heroPoseScratch.fromArray(sampleCameraPath(HERO_T).position)
     }
 
     const now = performance.now()
@@ -190,7 +162,7 @@ export default function ScrollCameraRig() {
      * Section flights. A click in the side navigation flies the camera straight
      * to that section instead of travelling the journey (see
      * `sectionFlightRoute.js`). While one runs it owns the pose outright: the
-     * hero sequence is not advanced and the path is not sampled, so scroll and
+     * journey is not advanced and the path is not sampled, so scroll and
      * navigation can never both be steering the camera.
      */
     const request = sectionFlightRequest.pending
@@ -203,7 +175,6 @@ export default function ScrollCameraRig() {
         beginContentBlend(request.targetT)
         flight.current = createSectionFlight({
           originT: current ? current.progress : cameraProgress.value,
-          originExterior: current ? current.exterior : isExteriorActive(),
           targetT: request.targetT,
           position: dampedPosition.current,
           quaternion: dampedQuaternion.current,
@@ -221,15 +192,14 @@ export default function ScrollCameraRig() {
 
     if (flight.current) {
       const active = flight.current
-      const arrived = stepSectionFlight(active, now, camera.aspect, dampedPosition.current, dampedQuaternion.current)
+      const arrived = stepSectionFlight(active, now, dampedPosition.current, dampedQuaternion.current)
       cameraProgress.value = active.progress
       renderedProgress.value = active.progress
       if (arrived) {
         // Hand the destination to scroll exactly as if the camera had come to
-        // rest there: the machine's state, the eased path distance and the
-        // content all agree with the pose just written, so nothing moves on
-        // the next frame.
-        syncHeroSequence(active.targetT, active.targetExterior)
+        // rest there: the journey, the eased path distance and the content all
+        // agree with the pose just written, so nothing moves on the next frame.
+        syncJourney(active.targetT)
         arcPosition.current = pathArcLengthAt(active.targetT)
         cameraProgress.value = active.targetT
         endContentBlend()
@@ -239,25 +209,14 @@ export default function ScrollCameraRig() {
       scrollLockWobble.value = 0
       camera.position.copy(dampedPosition.current)
       camera.quaternion.copy(dampedQuaternion.current)
-      applyEndingSettle(camera)
       measureMotion(delta)
       return
     }
 
-    // Sample the hero pose once per frame so arrival can be measured against
-    // it, then let the machine choose the progress actually rendered.
-    const arrived = dampedPosition.current.distanceTo(heroPoseScratch) < HERO_ARRIVAL_EPSILON
-    HERO_SAMPLE_SCRATCH.value = advanceHeroSequence(scrollProgress.value, arrived, performance.now())
-
-    /**
-     * The sequence decides what to draw — not raw scroll. See
-     * `heroSequence.js`: while travelling it clamps at the hero, during the
-     * hold it pins there, and the reveal runs on its own clock.
-     *
-     * Arrival is reported from here because this is the only place that knows
-     * where the damped camera actually is; the machine cannot see it.
-     */
-    sampleCameraPathInto(HERO_SAMPLE_SCRATCH.value, pathPositionScratch, pathLookAtScratch)
+    // The journey decides what to draw — not raw scroll: it clamps at the hero,
+    // the last shot, however far scroll runs on (see `journeyProgress.js`).
+    const targetProgress = advanceJourney(scrollProgress.value)
+    sampleCameraPathInto(targetProgress, pathPositionScratch, pathLookAtScratch)
 
     // Position is damped in DISTANCE ALONG THE PATH, then placed on the path.
     //
@@ -278,28 +237,18 @@ export default function ScrollCameraRig() {
     // eased inside the sampler), and damping it bunched the speed into the
     // middle of the room at more than twice the old peak.
     const pos = dampedPosition.current
-    const targetArc = pathArcLengthAt(HERO_SAMPLE_SCRATCH.value)
-    if (isHeroFrozen()) {
-      // Written verbatim, not damped. Damping only ever ASYMPTOTES toward its
-      // target, so a damped hold still creeps by a hair every frame — enough
-      // to read as drift over a second and a half. Copying the pose outright
-      // is what makes the frame bit-identical for the whole hold.
-      arcPosition.current = targetArc
-      pos.copy(pathPositionScratch)
-      positionOffset.current.set(0, 0, 0)
-      cameraProgress.value = HERO_SAMPLE_SCRATCH.value
-    } else {
-      arcPosition.current = THREE.MathUtils.damp(arcPosition.current, targetArc, POSITION_DAMP_LAMBDA, delta)
-      // Settled: use the target itself, so a stretch of path where only the
-      // aim changes cannot leave the camera parked at the wrong end of it.
-      const settled = Math.abs(targetArc - arcPosition.current) < 1e-4
-      cameraProgress.value = settled ? HERO_SAMPLE_SCRATCH.value : pathProgressAtArcLength(arcPosition.current)
-      sampleCameraPathInto(cameraProgress.value, pos, handBackPathScratch)
-      // Left over from an interrupted flight: fades with the same weight as
-      // the rest of the camera's settle.
-      positionOffset.current.multiplyScalar(Math.exp(-POSITION_DAMP_LAMBDA * delta))
-      pos.add(positionOffset.current)
-    }
+    const targetArc = pathArcLengthAt(targetProgress)
+    arcPosition.current = THREE.MathUtils.damp(arcPosition.current, targetArc, POSITION_DAMP_LAMBDA, delta)
+    // Settled: use the target itself, so a stretch of path where only the aim
+    // changes cannot leave the camera parked at the wrong end of it — and so a
+    // camera resting on the hero is placed on exactly the same pose every frame.
+    const settled = Math.abs(targetArc - arcPosition.current) < 1e-4
+    cameraProgress.value = settled ? targetProgress : pathProgressAtArcLength(arcPosition.current)
+    sampleCameraPathInto(cameraProgress.value, pos, handBackPathScratch)
+    // Left over from an interrupted flight: fades with the same weight as the
+    // rest of the camera's settle.
+    positionOffset.current.multiplyScalar(Math.exp(-POSITION_DAMP_LAMBDA * delta))
+    pos.add(positionOffset.current)
 
     // Orientation is derived from the path's OWN eye/target pair, not from
     // the damped eye — a real bug fix, not a refactor. Feeding the damped
@@ -311,11 +260,8 @@ export default function ScrollCameraRig() {
     // the camera YAW while moving and un-yaw as it settled — a
     // speed-proportional turn that no amount of keyframe tuning could
     // remove, and that `sampleCameraPath`'s own output can't reveal because
-    // it only exists at runtime. Act 3 depends on this: its whole design is
-    // a constant `lookAt - position` offset (see `cameraPath.js`'s
-    // `CAMPAIGNS_FACING`), which is exactly the quantity this line was
-    // corrupting. Rotation is still slerped toward the target, so the
-    // damping feel is unchanged; only what it aims at is now lag-free.
+    // it only exists at runtime. Rotation is still slerped toward the target,
+    // so the damping feel is unchanged; only what it aims at is now lag-free.
     const targetQuaternion = computeTargetQuaternion(
       targetQuaternionScratch,
       pathPositionScratch,
@@ -325,7 +271,7 @@ export default function ScrollCameraRig() {
     // Frame-rate-independent slerp factor with the same exponential shape
     // as THREE.MathUtils.damp, so rotation and position share one
     // consistent "catch-up" feel despite using different lambdas/math.
-    const rotationAlpha = isHeroFrozen() ? 1 : 1 - Math.exp(-ROTATION_DAMP_LAMBDA * delta)
+    const rotationAlpha = 1 - Math.exp(-ROTATION_DAMP_LAMBDA * delta)
     dampedQuaternion.current.slerp(targetQuaternion, rotationAlpha)
     camera.quaternion.copy(dampedQuaternion.current)
     measureMotion(delta)
@@ -345,7 +291,6 @@ export default function ScrollCameraRig() {
     } else {
       camera.position.copy(pos)
     }
-    applyEndingSettle(camera)
   })
 
   return null

@@ -17,7 +17,7 @@ import { applyStoneMacroVariation } from '../materials/stoneMacroVariation.js'
  * Placement is measured against the hero shot, not chosen by eye:
  *
  *  - the wordmark's ink spans +/-3.53m along the wall from the band centre;
- *  - the hero hold shows +/-4.24m (4:3) to +/-4.35m (21:9) of wall;
+ *  - the hero shows +/-4.24m (4:3) to +/-4.35m (21:9) of wall;
  *  - so there is ~0.7m of wall each side of the ink, and a column standing
  *    proud of a curving wall loses more of that to perspective than the flat
  *    arithmetic suggests.

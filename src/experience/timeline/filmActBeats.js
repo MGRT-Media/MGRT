@@ -24,46 +24,20 @@ export const FILM_SNAP_CAPTURE_RADIUS = 0.06
 // hero beat rather than a hard on/off toggle.
 export const FILM_IGNITE_RISE = 0.12
 
-// Snap 3 — Digital Monitor (Interface): the end of the normalized scroll
-// timeline. A capture radius here still means something even though 1.0
-// is also the natural scroll limit: without it, native scroll
-// deceleration can leave the resting progress a little short of exactly
-// 1.0 (e.g. 0.97), landing a slightly-off frame instead of the intended
+// Snap 3 — Digital Monitor (Interface). A capture radius here keeps native
+// scroll deceleration from leaving the resting progress a little short of the
 // aligned shot.
-// Rescaled from `1` for the Campaigns act (Phase 1E): Digital is no longer
-// the literal end of the normalized timeline, so the range 0.6 -> 1 is now
-// free for the Digital -> Billboard pull-back below. `engageMonitorLock`'s
-// soft lock is unaffected by the move — it was never a "we're at the scroll
-// floor" mechanism, it's a catch-tween onto this exact value plus a timed
-// hold, and it still releases into whatever scroll follows (which is now a
-// real onward range instead of nothing).
 export const MONITOR_SNAP_T = 0.6
 export const MONITOR_SNAP_CAPTURE_RADIUS = 0.08
 
-// --- Act 3 (Campaigns) — Digital -> Billboard pull-back stage boundaries ---
-//
-// `technical-architecture.md` requires this pull-back be exposed as named,
-// identifiable stage boundaries rather than one opaque interpolation, and
-// `experience-design.md` §9 names the three stages: (1) back out through the
-// room's own pillar ring, (2) hold far enough back that the room and ring
-// read as one complete structure, (3) continue until that structure resolves
-// into a billboard beside a highway. These four constants are those stage
-// edges; `cameraPath.js` places one keyframe on each.
-//
-// The "hold" at `CAMPAIGNS_ROOM_T` is pacing, not a stop — per explicit
-// answer, the camera never pauses here. It reads as a hold purely because
-// `sampleCameraPath` gives every keyframe boundary zero velocity
-// (per-segment `smoothstep`), so the recession naturally slows through this
-// beat and accelerates out of it, without any lock or timer.
-export const CAMPAIGNS_GATE_T = 0.66
-export const CAMPAIGNS_ROOM_T = 0.8
-// Where the live interior view hands over to the billboard surface showing
-// it (see `Billboard.jsx`). Not a stage boundary the audience can perceive —
-// by construction the two images coincide exactly at this instant — but it
-// IS a real boundary in the render pipeline, so it gets its own name and its
-// own keyframe rather than being buried inside stage 3.
-export const CAMPAIGNS_SWAP_T = 0.83
-export const CAMPAIGNS_REVEAL_T = 1
+/**
+ * Where the camera has left the Digital shot on its way to the MGRT hero.
+ *
+ * The one boundary between Digital and the hero that the interface keys off:
+ * the side navigation's active mark and the fullscreen button both follow the
+ * camera actually leaving the monitor, not a generic progress value.
+ */
+export const DIGITAL_EXIT_T = 0.66
 
 // How much scroll progress before MONITOR_SNAP_T the monitor screen's
 // ignite ramps in over — mirrors FILM_IGNITE_RISE's role for the Cinema
@@ -76,9 +50,7 @@ export const CAMPAIGNS_REVEAL_T = 1
 // depended on how much real time had passed since crossing the lock
 // threshold, not on progress itself, which could desync forward vs.
 // backward passes at different scroll speeds). No symmetric "fall" half
-// like Film's hill: MONITOR_SNAP_T is the timeline's own end, so the
-// screen only ever ramps up to it and back down when reversing away —
-// there's no "past the peak" side to fall down into.
+// like Film's hill: the screen stays lit on the way to the hero.
 export const DIGITAL_IGNITE_RISE = 0.1
 
 /**
@@ -93,7 +65,7 @@ export const DIGITAL_IGNITE_RISE = 0.1
 export const SCROLL_LOCK_HOLD_MS = 1750
 
 /**
- * Where the MGRT hero lands on the timeline.
+ * Where the MGRT hero lands on the timeline — and where the journey ends.
  *
  * Defined HERE rather than in `cameraPath.js`, where it started, because
  * `ScrollTimelineProvider` needs it to catch the crossing — and importing
@@ -106,37 +78,15 @@ export const SCROLL_LOCK_HOLD_MS = 1750
 export const HERO_T = 0.9
 
 /**
- * The MGRT hero beat, in real milliseconds.
+ * The end of the journey: the hero is the last shot.
  *
- * The hero is the one moment in this sequence that has to last a fixed amount
- * of TIME rather than a fixed amount of scrolling. A progress-based hold — a
- * plateau in the mapping, or a gate that pins progress while scroll
- * accumulates — pins where the camera is and can say nothing about how long it
- * stays there; a single trackpad flick crosses any such band between two
- * frames. Both were tried and both failed on exactly that.
- *
- * So the hero reuses the mechanism Film and Digital already use for the same
- * problem: catch the crossing, tween progress onto the exact snap point, lock
- * the scroller, wait on a timer, then continue. Same shape as
- * `SCROLL_LOCK_HOLD_MS`, different duration and a different ending — this one
- * advances by itself instead of handing control back.
- *
- * INTERNAL ONLY. Nothing about this timer is drawn: no counter, no ring, no
- * progress bar, no DOM. From the viewer's side the camera simply stops on
- * MGRT MEDIA, rests, and then the billboard reveal begins.
+ * Every progress value before it kept the value it had when the timeline ran
+ * on past the hero, so the pacing of every remaining move is unchanged. The
+ * journey simply stops here: the camera path, its distance tables, the scroll
+ * mapping and the page's scroll length all end at this value, and progress
+ * never exceeds it.
  */
-export const HERO_COUNTDOWN_MS = 10
-
-/**
- * How long the automatic reveal takes once the countdown expires, in seconds.
- *
- * The pull-back covers 28.7 units, so this is the difference between a reveal
- * and a lurch. Decelerating, so the exterior settles into the approved Impact
- * framing rather than arriving at speed.
- */
-export const HERO_REVEAL_SECONDS = 1.0
-export const HERO_REVEAL_EASE = 'power2.inOut'
-
+export const JOURNEY_END_T = HERO_T
 
 // How far (in normalized 0-1 progress) the LIVE scroll position must
 // drift from the pinned snap point while locked before it counts as a
@@ -227,21 +177,14 @@ export const LOCK_CATCH_EASE = 'power4.out'
  * same landmark constants already driving the scroll-snap/lock logic above
  * rather than inventing separate coordinates, per explicit request to
  * integrate into the existing state engine instead of building a parallel
- * one. Keyed to match the indicator's own section keys.
- *
- * `campaigns` gained a real landmark this round (`CAMPAIGNS_REVEAL_T`, the
- * end of the billboard pull-back), so its mark is now genuinely navigable.
- * `ending` — the closing frame — shares that landmark: it is played over the
- * settled Campaigns frame rather than being a camera position of its own
- * (see `endingSequence.js`), so a flight to it lands on Campaigns and the
- * closing frame runs from there.
+ * one. Keyed to match the indicator's own section keys. `hero` is the MGRT
+ * wordmark, the journey's final destination.
  */
 export const SECTION_TARGETS = {
   intro: 0,
   film: FILM_FOCUS_T,
   digital: MONITOR_SNAP_T,
-  campaigns: CAMPAIGNS_REVEAL_T,
-  ending: CAMPAIGNS_REVEAL_T,
+  hero: HERO_T,
 }
 
 // Direct-navigation jump duration range, in seconds — scaled by travel
@@ -263,15 +206,13 @@ export const JUMP_MAX_DURATION_SECONDS = 1.6
  * Unlike a chapter gesture, which travels the journey, a click flies straight
  * to the section (see `sectionFlightRoute.js`). Each move between stops is
  * paced at `SECTION_FLIGHT_PACE` units/s — its length plus a cost for how far
- * the view turns — and clamped to the range below, so a hop to the neighbouring section and a flight across the
- * whole room both take a controlled, similar time. The only stop is the hero
- * pose when a flight crosses between the room and the exterior; that leg has a
- * fixed duration of its own because its 29 units read as one wide pull-back.
+ * the view turns — and clamped to the range below, so a hop to the neighbouring
+ * section and a flight across the whole room both take a controlled, similar
+ * time.
  */
 export const SECTION_FLIGHT_PACE = 6
 export const SECTION_FLIGHT_MIN_SECONDS = 1.1
 export const SECTION_FLIGHT_MAX_SECONDS = 3.4
-export const SECTION_FLIGHT_EXTERIOR_SECONDS = 2
 
 /**
  * Chapter mode (Film and beyond) — per explicit request, once the camera

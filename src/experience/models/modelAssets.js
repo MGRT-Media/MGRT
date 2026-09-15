@@ -15,9 +15,7 @@ import { sceneIgniteAt } from '../lighting/VolumetricLightingRig.jsx'
  * before being committed rather than shipped as downloaded. See
  * `docs/build-status.md` for the per-file figures; the short version is
  * texture recompression to WebP at 1024 and mesh simplification on the two
- * heaviest. The street lights were cut further on 2026-09-14 to the one
- * column design actually used (107KB -> 16KB); the previous copy is in git
- * history.
+ * heaviest.
  */
 export const MODEL_URLS = {
   camera: assetUrl('/models/camera/movie-camera.glb'),
@@ -28,8 +26,6 @@ export const MODEL_URLS = {
   // `Monitor.jsx` for what was cut and baked offline.
   monitor: assetUrl('/models/monitor/spark-computer.glb'),
   pedestal: assetUrl('/models/pedestal/digital-stone.glb'),
-  billboard: assetUrl('/models/billboard/campaign-billboard.glb'),
-  streetLights: assetUrl('/models/streetlights/street-lights.glb'),
 }
 
 /**
@@ -61,10 +57,10 @@ export function useModel(url) {
  * There is deliberately no bulk preloader here.
  *
  * A `preloadModels()` that walked `MODEL_URLS` used to live at this spot. It
- * was never called, but it was a loaded gun: every model in one list, Act 3's
- * included, one call away from being fetched on startup. Loading is driven by
- * where the visitor actually is — components request their own model when they
- * mount, and `CampaignsGate` decides when Act 3's mount at all.
+ * was never called, but it was a loaded gun: every model in one list, one call
+ * away from being fetched on startup. Loading is driven by what the scene
+ * actually shows — components request their own model when they mount, and
+ * `criticalAssets.js` starts the opening's models before the scene is built.
  */
 
 /**
@@ -96,37 +92,6 @@ export function cloneNode(gltf, name) {
   clone.matrix.decompose(clone.position, clone.quaternion, clone.scale)
   clone.matrixAutoUpdate = true
   return clone
-}
-
-/**
- * A node's geometry in scene units, ready to use without the node itself —
- * for an `InstancedMesh`, or merged into another geometry.
- *
- * Every GLB here is quantised (`KHR_mesh_quantization`): positions and normals
- * are stored as normalised integers in -1..1, and the real size lives in the
- * node's own transform. So `node.geometry` on its own is a model shrunk to
- * about two units and centred on its middle rather than standing on its base,
- * and baking a transform into it with `applyMatrix4` cannot work either — the
- * scaled values do not fit the integer range they are written back into, and
- * clamp. The attributes are expanded to floats first, then the node's world
- * transform is baked in.
- */
-export function bakedGeometry(node) {
-  node.updateWorldMatrix(true, false)
-  const geometry = node.geometry.clone()
-  Object.entries(geometry.attributes).forEach(([name, attribute]) => {
-    if (attribute.array instanceof Float32Array && !attribute.normalized) return
-    const { count, itemSize } = attribute
-    const values = new Float32Array(count * itemSize)
-    for (let i = 0; i < count; i += 1) {
-      for (let c = 0; c < itemSize; c += 1) values[i * itemSize + c] = attribute.getComponent(i, c)
-    }
-    geometry.setAttribute(name, new THREE.BufferAttribute(values, itemSize))
-  })
-  geometry.applyMatrix4(node.matrixWorld)
-  geometry.computeBoundingBox()
-  geometry.computeBoundingSphere()
-  return geometry
 }
 
 /**

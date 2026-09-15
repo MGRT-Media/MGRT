@@ -55,13 +55,13 @@ const PENUMBRA = 0.7
  * Hero-stage level, as a pure function of the rendered progress.
  *
  * Rises over `RISE_START` -> `RISE_END`, which is the camera's own final glide
- * onto the wordmark, and holds at full from there through the hero, the hold
- * and the hand-over (the billboard captures this frame, so it keeps the light).
+ * onto the wordmark, and holds at full from there while the camera rests on the
+ * hero, the end of the journey.
  * Below `RISE_START` it is exactly zero — the Digital beat (0.6) and the Film
  * beat (0.45) are far outside it.
  *
  * `renderedProgress` rather than raw scroll: it is the value the camera itself
- * is placed from, including the hero sequence's own clamping, so the light
+ * is placed from, including the journey's own clamping at the hero, so the light
  * can never run ahead of or behind the shot it belongs to. The same progress
  * always gives the same level, so reversing is automatically exact — there is
  * no state and nothing one-way.
@@ -102,7 +102,7 @@ export default function HeroUplight() {
   }, [])
 
   useFrame(() => {
-    // Content progress on the hero sequence's own base — see `contentProgress.js`.
+    // Content progress on the rendered (journey) base — see `contentProgress.js`.
     light.intensity = CANDELA * contentValue(heroUplightLevel, 'rendered')
   })
 

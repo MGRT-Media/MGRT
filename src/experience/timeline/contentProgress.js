@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { cameraProgress, renderedProgress } from './heroSequence.js'
+import { cameraProgress, renderedProgress } from './journeyProgress.js'
 
 /**
  * The progress that scene CONTENT reflects — screens, videos, lights, overlays.
@@ -18,7 +18,7 @@ import { cameraProgress, renderedProgress } from './heroSequence.js'
  *
  * Two live bases, matching what content already keyed off:
  *  - `camera`: where the camera actually is along the path (`cameraProgress`);
- *  - `rendered`: what the hero sequence is drawing (`renderedProgress`).
+ *  - `rendered`: what the journey is drawing (`renderedProgress`, clamped at the hero).
  */
 const BASES = { camera: cameraProgress, rendered: renderedProgress }
 

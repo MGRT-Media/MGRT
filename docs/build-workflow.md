@@ -147,16 +147,15 @@ PHASE 1
 ├── 1B — Atmosphere & Light
 ├── 1C — Camera & Scroll
 ├── 1D — Digital / Monitor Transition Foundation
-└── 1E — Billboard Reveal Foundation
+└── 1E — Billboard Reveal Foundation (removed 2026-09-15)
 
 PHASE 2
 ├── Film
 ├── Digital
-└── Campaigns
+└── Campaigns (removed 2026-09-15)
 
 PHASE 3
-├── Return
-├── Final MGRT Identity
+├── Final MGRT Identity (the hero — now the end of the journey)
 └── Explore transition
 
 PHASE 4
@@ -187,7 +186,9 @@ Phase 1 establishes and proves the **technical and cinematic foundation** of the
 
 Phase 1D specifically establishes the **monitor, screen, and Film → Digital transition mechanism as a working foundation**. It is not the final Digital act.
 
-Phase 1E specifically establishes the **billboard reveal and dive-back-in mechanism as a working foundation** — the render-to-texture technique, the camera's continuous pull-back and return through the billboard surface, and the boundary crossing between interior and exterior environments — using placeholder or provisional content for the exterior environment. It is not the final Campaigns act, and it does not require final Film or Digital content to be present.
+> **Status (2026-09-15):** the Campaigns act, the billboard reveal, the Return and the closing frame were removed from the experience and the codebase. The cinematic journey now ends at the MGRT hero. The Phase 1E and Campaigns notes below are kept as history only.
+
+Phase 1E specifically established the **billboard reveal and dive-back-in mechanism as a working foundation** — the render-to-texture technique, the camera's continuous pull-back and return through the billboard surface, and the boundary crossing between interior and exterior environments — using placeholder or provisional content for the exterior environment. It is not the final Campaigns act, and it does not require final Film or Digital content to be present.
 
 Phase 2 then builds the **final Film, Digital, and Campaigns acts** on top of that proven foundation, replacing provisional elements with the intended final objects, compositions, media, typography, and cinematic treatment.
 
@@ -284,7 +285,9 @@ If any of these occur, the phase is not ready for approval.
 
 ---
 
-## 10A. Phase 1E — Billboard Reveal Foundation
+## 10A. Phase 1E — Billboard Reveal Foundation (removed)
+
+> **Removed 2026-09-15.** Kept for history; nothing in this section applies to the current build.
 
 ### Objective
 Establish and prove the **technical and cinematic foundation of the Campaigns billboard reveal and its Act 4 reverse (dive-back-in)**: the render-to-texture technique, a continuous camera pull-back from the interior room into a provisional exterior environment, the boundary crossing at the billboard surface, and the reverse camera movement back into the same interior scene graph.
@@ -418,7 +421,7 @@ When performance becomes constrained, reduce lower-priority complexity first. Po
 Do not immediately sacrifice the primary cinematic experience.
 
 ### Performance must be tested during
-Initial load, camera movement, the Film sequence, the Film → Digital transition, the Campaigns billboard reveal and its render-to-texture cost, the dive-back-in return, reverse scrolling, mobile scrolling, and resize events.
+Initial load, camera movement, the Film sequence, the Film → Digital transition, the traversal to the MGRT hero and resting there, reverse scrolling, mobile scrolling, and resize events.
 
 ---
 
@@ -434,8 +437,6 @@ Portfolio assets should remain curated. Do not add content simply because more e
 
 - Film: approximately 2–4 pieces
 - Digital: approximately 2–4 projects
-
-Campaigns has no curated portfolio content — it is demonstrated through the billboard reveal mechanism (Phase 1E), not through selected examples.
 
 Asset quality and relevance are more important than quantity.
 

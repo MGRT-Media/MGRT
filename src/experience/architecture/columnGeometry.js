@@ -31,10 +31,10 @@ import { fbm3, ridged3, pits3 } from './stoneNoise.js'
  * Cost is paid once at mount — twelve geometries, ~64 × 180 vertices each, no
  * runtime work and no extra draw calls.
  *
- * **Outward displacement is capped.** `PILLAR_SHAFT_RADIUS` feeds
- * `cameraPath.js`'s rail clearance (`CAMPAIGNS_RAIL_PILLAR_CLEARANCE`, 0.25),
- * so an unbounded shaft would silently eat a clearance another module is
- * derived against. `MAX_OUTWARD` keeps the worst case well inside it. Inward
+ * **Outward displacement is capped.** `PILLAR_SHAFT_RADIUS` is what the
+ * camera path's pillar clearances were measured against, so an unbounded
+ * shaft would silently eat into them. `MAX_OUTWARD` keeps the worst case well
+ * inside it. Inward
  * cuts are unbounded: erosion removes stone, which is the safe direction and
  * the physically correct one, and it is where most of this relief lives.
  */

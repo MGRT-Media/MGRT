@@ -196,14 +196,12 @@ function useFloorGeometry() {
  *
  * The hall's approved Phase 1A footprint (20 x 38 x 9) is preserved
  * exactly — `galleryShellGeometry.js` curves *within* that envelope rather
- * than moving it, which is what keeps `cameraPath.js`'s keyframes, the
- * pillar-clearance guarantees and the billboard's framing valid without
- * re-derivation. What changed is the form, not the volume: five flat
+ * than moving it, which is what keeps `cameraPath.js`'s keyframes and the
+ * pillar-clearance guarantees valid without re-derivation. What changed is the form, not the volume: five flat
  * planes meeting at hard corners, open to the void above, became one
  * continuous swept surface that rises into a barrel vault. See that
- * module for the plan curve, the vault profile and how both openings —
- * the front mouth the camera leaves through, and the fractured breach the
- * key light arrives through — are cut from the same sheet.
+ * module for the plan curve, the vault profile and how the front mouth is
+ * cut from the same sheet.
  *
  * The three-tier tonality from `SURFACE_TONE` is preserved (columns
  * lightest, walls mid, floor darkest), still applied as a tint multiplied

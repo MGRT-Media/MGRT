@@ -5,6 +5,7 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { createSmoothScroll } from './smoothScroll.js'
 import { setScrollLocked } from './scrollLockEvent.js'
 import { onNavigateRequest } from './sectionNavigationEvent.js'
+import { isExperienceRevealed } from '../loading/startupCover.js'
 import {
   FILM_FOCUS_T,
   MONITOR_SNAP_T,
@@ -23,15 +24,9 @@ import {
   CHAPTER_GESTURE_THRESHOLD,
   HERO_T,
   HERO_TRAVERSAL_DURATION_SECONDS,
-  CAMPAIGNS_GATE_T,
+  DIGITAL_EXIT_T,
+  JOURNEY_END_T,
 } from './filmActBeats.js'
-import { HERO_STATE, heroPhase, requestHeroReturn, resumeHeroReveal } from './heroSequence.js'
-import {
-  ENDING_EXIT_SECONDS,
-  ENDING_REDUCED_MOTION_SECONDS,
-  ENDING_SECONDS,
-  endingProgress,
-} from './endingSequence.js'
 import { cancelSectionFlight, requestSectionFlight } from './sectionFlightRequest.js'
 
 gsap.registerPlugin(ScrollTrigger)
@@ -89,10 +84,8 @@ function jumpDuration(distance) {
  * Splits a jump at the glide boundaries it crosses.
  *
  * Inside a glide, progress moves evenly for that glide's own duration (scaled
- * by how much of it is covered). Past the hero it jumps immediately — the
- * camera is clamped at the hero there and `heroSequence.js` owns the pull-back
- * on its own clock. Everything else keeps the established distance-scaled
- * ease-out. Neighbouring pieces meet at keyframes where the path itself is at
+ * by how much of it is covered). Everything else keeps the established
+ * distance-scaled ease-out. Neighbouring pieces meet at keyframes where the path itself is at
  * rest, so chaining them adds no visible seam.
  */
 function planJump(startT, targetT) {
@@ -118,8 +111,6 @@ function planJump(startT, targetT) {
         duration: (leg.seconds * (hi - lo)) / (leg.to - leg.from),
         easing: startsAtBoundary ? easeLinear : easeFromRest,
       })
-    } else if (lo >= HERO_T - PROGRESS_EPSILON) {
-      steps.push({ to, duration: 0, easing: easeLinear })
     } else {
       const previous = steps[steps.length - 1]
       if (previous?.distance !== undefined) {
@@ -147,7 +138,7 @@ function easeIntroCinematic(t) {
 }
 
 /**
- * Shared mutable progress value (0–1), written by the GSAP/ScrollTrigger
+ * Shared mutable progress value (0 to `JOURNEY_END_T`), written by the GSAP/ScrollTrigger
  * master timeline below and read directly inside R3F's `useFrame` loop
  * (see `ScrollCameraRig.jsx`). A plain object reference — not React state
  * — so scroll updates never trigger a React re-render or component state
@@ -167,17 +158,30 @@ if (import.meta.env.DEV) window.__sp = scrollProgress // TEMP DEBUG SCAFFOLD
  */
 export const scrollLockWobble = { value: 0 }
 
-// Provisional total scroll distance for this phase's camera/scroll proof —
-// not the final act-by-act pacing, which is tuned once Phase 1D/Phase 2
-// content exists. Expressed as a multiple of the cached viewport height
-// (not raw vh) so it doesn't shift when the mobile browser chrome resizes.
-const SCROLL_LENGTH_MULTIPLIER = 3
+// Total scroll distance, as a multiple of the cached viewport height (not raw
+// vh) so it doesn't shift when the mobile browser chrome resizes. Three
+// viewport heights used to cover the whole 0-1 timeline; the journey now ends
+// at the hero (`JOURNEY_END_T`), so the page is shortened in proportion and
+// every remaining section keeps exactly the scroll distance it had.
+const SCROLL_LENGTH_MULTIPLIER = 3 * JOURNEY_END_T
+
+/**
+ * The page's scroll range maps onto the journey, 0 to `JOURNEY_END_T`: the
+ * bottom of the page is the hero, and there is no scroll beyond it.
+ */
+function progressFromScrollFraction(fraction) {
+  return fraction * JOURNEY_END_T
+}
+
+function scrollForProgress(trigger, progress) {
+  return trigger.start + (trigger.end - trigger.start) * (progress / JOURNEY_END_T)
+}
 
 /**
  * Renders the scroll-height spacer and owns the single master GSAP
  * timeline: a `gsap.timeline({ scrollTrigger: { scrub, ... } })` whose
- * ScrollTrigger drives `scrollProgress.value` from 0 to 1 across the
- * spacer's height. Raw wheel/touch input is first normalized into smooth,
+ * ScrollTrigger drives `scrollProgress.value` from 0 to `JOURNEY_END_T` (the
+ * hero) across the spacer's height. Raw wheel/touch input is first normalized into smooth,
  * inertial motion by Lenis (`smoothScroll.js`); `scrub` then adds its own
  * catch-up smoothing on top, so individual wheel notches/trackpad steps
  * absorb into one continuous, fluid motion rather than each nudging the
@@ -206,9 +210,7 @@ const SCROLL_LENGTH_MULTIPLIER = 3
  * scroll ever "rests" at an arbitrary organic position in the first place.
  *
  * Snap 3 (Digital Monitor) keeps the softer "freeze scrollProgress.value,
- * let real scroll keep moving underneath" lock from the previous round —
- * safe there because `t: 1` is also the page's own native scroll floor,
- * so nothing can physically scroll past it regardless.
+ * let real scroll keep moving underneath" lock from the previous round.
  *
  * Snap 2 (Cinema Lens) needed a genuinely strict lock instead: the
  * original round's lock only engaged on the snap tween's `onComplete`
@@ -286,6 +288,28 @@ export function ScrollSpacer() {
   const spacerRef = useRef(null)
 
   useEffect(() => {
+    /**
+     * No input reaches the experience before it is on screen.
+     *
+     * This mounts with the scene, which then warms up behind the startup
+     * cover for up to a second or so. A wheel, swipe or scroll key in
+     * that window used to reach Lenis and the intro trigger as normal, so the
+     * camera set off where nobody could see it and the reveal opened part-way
+     * through the flight. Registered first, in the capture phase on `window`,
+     * so it runs before every other listener here (Lenis's included) and
+     * stops the event outright until the reveal.
+     */
+    const SCROLL_KEYS = new Set(['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End', ' '])
+    const holdInputUntilRevealed = (event) => {
+      if (isExperienceRevealed()) return
+      // Keys still work on the startup cover's own retry button.
+      if (event.type === 'keydown' && (!SCROLL_KEYS.has(event.key) || event.target?.closest?.('#startup-cover'))) return
+      if (event.cancelable) event.preventDefault()
+      event.stopImmediatePropagation()
+    }
+    const HELD_INPUT = ['wheel', 'touchmove', 'keydown']
+    HELD_INPUT.forEach((type) => window.addEventListener(type, holdInputUntilRevealed, { capture: true, passive: false }))
+
     // Lenis first, then the GSAP master timeline that reads its scroll —
     // the timeline's ScrollTrigger must exist before anything can drive it.
     const smoothScroll = createSmoothScroll(ScrollTrigger.update)
@@ -323,56 +347,10 @@ export function ScrollSpacer() {
     // navigateToSection's onComplete), not from scrollProgress directly.
     // `chapterModeActive` is the ACT 0 vs. ACT 1+ mode switch itself: false
     // for the continuous intro, true from the instant the camera reaches
-    // Film onward. Return is intentionally absent from CHAPTER_ORDER — see
-    // SECTION_TARGETS' own doc comment for why. 'ending' is the closing frame
-    // after Campaigns; it has no camera target of its own (see
-    // `endingSequence.js`), so it is entered and left by `enterEnding` /
-    // `leaveEnding` below rather than by a jump.
+    // Film onward. `hero`, the MGRT wordmark, is the last chapter.
     let currentChapter = 'intro'
     let chapterModeActive = false
-    const CHAPTER_ORDER = ['film', 'digital', 'campaigns', 'ending']
-
-    // A remount (returning from an internal page) starts from the beginning of
-    // the experience, so the closing frame must not still be drawn over it.
-    endingProgress.value = 0
-    endingProgress.target = 0
-    let endingTween = null
-
-    // Always eased from rest: reversing part-way (a gesture the other way, or a
-    // navigation click) turns the sequence round without a jolt, and a reverse
-    // only takes the share of the full duration it has left to cover.
-    const tweenEnding = (to, seconds) => {
-      endingTween?.kill()
-      endingProgress.target = to
-      const distance = Math.abs(to - endingProgress.value)
-      const fullSeconds = prefersReducedMotion ? ENDING_REDUCED_MOTION_SECONDS : seconds
-      endingTween = gsap.to(endingProgress, {
-        value: to,
-        duration: fullSeconds * distance,
-        ease: 'sine.inOut',
-        onComplete: () => {
-          endingTween = null
-        },
-      })
-    }
-
-    const enterEnding = () => {
-      // Only from a settled Campaigns frame: while the billboard reveal is
-      // still running on its own clock, a gesture has nothing to close yet.
-      // A flight that was heading here lets go of the destination with it.
-      if (heroPhase() !== HERO_STATE.IMPACT) {
-        if (endingProgress.value === 0) endingProgress.target = 0
-        return
-      }
-      currentChapter = 'ending'
-      chapterModeActive = true
-      tweenEnding(1, ENDING_SECONDS)
-    }
-
-    const leaveEnding = (seconds = ENDING_SECONDS) => {
-      if (currentChapter === 'ending') currentChapter = 'campaigns'
-      tweenEnding(0, seconds)
-    }
+    const CHAPTER_ORDER = ['film', 'digital', 'hero']
 
     // --- Direct navigation (side nav clicks) ---
     // Set for the duration of a nav-triggered jump; suppresses the
@@ -494,7 +472,6 @@ export function ScrollSpacer() {
       window.addEventListener('touchmove', onLensHoldWheel, { capture: true, passive: false })
       setScrollLocked(true)
 
-      const scrollRange = trigger.end - trigger.start
       gsap.to(scrollProgress, {
         value: FILM_FOCUS_T,
         duration: LOCK_CATCH_DURATION_SECONDS,
@@ -505,8 +482,7 @@ export function ScrollSpacer() {
           // of jumping ahead of it. force: true since Lenis is already
           // stopped by this point — its own scrollTo is a no-op while
           // stopped otherwise.
-          const targetScroll = trigger.start + scrollRange * scrollProgress.value
-          smoothScroll.lenis.scrollTo(targetScroll, { immediate: true, force: true })
+          smoothScroll.lenis.scrollTo(scrollForProgress(trigger, scrollProgress.value), { immediate: true, force: true })
         },
         onComplete: () => {
           lensHoldTimeoutId = setTimeout(releaseLensHold, SCROLL_LOCK_HOLD_MS)
@@ -545,12 +521,13 @@ export function ScrollSpacer() {
         // the scroller — without being a smoothing layer in its own right.
         scrub: 0.5,
         onUpdate: (self) => {
+          const progress = progressFromScrollFraction(self.progress)
           // Scroll moving away from a section flight's destination while it
           // flies can only be the visitor scrolling (the flight put scroll
           // there itself). Scroll wins: the flight stops where the camera is
           // and the journey carries on from there — see `interruptSectionFlight`.
-          if (flightTargetT !== null && Math.abs(self.progress - flightTargetT) > FLIGHT_SCROLL_TOLERANCE) {
-            interruptSectionFlight(self.progress)
+          if (flightTargetT !== null && Math.abs(progress - flightTargetT) > FLIGHT_SCROLL_TOLERANCE) {
+            interruptSectionFlight(progress)
           }
 
           // Snap 2: checked every tick (not just on scroll-stop) so a
@@ -565,28 +542,28 @@ export function ScrollSpacer() {
           // down, and without this guard that crossing would wrongly
           // re-engage the lens hold mid-reverse-play.
           if (!lensHoldActive && !isDirectJumpActive && !introCinematicActive) {
-            const crossedForward = lastRawProgress < FILM_FOCUS_T && self.progress >= FILM_FOCUS_T
-            const crossedBackward = lastRawProgress > FILM_FOCUS_T && self.progress <= FILM_FOCUS_T
+            const crossedForward = lastRawProgress < FILM_FOCUS_T && progress >= FILM_FOCUS_T
+            const crossedBackward = lastRawProgress > FILM_FOCUS_T && progress <= FILM_FOCUS_T
             if (crossedForward || crossedBackward) {
-              lastRawProgress = self.progress
+              lastRawProgress = progress
               engageLensHold(self)
               return
             }
           }
-          lastRawProgress = self.progress
+          lastRawProgress = progress
 
           if (monitorLockActive) {
             // Soft lock: scrollProgress.value stays pinned while real
             // scroll keeps moving underneath, purely to measure drift.
-            if (Math.abs(self.progress - MONITOR_SNAP_T) > SCROLL_LOCK_OVERRIDE_DRIFT) {
+            if (Math.abs(progress - MONITOR_SNAP_T) > SCROLL_LOCK_OVERRIDE_DRIFT) {
               releaseMonitorLock()
-              scrollProgress.value = self.progress
+              scrollProgress.value = progress
             }
             return
           }
 
           if (!lensHoldActive) {
-            scrollProgress.value = self.progress
+            scrollProgress.value = progress
           }
         },
       },
@@ -629,7 +606,6 @@ export function ScrollSpacer() {
     // newer jump supersedes this one between steps as well as within them.
     const runJump = (trigger, token, targetT, onArrive) => {
       const steps = planJump(scrollProgress.value, targetT)
-      const scrollRange = trigger.end - trigger.start
       const runStep = (index) => {
         if (token !== jumpToken) return
         if (index === steps.length) {
@@ -637,7 +613,7 @@ export function ScrollSpacer() {
           return
         }
         const step = steps[index]
-        smoothScroll.lenis.scrollTo(trigger.start + scrollRange * step.to, {
+        smoothScroll.lenis.scrollTo(scrollForProgress(trigger, step.to), {
           // prefers-reduced-motion: jump straight there rather than tweening,
           // consistent with playIntroCinematic's own handling of the setting.
           immediate: prefersReducedMotion || step.duration === 0,
@@ -673,14 +649,6 @@ export function ScrollSpacer() {
       cancelActiveDriversAndLocks()
       isDirectJumpActive = true
 
-      // From the billboard to anything before the hero, the camera first comes
-      // back through the pull-back to the hero pose — the only place the
-      // exterior can hand over to the room without the swap showing. The jump
-      // itself waits for that hand-over (this function runs again, now from the
-      // interior), so the camera's target never leaps across the pull-back.
-      if (targetT >= HERO_T) resumeHeroReveal()
-      else if (requestHeroReturn(() => token === jumpToken && navigateToSection(sectionKey))) return
-
       // Paced by `planJump`: the two glides at their own even rate, everything
       // else with the distance-scaled ease-out.
       runJump(trigger, token, targetT, () => arriveAtSection(sectionKey, trigger))
@@ -698,13 +666,12 @@ export function ScrollSpacer() {
       scrollProgress.value = targetT
       if (sectionKey === 'film') engageLensHold(trigger)
       else if (sectionKey === 'digital') engageMonitorLock()
-      else if (sectionKey === 'campaigns') {
-        // Act 3 has no lock of its own: per explicit answer its middle
-        // beat is "pacing only — one scroll," so the pull-back is a
-        // single uninterrupted movement that simply ends at the reveal.
-        // Chapter state still has to be recorded, or a subsequent
-        // backward gesture would compute the wrong neighbour.
-        currentChapter = 'campaigns'
+      else if (sectionKey === 'hero') {
+        // The hero has no lock of its own: it is the end of the journey, and
+        // the camera simply rests there. Chapter state still has to be
+        // recorded, or a subsequent backward gesture would compute the wrong
+        // neighbour.
+        currentChapter = 'hero'
         chapterModeActive = true
       } else {
         // 'intro' — also exits chapter mode if the visitor was in it
@@ -744,26 +711,6 @@ export function ScrollSpacer() {
       const trigger = timeline.scrollTrigger
       if (!trigger) return
 
-      // The closing frame and Campaigns share the camera position, so moving
-      // between the two is the ending played forwards or backwards in place —
-      // no flight — whenever the camera is already resting there.
-      const restingAtCampaigns = flightTargetT === null && !isDirectJumpActive && heroPhase() === HERO_STATE.IMPACT
-      if (sectionKey === 'campaigns' && currentChapter === 'ending') {
-        leaveEnding()
-        return
-      }
-      if (sectionKey === 'ending' && (currentChapter === 'ending' || currentChapter === 'campaigns') && restingAtCampaigns) {
-        enterEnding()
-        return
-      }
-      // Anywhere else the closing frame clears quickly while the flight gets
-      // under way beneath it. A flight TO the ending keeps it: it starts once
-      // the camera has landed on Campaigns.
-      if (sectionKey !== 'ending' && (endingProgress.target > 0 || endingProgress.value > 0 || currentChapter === 'ending')) {
-        leaveEnding(ENDING_EXIT_SECONDS)
-      }
-      if (sectionKey === 'ending') endingProgress.target = 1
-
       // A click mid-flight supersedes that flight's arrival; the rig redirects
       // the camera from wherever it is.
       const token = ++jumpToken
@@ -771,7 +718,7 @@ export function ScrollSpacer() {
       isDirectJumpActive = true
       flightTargetT = targetT
       lastRawProgress = targetT
-      smoothScroll.lenis.scrollTo(trigger.start + (trigger.end - trigger.start) * targetT, { immediate: true, force: true })
+      smoothScroll.lenis.scrollTo(scrollForProgress(trigger, targetT), { immediate: true, force: true })
       scrollProgress.value = targetT
 
       requestSectionFlight(targetT, {
@@ -780,12 +727,7 @@ export function ScrollSpacer() {
           if (token !== jumpToken) return
           flightTargetT = null
           isDirectJumpActive = false
-          if (sectionKey === 'ending') {
-            arriveAtSection('campaigns', trigger)
-            enterEnding()
-          } else {
-            arriveAtSection(sectionKey, trigger)
-          }
+          arriveAtSection(sectionKey, trigger)
         },
       })
     }
@@ -798,10 +740,8 @@ export function ScrollSpacer() {
       ++jumpToken
       isDirectJumpActive = false
       cancelSectionFlight()
-      // A flight to the closing frame that never landed has nothing to show.
-      if (endingProgress.value === 0) endingProgress.target = 0
       currentChapter =
-        progress >= CAMPAIGNS_GATE_T ? 'campaigns' : progress >= MONITOR_SNAP_T ? 'digital' : progress >= FILM_FOCUS_T ? 'film' : 'intro'
+        progress >= DIGITAL_EXIT_T ? 'hero' : progress >= MONITOR_SNAP_T ? 'digital' : progress >= FILM_FOCUS_T ? 'film' : 'intro'
     }
 
     // --- Intro cinematic playback ---
@@ -828,8 +768,7 @@ export function ScrollSpacer() {
         INTRO_CINEMATIC_MIN_DURATION_SECONDS,
         INTRO_CINEMATIC_MAX_DURATION_SECONDS,
       )
-      const scrollRange = trigger.end - trigger.start
-      const targetScroll = trigger.start + scrollRange * targetT
+      const targetScroll = scrollForProgress(trigger, targetT)
 
       smoothScroll.lenis.scrollTo(targetScroll, {
         immediate: prefersReducedMotion,
@@ -949,7 +888,7 @@ export function ScrollSpacer() {
     // before returning — so by the time the burst's next event arrives
     // (JS is single-threaded; events are processed one at a time), the
     // lock check above already short-circuits it. This is what prevents
-    // "Film -> Campaigns" when the intended gesture was "Film -> Digital".
+    // "Film -> hero" when the intended gesture was "Film -> Digital".
     let chapterGestureAccum = 0
     let chapterGestureDecayTimeoutId = null
     let chapterTouchLastY = null
@@ -1016,19 +955,9 @@ export function ScrollSpacer() {
         returnToAlignedPause()
         return
       }
-      if (nextIndex >= CHAPTER_ORDER.length) return // the closing frame is the last chapter
-      // The closing frame is entered and left in place, over the settled
-      // Campaigns frame — never with a camera jump. Gestures are not locked
-      // while it plays, so a gesture the other way reverses it from wherever
-      // it has got to.
-      if (CHAPTER_ORDER[nextIndex] === 'ending') {
-        enterEnding()
-        return
-      }
-      if (currentChapter === 'ending') {
-        leaveEnding()
-        return
-      }
+      // The hero is the last chapter: a forward gesture there has nowhere to
+      // go, and the camera stays exactly where it is.
+      if (nextIndex >= CHAPTER_ORDER.length) return
       navigateToSection(CHAPTER_ORDER[nextIndex])
     }
 
@@ -1081,9 +1010,7 @@ export function ScrollSpacer() {
       if (lensHoldTimeoutId) clearTimeout(lensHoldTimeoutId)
       if (chapterGestureDecayTimeoutId) clearTimeout(chapterGestureDecayTimeoutId)
       gsap.killTweensOf(scrollProgress)
-      endingTween?.kill()
-      endingProgress.value = 0
-      endingProgress.target = 0
+      HELD_INPUT.forEach((type) => window.removeEventListener(type, holdInputUntilRevealed, { capture: true }))
       window.removeEventListener('wheel', onLensHoldWheel, { capture: true })
       window.removeEventListener('touchmove', onLensHoldWheel, { capture: true })
       window.removeEventListener('wheel', onIntroTriggerWheel, { capture: true })

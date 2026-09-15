@@ -1,11 +1,10 @@
 import { Suspense } from 'react'
 import { Canvas } from '@react-three/fiber'
 import Environment from './Environment.jsx'
-import CampaignsLayerSwitch from './campaigns/CampaignsLayerSwitch.jsx'
-import CampaignsGate from './campaigns/CampaignsGate.jsx'
 import Monitor from './digital/Monitor.jsx'
 import CinemaCamera from './film/CinemaCamera.jsx'
 import { lightingParams } from './lighting/volumetricLighting.js'
+import LoadErrorBoundary from './loading/LoadErrorBoundary.jsx'
 import SceneReady from './loading/SceneReady.jsx'
 import DepthOfField from './postprocessing/DepthOfField.jsx'
 import ScrollCameraRig from './timeline/ScrollCameraRig.jsx'
@@ -95,21 +94,20 @@ export default function CinematicExperience({ onReady }) {
           assets arrive, and `DepthOfField` in particular owns the render
           loop — suspending it would stop the frame entirely. */}
       <Suspense fallback={null}>
-        <CinemaCamera />
-        <Monitor />
+        {/* A model that fails to load costs that object, not the page: without
+            these boundaries the error unmounts the whole root, and
+            `SceneReady` (outside them) would never get to open the gate. */}
+        <LoadErrorBoundary name="CinemaCamera">
+          <CinemaCamera />
+        </LoadErrorBoundary>
+        <LoadErrorBoundary name="Monitor">
+          <Monitor />
+        </LoadErrorBoundary>
         {/* Inside the boundary deliberately — see `SceneReady`. While the
             models are still loading this does not exist, so it cannot report
             a room that is missing two of its objects. */}
         <SceneReady onReady={onReady} />
       </Suspense>
-      {/* Act 3 (Campaigns). The exterior world and the billboard sit on
-          their own render layer and are invisible until the camera swaps
-          onto it at CAMPAIGNS_SWAP_T — see campaigns/layers.js. */}
-      <CampaignsLayerSwitch />
-      {/* Act 3's world and code are fetched on approach, not at load — see
-          `CampaignsGate`. The layer switch above stays mounted: it owns the
-          camera's far plane and layer mask and carries no assets of its own. */}
-      <CampaignsGate />
       {/* Last child deliberately: this takes over the render loop (its
           useFrame runs at priority 1), so everything that needs to draw or
           render-to-texture for a frame must already have run. */}

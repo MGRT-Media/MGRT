@@ -37,13 +37,13 @@ export function createScreenVideoMaterial(
 ) {
   return new THREE.ShaderMaterial({
     // `toneMapped` here does NOT mean "tone-map this material" — the shader
-    // below never includes `<tonemapping_fragment>`, so the direct view of
-    // the screen is written exactly as raw as it always was. It is set so
-    // that Three defines `TONE_MAPPING` when this material is drawn to the
+    // below never includes `<tonemapping_fragment>`. It is set so that Three
+    // defines `TONE_MAPPING` when this material is drawn straight to the
     // canvas and leaves it undefined when it is drawn into a render target,
-    // which is the only reliable way for the shader to tell which pass it is
-    // in. See the `#ifdef TONE_MAPPING` at the bottom of the fragment shader
-    // for why that matters.
+    // which is the only reliable way for the shader to tell which path it is
+    // on. The scene is drawn into the post-processing composer's target
+    // (`DepthOfField.jsx`), so the render-target branch at the bottom of the
+    // fragment shader is the one that shows the screen.
     toneMapped: true,
     // Straight (not premultiplied) alpha with normal blending: a faded edge
     // shows the video's own colour at reduced coverage, so it thins out over
@@ -68,49 +68,27 @@ export function createScreenVideoMaterial(
     fragmentShader: /* glsl */ `
       /*
        * Inverse of Three's ACES filmic tone mapping, and of the sRGB
-       * transfer function — needed only for the copy of this screen that
-       * ends up on the Campaigns billboard.
+       * transfer function.
        *
-       * The billboard is a live render of this same room
-       * (campaigns/Billboard.jsx), shown on one surface whose material
-       * tone-maps and encodes everything it carries — which is exactly
-       * right, because every other material in the room is tone-mapped in
-       * the direct view too, so the copy and the original agree. This
-       * screen is the single exception: it is an unlit ShaderMaterial that
-       * includes neither <tonemapping_fragment> nor
-       * <colorspace_fragment>, so directly it reaches the frame buffer
-       * completely untransformed. Through the billboard it did not, and the
-       * video visibly changed at the hand-over: measured at the swap with
-       * playback paused, every room surface matched the direct view within
-       * ~5% while the screen sat 51% brighter and flatter. That is the
-       * artifact long recorded in Billboard.jsx as an unexplained loss of
-       * the monitor's screen content, and it is why chasing it through
-       * render-target size, multisampling, mipmaps and supersampling never
-       * moved it — none of those are about tone response.
+       * This screen is an unlit ShaderMaterial that includes neither
+       * <tonemapping_fragment> nor <colorspace_fragment>: its video is meant
+       * to reach the display untransformed. But the scene is drawn into the
+       * post-processing composer's render target, and the composer's final
+       * OutputPass tone-maps and encodes everything in it — the video
+       * included. Unaccounted for, that pass left the screen visibly brighter
+       * and flatter than its source (measured 51% brighter).
        *
        * So in the render-target pass this shader writes the value that the
-       * billboard's own tone map and encode will turn back into what the
-       * direct view shows. Both paths then display the same pixels, and the
-       * direct path is untouched — which is the point: the Digital act's
-       * look is the reference here, not something to be traded away to make
-       * the copy agree. Round-trips to 1e-16 across the range; white stores
-       * as ~15.4, which is why the target is half-float.
+       * output pass's tone map and encode will turn back into the video's own
+       * colour. Round-trips to 1e-16 across the range; white stores as ~15.4,
+       * which is why the target is half-float.
        *
-       * uCoverTransmittance is the one piece that is measured rather than
-       * derived, and without it this correction lands in the wrong place.
-       * Both callers put a glass pane in front of this screen, and that
-       * pane is alpha-blended over the screen's fragment BEFORE the
-       * billboard's material ever tone-maps the result — so what needs to
-       * arrive at the tone map correct is the blend, not this fragment.
-       * Since the value stored here is steeply convex (white lands at
-       * ~15.4), being scaled by the glass afterwards throws it a long way
-       * off: uncorrected, the copy still ran 23% bright, and the error grew
-       * with brightness exactly as a mis-scaled inverse would. Correcting
-       * for the pane's transmittance closes it to within 2%, which is
-       * tighter than the room's own ~5% (that residual is the render
-       * target's resolution, a separate and already-documented trade).
-       * The glass's own reflection is left uncorrected — it is small, dark,
-       * and cannot be separated from this fragment.
+       * uCoverTransmittance corrects for a glass pane in front of the screen,
+       * which is alpha-blended over this fragment BEFORE the tone map — so what
+       * needs to arrive at the tone map correct is the blend, not this
+       * fragment. Since the stored value is steeply convex, a pane scaling it
+       * afterwards throws it a long way off. Both current callers have no
+       * pane, so it is 1.
        *
        * Assumes toneMappingExposure is 1 (Three's default, and never set
        * otherwise in this project) — the 0.6 below is the exposure term
@@ -138,7 +116,7 @@ export function createScreenVideoMaterial(
       }
 
       vec3 preCompensate(vec3 displayColor) {
-        // Undo the sRGB encode the billboard's material will apply...
+        // Undo the sRGB encode the output pass will apply...
         vec3 linear = mix(
           pow((displayColor + 0.055) / 1.055, vec3(2.4)),
           displayColor / 12.92,
@@ -217,8 +195,10 @@ export function createScreenVideoMaterial(
         }
 
         // Three defines TONE_MAPPING only when this material is being drawn
-        // to the canvas, never into a render target — so this branch is the
-        // direct view, unchanged, and the other is the billboard's copy.
+        // straight to the canvas, never into a render target. The composer
+        // draws the scene into a render target, so the second branch is the
+        // one on screen; the first keeps the screen correct if the material is
+        // ever drawn without post-processing.
         #ifdef TONE_MAPPING
           gl_FragColor = vec4(color, alpha);
         #else

@@ -421,9 +421,8 @@ export function createStoneWallMaterial(tintColor, repeat = [6, 3], normalScale 
    * synchronous map lookup.
    *
    * Everything below this line is the resilience path, and is still reached
-   * whenever the scan is genuinely unavailable — a missing or corrupt file, a
-   * failed decode, or the preflight's own 20s timeout firing before the set
-   * arrived. In those cases the room is built procedurally and upgraded in
+   * whenever the scan is genuinely unavailable — a missing or corrupt file or a
+   * failed decode. In those cases the room is built procedurally and upgraded in
    * place exactly as before, so a missing texture can never leave the scene
    * broken.
    */

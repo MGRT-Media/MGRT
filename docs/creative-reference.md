@@ -14,9 +14,11 @@ MGRT Media is a cinematic creative studio built around three disciplines:
 
 > **Film captures. Digital builds. Campaigns amplify.**
 
+> **Website scope (2026-09-15):** the cinematic website presents Film and Digital and ends at the MGRT hero. The Campaigns act (billboard reveal), the Return and the closing frame were removed from the experience; Campaigns remains one of the studio's disciplines, it is simply no longer a section of the cinematic sequence.
+
 The website should function as a **short, scroll-driven cinematic experience**, not a conventional agency website. The visitor moves through MGRT's creative world, with the browser viewport treated as an environment rather than a stack of flat UI sections.
 
-The experience is intentionally concise: **4 major scroll-driven cinematic acts after the initial page-load reveal.** Each act is a distinct cinematic beat within one continuous physical environment. The goal is a short, immersive experience — not a long scrolling website.
+The experience is intentionally concise: **three scroll-driven cinematic beats after the initial page-load reveal — Film, Digital, and the MGRT hero.** Each act is a distinct cinematic beat within one continuous physical environment. The goal is a short, immersive experience — not a long scrolling website.
 
 ---
 
@@ -111,7 +113,6 @@ Following review against `musee.barvian.me` as an explicit reference, the direct
 - **A recurring glowing accent motif:** the reference uses one warm/cool ring-of-light element as a signature mark against near-black. This project already has a single warm accent color (`#fff1dc`, from `lightingParams.spot.color`) reused consistently across UI (`SectionIndicator`, `ScrollLockIndicator`, `FullscreenButton`) — continue that discipline rather than introducing a second accent.
 - **Film grain:** the reference uses a subtle animated grain over the whole frame, reinforcing "physically believable" and "cinematic" from §4's own target-feel list. Add as a cheap, global, non-WebGL overlay (CSS/SVG), never inside the render pipeline, and respecting `prefers-reduced-motion` (freeze rather than remove, since grain carries no motion information).
 - **A minimal serif mark:** the reference pairs its restraint with one small serif wordmark, not a UI system. Add a single discreet mark (project name), not a navigation system — this must not become "persistent navigation bars or conventional website chrome" (§4's own Don't list).
-- **Negative space in Campaigns specifically:** the exterior environment (traffic, street lights, terrain) is the newest and least pruned part of the experience — review it against "strong negative space" / "purposeful 3D objects" once art direction there resumes, rather than adding further density.
 
 This is a refinement pass, applied in place on the existing approved direction — it does not reopen or invalidate the visual decisions already approved for Phases 1A-1E (`build-status.md` §5).
 
@@ -207,15 +208,9 @@ FILM
      ↓
 DIGITAL
      ↓
-CAMPAIGNS
-     ↓
-RETURN TO ORIGINAL SPACE
-     ↓
-MGRT MEDIA
+MGRT MEDIA (THE HERO — END)
      ↓
 STILLNESS
-     ↓
-EXPLORE / CONTACT / WORK
 ```
 
 This is the **creative narrative only**. The exact camera choreography, scroll ranges, timings, object movements, transitions, typography placement, and cinematic beats are defined exclusively in `experience-design.md`.
@@ -246,26 +241,9 @@ Digital represents **building experiences and environments**. The physical monit
 
 Selected examples of MGRT's digital work may be integrated naturally into the monitor. Digital work should feel like part of the physical cinematic world rather than a conventional portfolio displayed inside a screen. Lighting continuity between Film and Digital is essential.
 
-### Act 3 — Campaigns
+### Act 3 — MGRT Hero
 
-Campaigns represent **amplifying ideas and bringing them into the world** — but this is proven structurally, not shown as a gallery of past work. The camera pulls back from the monitor, and the entire preceding world — Room, Film, Digital — is revealed to have been displayed on a physical billboard, seen from a larger exterior environment.
-
-The pull-back moves in three legible stages, not one continuous blur of distance: first back through the room's own pillar ring — the same pillars that have framed the space since Act 0 become a threshold the camera passes through, rather than scenery it simply leaves behind; then far enough that the room and its encircling pillars read as one complete structure, seen whole for the first time; then continuing back to reveal that the structure was never freestanding — it is the face of a billboard, standing on the right-hand shoulder of a four-lane highway that curves gently away to the right. The road, not a plaza or generic street, is the exterior context: it grounds the billboard as advertising in its native environment, reinforcing that Campaigns is the discipline that puts MGRT's work in front of the world.
-
-**Services:** advertising, commercial production, creative direction, campaign strategy.
-
-There is no curated campaign portfolio to browse. The reveal itself demonstrates how Film and Digital combine into one integrated campaign — the visitor's own journey through the experience turns out to have been the proof. Campaigns should feel like the largest spatial expression of the MGRT world, without becoming visually excessive.
-
-### Act 4 — Return
-
-The visitor returns to the original architectural space by diving back through the billboard surface they just discovered — the same continuous camera movement in reverse, not a cut to a new scene. The same visual language and primary light source as the opening return, for a sense of narrative closure. The environment now carries a second meaning it didn't have at the start: the visitor understands they were standing inside MGRT's own campaign the whole time.
-
-The final identity appears: **MGRT MEDIA**
-Optional supporting line: **FILM · DIGITAL · CAMPAIGNS**
-
-The ending should feel like a return to the beginning — not the introduction of a new scene.
-
-After a brief period of stillness, the cinematic experience should naturally give way to practical exploration of MGRT's work and services.
+The camera leaves the monitor and travels the length of the room to the MGRT MEDIA wordmark on the far wall, settling square-on to it. This is the final frame of the cinematic journey: the brand named in the architecture of its own world, held in stillness.
 
 ---
 
@@ -279,10 +257,10 @@ Every major 3D asset must justify its narrative presence — no decorative objec
 | Cinema camera | Film, capture, visual storytelling |
 | Film frame | The captured moment becoming a story |
 | Monitor / digital display | Digital creation, interaction, experience |
-| The room itself, revealed as a billboard | Campaigns, communication, amplification — MGRT's own world shown to be the campaign |
+| The wordmark on the far wall | MGRT itself — where the journey ends |
 | Original architectural space | The world of MGRT itself |
 
-Objects should feel physically connected to one another — camera, monitor, architecture, lighting, and atmosphere all belong to the same visual world, and that world is itself the campaign object in Act 3.
+Objects should feel physically connected to one another — camera, monitor, architecture, lighting, and atmosphere all belong to the same visual world.
 
 ---
 
@@ -369,8 +347,6 @@ Portfolio work exists to demonstrate MGRT's capabilities while supporting the ci
 | Film | 2–4 pieces |
 | Digital | 2–4 projects |
 
-Campaigns has no curated selection of its own — the campaign concept is proven structurally through the Act 3 reveal (the preceding world shown to be a billboard), not through browsable examples of past work.
-
 These are creative guidelines rather than fixed production requirements. Not every selected project needs to be visible simultaneously.
 
 Portfolio work should be highly curated, support the narrative, feel naturally integrated into the environment, remain subordinate to composition and pacing, and demonstrate quality rather than quantity.
@@ -385,11 +361,11 @@ More detailed case studies and project information may exist outside the cinemat
 
 ## 15. Responsive & Mobile Creative Direction
 
-Mobile is a **first-class creative experience**, not a fallback or a scaled-down version of desktop. It should tell the same story and preserve the same four-act structure, but be intentionally recomposed for the smaller viewport — think of it as the same film **re-composed for a different aspect ratio**, not the desktop experience compressed into a phone.
+Mobile is a **first-class creative experience**, not a fallback or a scaled-down version of desktop. It should tell the same story and preserve the same act structure, but be intentionally recomposed for the smaller viewport — think of it as the same film **re-composed for a different aspect ratio**, not the desktop experience compressed into a phone.
 
 ### What stays consistent
 
-Narrative · four-act structure · MGRT reveal · Film → Digital → Campaigns progression · core 3D objects · lighting language · atmospheric character · typography hierarchy · final return to MGRT Media · overall cinematic tone
+Narrative · act structure · MGRT reveal · Film → Digital → hero progression · core 3D objects · lighting language · atmospheric character · typography hierarchy · final MGRT hero · overall cinematic tone
 
 ### What may change
 
@@ -416,7 +392,7 @@ Potentially reduced elements include geometry complexity, texture resolution, pa
 The initial reveal is an important part of MGRT's identity, but repeat visitors should not be forced through the full introductory sequence every time.
 
 ### First visit
-The complete reveal should establish: **Darkness → Light → MGRT Media → Film → Digital → Campaigns → Return**
+The complete reveal should establish: **Darkness → Light → Film → Digital → MGRT hero**
 
 ### Returning visits
 The opening reveal may be shortened so returning visitors can reach the cinematic sequence more quickly. The shortened experience should retain the visual character of the opening without requiring the visitor to wait through the full reveal again.
@@ -452,7 +428,7 @@ The visitor should never feel trapped inside the cinematic sequence.
 The finished website should disappear behind the experience. A visitor should feel they have entered an architectural cinematic installation, not browsed a conventional agency site. The technology is not the story.
 
 **The story:**
-Light reveals MGRT. MGRT captures through Film. MGRT builds through Digital. MGRT amplifies through Campaigns. Everything returns to MGRT.
+Light reveals MGRT. MGRT captures through Film. MGRT builds through Digital. The journey ends on MGRT itself.
 
 Success comes from composition, lighting, physicality, camera movement, pacing, spatial storytelling, narrative continuity, restraint, sound discipline, and mobile immersion — not from maximizing the number of visual effects.
 

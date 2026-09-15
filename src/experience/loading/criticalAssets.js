@@ -3,7 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js'
 import { MODEL_URLS } from '../models/modelAssets.js'
 import { preloadScannedStone } from '../materials/scannedStone.js'
-import { BRASS_URLS } from '../architecture/wallInscription.js'
+import { preloadBrassMaps } from '../architecture/wallInscription.js'
 import { loadSkyTexture } from '../lighting/skyEnvironment.js'
 
 /**
@@ -18,12 +18,9 @@ import { loadSkyTexture } from '../lighting/skyEnvironment.js'
  * so each in-place swap completes within a frame or two instead of seconds,
  * and `SceneReady` holds the canvas out of sight across those frames.
  *
- * CRITICAL means "visible in, or lighting, the opening frame" — not "used by
- * the site." Act 3's world (billboard, highway, street lights, the night
- * sky) is absent from this list by design and stays behind
- * `CampaignsGate`, which fetches it on approach. The chapter videos are
- * absent too: their elements carry `preload = 'none'` and together they are
- * 60MB.
+ * CRITICAL means "visible in, or lighting, the opening frame" — which in this
+ * room is every model and surface there is. The chapter videos are absent:
+ * their elements carry `preload = 'none'` and together they are 60MB.
  *
  * The memoised promise is also what makes returning from /work, /about or
  * /contact cheap — the second call resolves immediately, so the gate opens on
@@ -31,8 +28,7 @@ import { loadSkyTexture } from '../lighting/skyEnvironment.js'
  */
 
 /**
- * The four models standing in the room. `billboard` and `streetLights` are
- * deliberately NOT here — see the note above.
+ * The four models standing in the room.
  */
 const CRITICAL_MODEL_URLS = [
   MODEL_URLS.camera,
@@ -43,36 +39,6 @@ const CRITICAL_MODEL_URLS = [
 
 /** Every surface the camera can see at progress 0 is one of these three sets. */
 const CRITICAL_STONE_SETS = ['walls', 'floors', 'columns']
-
-/** The MGRT inlay's own two maps, which have no set structure. */
-const CRITICAL_TEXTURE_URLS = [...BRASS_URLS]
-
-/**
- * A ceiling on how long the void may last.
- *
- * The gate is a quality improvement, not a dependency: if a file is slow or a
- * connection stalls, the visitor gets the room — progressive upgrades and all,
- * exactly as before this module existed — rather than an indefinite black
- * screen. Generous enough that it is never reached on a working connection.
- */
-export const CRITICAL_ASSET_TIMEOUT_MS = 20000
-
-/**
- * Warms one URL in the HTTP cache.
- *
- * A bare `fetch` is the right tool rather than a real loader: the goal is to
- * have the BYTES local, and the decode/parse/upload belongs to whichever
- * loader the scene itself uses moments later, which is also the only copy
- * that ends up resident. Decoding here as well would double the memory for
- * no gain. Failures resolve rather than reject — a missing texture must not
- * be able to hold the room hostage.
- */
-function warm(url) {
-  return fetch(url).then(
-    (response) => response.arrayBuffer().catch(() => null),
-    () => null,
-  )
-}
 
 let pending = null
 let settled = false
@@ -85,11 +51,16 @@ export function criticalAssetsSettled() {
   return settled
 }
 
+/**
+ * Starts the preflight. Resolves once every file has either loaded or failed:
+ * nothing here rejects, so a missing file costs its own upgrade and never the
+ * opening.
+ */
 export function preloadCriticalAssets() {
   if (pending) return pending
 
   /*
-   * Models go through R3F's own loader cache, not `warm`, and one URL per
+   * Models go through R3F's own loader cache, not a bare `fetch`, and one URL per
    * call — NOT the array form. `useLoader` keys its cache on the arguments it
    * was given, so a single `preload(Loader, [a, b, c])` stores one entry under
    * the whole array and the components' own `useLoader(Loader, a)` misses it
@@ -118,15 +89,16 @@ export function preloadCriticalAssets() {
     // ask, the texture is decoded and only the PMREM pass remains.
     loadSkyTexture().catch(() => null),
     /*
-     * Stone goes through `preloadScannedStone` rather than `warm`, and the
-     * difference matters: `warm` only puts BYTES in the HTTP cache, leaving the
+     * Stone goes through `preloadScannedStone` rather than a bare `fetch`, and
+     * the difference matters: a fetch only puts BYTES in the HTTP cache, leaving the
      * decode to whichever material asked first. This decodes each file once,
      * here, and keeps the `Texture`, which is what lets `createStoneWallMaterial`
      * build straight from the scan instead of generating a stand-in it would
      * only throw away. Same requests, same count — just finished properly.
      */
     ...CRITICAL_STONE_SETS.map(preloadScannedStone),
-    ...CRITICAL_TEXTURE_URLS.map(warm),
+    // Through the inscription's own shared decode, like the stone above.
+    preloadBrassMaps(),
   ]).then(() => {
     settled = true
   })

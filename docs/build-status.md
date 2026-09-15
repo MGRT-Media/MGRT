@@ -40,7 +40,7 @@ For a new project, the Current Phase may be Phase 1A even when no phase has yet 
 
 **Project:** MGRT Media
 **Status:** In active development
-**Current Phase:** Phase 2 — Film, Digital & Campaigns
+**Current Phase:** Phase 2 — Film & Digital (Campaigns removed 2026-09-15)
 **Phase Status:** Starting — Cinema Camera Mesh Integration and Portfolio Media & Screen Content in progress
 **Current Objective:** Build the final Film and Digital acts on the proven Phase 1 foundation: integrate the cinema-camera object (deferred from Phase 1D) and replace the provisional screen content with curated Portfolio Media and Screen Content treatment.
 
@@ -60,9 +60,9 @@ PHASE 1D — Digital / Monitor Foundation
 STATUS: APPROVED (2026-09-01, human review)
 
 PHASE 1E — Billboard Reveal Foundation
-STATUS: APPROVED (2026-09-05, human review)
+STATUS: REMOVED (2026-09-15; approved 2026-09-05)
 
-PHASE 2 — Film, Digital & Campaigns
+PHASE 2 — Film & Digital
 STATUS: IN PROGRESS
 ```
 
@@ -78,16 +78,15 @@ PHASE 1
 ├── 1B — Atmosphere & Light             APPROVED
 ├── 1C — Camera & Scroll                APPROVED
 ├── 1D — Digital / Monitor Foundation   APPROVED
-└── 1E — Billboard Reveal Foundation    APPROVED
+└── 1E — Billboard Reveal Foundation    REMOVED (2026-09-15)
 
 PHASE 2
 ├── Film                                IN PROGRESS (Cinema Camera Mesh Integration)
 ├── Digital                             IN PROGRESS (Portfolio Media & Screen Content)
-└── Campaigns                           IN PROGRESS (Digital → Billboard transition built; art direction pending)
+└── Campaigns                           REMOVED (2026-09-15)
 
 PHASE 3
-├── Return                              NOT STARTED
-├── Final MGRT Identity                 NOT STARTED
+├── Final MGRT Identity                 THE HERO IS THE FINAL FRAME
 └── Explore Transition                  NOT STARTED
 
 PHASE 4
@@ -114,6 +113,24 @@ Use the following status values consistently:
 - **APPROVED** — human review has been completed and the phase is approved.
 - **BLOCKED** — progress cannot continue because of an unresolved dependency or issue.
 - **DEFERRED** — intentionally postponed for a later decision.
+- **REMOVED** — built earlier, then deliberately taken out of the experience.
+
+---
+
+## 3A. Campaigns Removal (2026-09-15)
+
+The Campaigns section and everything after it were removed on explicit request. **The experience now ends at the MGRT hero** (the wordmark on the far wall). Entries below this section that describe Campaigns, the billboard reveal, the exterior environment, the Return, or the closing frame are historical.
+
+### What was removed
+- **Scene and code:** `src/experience/campaigns/` (billboard, render-to-texture capture, layer switch, exterior environment, day sky, river, street lights, highway, landscape, ground materials, deferred asset loading and readiness), `timeline/endingSequence.js`, `ui/ClosingFrame.jsx` (closing darkening sequence and its links), `ui/CampaignsLoadingIndicator.jsx`.
+- **Timeline:** the hero hold/reveal/impact/return state machine (`timeline/heroSequence.js`, replaced by `timeline/journeyProgress.js`, which only clamps progress at the hero), the pull-back keyframes and rail, the billboard pose, the exterior section-flight legs, the `campaigns` and `ending` chapters and navigation targets, and the Campaigns-only depth-of-field fade.
+- **Assets:** `public/models/billboard/`, `public/models/streetlights/`, `public/textures/asphalt/`, `public/textures/earth/`, `public/textures/grass-hill/`, `public/textures/sky/`, and their originals in `source-assets/` (still in git history).
+
+### How the journey ends now
+- `JOURNEY_END_T = HERO_T = 0.9` (`filmActBeats.js`). Every earlier progress value is unchanged, so the pacing of the intro, Film, Digital and the hero traversal is identical; the camera path, its arc-length tables, the scroll↔progress mapping and the page length (`3 × 0.9` viewport heights) end at the hero, and progress is clamped there.
+- Side navigation: Intro · Film · Digital · MGRT Media (hero, unlabeled bookend). Chapter gestures: film → digital → hero; a forward gesture at the hero does nothing.
+- The Digital video pauses once the camera is well into the hero approach (progress 0.8), since the monitor is out of shot and the hero is where the visitor rests.
+- The homepage no longer links to /work, /about or /contact (those links lived in the closing frame); the pages remain reachable by URL.
 
 ---
 

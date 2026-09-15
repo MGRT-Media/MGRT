@@ -28,18 +28,16 @@ body {
  * moving or resizing.
  */
 /*
- * Hidden until the loading gate opens — see `pages/Home.jsx`. The fade is
- * between two identical blacks (this element's own `--color-void` and the
- * canvas's clear colour, which are the same value), so what actually
- * cross-fades is the room appearing inside the void rather than a panel
- * appearing over it. That is why there is no loading screen to dismiss: the
- * void was never a placeholder for the opening state, it IS the opening state.
+ * Hidden until the scene has something to show — see `pages/Home.jsx`. On a
+ * first visit it is shown as soon as the scene mounts, underneath the startup
+ * cover (`#startup-cover` in `index.html`), and the reveal is that cover fading
+ * away. This fade is what reveals the scene on a return from an internal page,
+ * where there is no cover. The fade is between two identical blacks (this
+ * element's own `--color-void` and the canvas's clear colour), so what
+ * cross-fades is the room appearing inside the void.
  *
- * 500ms -> 260ms. The longer fade was doing the work of a title card, but this
- * is a gate opening rather than a transition anyone is meant to read: the
- * cinematic beats that follow are the sequence, and time spent here is time the
- * visitor spends waiting. Short enough to feel immediate, long enough to still
- * be a fade rather than a cut.
+ * 500ms -> 260ms. Short enough to feel immediate, long enough to still be a
+ * fade rather than a cut.
  */
 .app-shell {
   opacity: 0;
@@ -348,13 +346,14 @@ html.lenis-smooth {
 }
 
 /*
- * Film caption (FilmCaption.jsx) — the Film section's editorial copy,
- * bottom-left, over a soft local shade rather than a card.
+ * Section captions (SectionCaption.jsx) — each section's editorial copy,
+ * bottom-left, over a soft local shade rather than a card. Film and Digital
+ * share every rule here; the only per-section value is how wide the column
+ * may run (`--section-caption-max-width`), because what stands beside the copy
+ * differs.
  *
- * Inset past the side navigation's column and kept narrower than the gap to
- * the centred cinema camera, so the camera, its preview and the fullscreen
- * button stay clear. Below the wordmark and navigation (z-index 5) and the
- * grain (6); it never shares the screen with the closing frame (also 4).
+ * Inset to the side navigation's column and on the fullscreen button's
+ * baseline. Below the wordmark and navigation (z-index 5) and the grain (6).
  *
  * The shade is the caption's own `::before`, so it fades with the copy and,
  * like the copy, takes no pointer events. It runs off the screen's left and
@@ -363,21 +362,21 @@ html.lenis-smooth {
  * (delayed by its length) so hidden copy is also gone for assistive tech.
  */
 :root {
+  /* Warm charcoal for the shade: the void (#0d0d0d) pulled a touch toward the
+     room's warm light, so the shade reads as the film's own dark. */
+  --color-shade-rgb: 21, 18, 14;
   /* The side navigation's own column, and the fullscreen button's baseline. */
-  --film-caption-x: 44px;
-  --film-caption-y: 48px;
-  --film-caption-fade: 0.9s;
+  --section-caption-x: 44px;
+  --section-caption-y: 48px;
+  --section-caption-fade: 0.9s;
 }
 
-.film-caption {
+.section-caption {
   position: fixed;
-  left: var(--film-caption-x);
-  bottom: var(--film-caption-y);
+  left: var(--section-caption-x);
+  bottom: var(--section-caption-y);
   z-index: 4;
-  /* The settled Film frame is a fixed vertical field of view, so the camera
-     body is ~94vh wide around the centre: this is the space left of it, less
-     the inset and 32px of air. */
-  max-width: clamp(200px, calc(50vw - 47vh - var(--film-caption-x) - 32px), 380px);
+  max-width: var(--section-caption-max-width);
   pointer-events: none;
   opacity: 0;
   visibility: hidden;
@@ -385,34 +384,49 @@ html.lenis-smooth {
   transition: opacity 0.6s var(--nav-ease), transform 0.6s var(--nav-ease), visibility 0s linear 0.6s;
 }
 
-.film-caption--visible {
+/* Film: the settled frame is a fixed vertical field of view, so the camera body
+   is ~94vh wide around the centre. The column is the space left of it, less
+   the inset and 32px of air. */
+.section-caption--film {
+  --section-caption-max-width: clamp(200px, calc(50vw - 47vh - var(--section-caption-x) - 32px), 380px);
+}
+
+/* Digital: the monitor shot fills the frame, so there is no clear space beside
+   the computer to fit to. The copy sits over the screen's lower-left corner in
+   a column narrow enough to cover as little of the picture as reads well, and
+   always clear of the fullscreen button in the centre. */
+.section-caption--digital {
+  --section-caption-max-width: min(340px, calc(50vw - var(--section-caption-x) - 64px));
+}
+
+.section-caption--visible {
   opacity: 1;
   visibility: visible;
   transform: none;
-  transition: opacity var(--film-caption-fade) var(--nav-ease), transform var(--film-caption-fade) var(--nav-ease),
+  transition: opacity var(--section-caption-fade) var(--nav-ease), transform var(--section-caption-fade) var(--nav-ease),
     visibility 0s;
 }
 
-.film-caption::before {
+.section-caption::before {
   content: '';
   position: absolute;
   z-index: -1;
-  left: calc(-1 * var(--film-caption-x) - 24px);
-  bottom: calc(-1 * var(--film-caption-y) - 24px);
+  left: calc(-1 * var(--section-caption-x) - 24px);
+  bottom: calc(-1 * var(--section-caption-y) - 24px);
   right: -200px;
   top: -150px;
   background: radial-gradient(
     58% 62% at 36% 70%,
-    rgba(var(--color-closing-rgb), 0.66) 0%,
-    rgba(var(--color-closing-rgb), 0.52) 30%,
-    rgba(var(--color-closing-rgb), 0.28) 55%,
-    rgba(var(--color-closing-rgb), 0.09) 78%,
-    rgba(var(--color-closing-rgb), 0) 100%
+    rgba(var(--color-shade-rgb), 0.66) 0%,
+    rgba(var(--color-shade-rgb), 0.52) 30%,
+    rgba(var(--color-shade-rgb), 0.28) 55%,
+    rgba(var(--color-shade-rgb), 0.09) 78%,
+    rgba(var(--color-shade-rgb), 0) 100%
   );
   pointer-events: none;
 }
 
-.film-caption__label {
+.section-caption__label {
   margin: 0 0 14px;
   font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
   font-size: 11px;
@@ -422,7 +436,7 @@ html.lenis-smooth {
   color: rgba(var(--color-warm-rgb), 0.62);
 }
 
-.film-caption__description {
+.section-caption__description {
   margin: 0 0 12px;
   font-family: 'Cormorant', Georgia, serif;
   font-weight: 400;
@@ -433,11 +447,11 @@ html.lenis-smooth {
   text-wrap: balance;
 }
 
-.film-caption__service {
+.section-caption__service {
   white-space: nowrap;
 }
 
-.film-caption__services {
+.section-caption__services {
   margin: 0;
   font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
   font-size: 12px;
@@ -450,8 +464,8 @@ html.lenis-smooth {
    copy keeps to the dark lower corner of the body instead: below the preview,
    and clear of the fullscreen button in the centre. */
 @media (min-width: 641px) and (max-aspect-ratio: 31/20) {
-  .film-caption {
-    max-width: min(380px, calc(50vw - var(--film-caption-x) - 64px));
+  .section-caption--film {
+    --section-caption-max-width: min(380px, calc(50vw - var(--section-caption-x) - 64px));
   }
 }
 
@@ -459,65 +473,70 @@ html.lenis-smooth {
    down into this corner, so the copy steps in past them and tightens. */
 @media (min-width: 641px) and (max-height: 540px) {
   :root {
-    --film-caption-x: 72px;
-    --film-caption-y: 24px;
+    --section-caption-x: 72px;
+    --section-caption-y: 24px;
   }
 
-  .film-caption {
-    max-width: clamp(180px, calc(50vw - 47vh - var(--film-caption-x) - 20px), 300px);
+  .section-caption--film {
+    --section-caption-max-width: clamp(180px, calc(50vw - 47vh - var(--section-caption-x) - 20px), 300px);
   }
 
-  .film-caption__label {
+  .section-caption--digital {
+    --section-caption-max-width: min(300px, calc(50vw - var(--section-caption-x) - 56px));
+  }
+
+  .section-caption__label {
     margin-bottom: 6px;
     font-size: 10px;
   }
 
-  .film-caption__description {
+  .section-caption__description {
     margin-bottom: 6px;
     font-size: 20px;
   }
 
-  .film-caption__services {
+  .section-caption__services {
     font-size: 11px;
   }
 }
 
-/* On a phone the preview fills the upper frame, so the copy sits below it,
-   across the width, and above the fullscreen button (36px tall, 36px up). */
+/* On a phone the copy runs across the width, just above the fullscreen button
+   (36px tall, 36px up): below Film's preview, and over the bottom of Digital's
+   screen, which fills the frame. */
 @media (max-width: 640px) {
   :root {
-    --film-caption-x: 18px;
-    --film-caption-y: 90px;
+    --section-caption-x: 18px;
+    --section-caption-y: 90px;
   }
 
-  .film-caption {
-    right: var(--film-caption-x);
-    max-width: none;
+  .section-caption {
+    right: var(--section-caption-x);
+    --section-caption-max-width: none;
   }
 
-  .film-caption::before {
+  .section-caption::before {
     right: -24px;
     top: -60px;
     background: radial-gradient(
       90% 70% at 40% 62%,
-      rgba(var(--color-closing-rgb), 0.62) 0%,
-      rgba(var(--color-closing-rgb), 0.46) 35%,
-      rgba(var(--color-closing-rgb), 0.18) 68%,
-      rgba(var(--color-closing-rgb), 0) 100%
+      rgba(var(--color-shade-rgb), 0.62) 0%,
+      rgba(var(--color-shade-rgb), 0.46) 35%,
+      rgba(var(--color-shade-rgb), 0.18) 68%,
+      rgba(var(--color-shade-rgb), 0) 100%
     );
   }
 
-  .film-caption__label {
+  .section-caption__label {
     margin-bottom: 10px;
     font-size: 10px;
   }
 
-  .film-caption__description {
+  .section-caption__description {
     margin-bottom: 8px;
     font-size: 23px;
   }
 
-  .film-caption__services {
+  .section-caption__services {
     font-size: 11px;
     letter-spacing: 0.04em;
   }
@@ -525,22 +544,22 @@ html.lenis-smooth {
 
 @media (max-width: 640px) and (max-height: 700px) {
   :root {
-    --film-caption-y: 80px;
+    --section-caption-y: 80px;
   }
 
-  .film-caption__label {
+  .section-caption__label {
     margin-bottom: 6px;
   }
 
-  .film-caption__description {
+  .section-caption__description {
     margin-bottom: 4px;
     font-size: 20px;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .film-caption,
-  .film-caption--visible {
+  .section-caption,
+  .section-caption--visible {
     transform: none;
     transition: none;
   }
@@ -718,283 +737,6 @@ html.lenis-smooth {
        the flicker itself is motion and reduced-motion visitors should
        still get a still frame of it rather than none. */
     animation: none;
-  }
-}
-
-/*
- * Closing frame (ClosingFrame.jsx) — the chapter after Campaigns.
- *
- * Every visual here is driven by three custom properties the component writes
- * from `endingSequence.js`: `--ending-edges`, `--ending-uniform` and
- * `--ending-text`. No transitions on them — the sequence already eases, and
- * a CSS transition on top would lag behind a reversal.
- *
- * Below the wordmark, side navigation and site navigation (z-index 5), above
- * the canvas; the film grain (6) still plays over it, so the closing frame is
- * part of the same film. Only the content takes pointer events, and only once
- * it is readable.
- */
-:root {
-  /* Warm charcoal: the void (#0d0d0d) pulled a touch toward the room's warm
-     light, so the frame ends in the film's own colour rather than on black. */
-  --color-closing: #15120e;
-  --color-closing-rgb: 21, 18, 14;
-}
-
-.closing-frame {
-  position: fixed;
-  inset: 0;
-  z-index: 4;
-  pointer-events: none;
-}
-
-.closing-frame__veil {
-  position: absolute;
-  inset: 0;
-  background: var(--color-closing);
-  opacity: var(--ending-uniform, 0);
-}
-
-/* The edges close first; the lit centre — stone and light — is the last of the
-   scene to go. */
-.closing-frame__veil--edges {
-  background: radial-gradient(
-    ellipse 70% 62% at 50% 46%,
-    rgba(21, 18, 14, 0) 0%,
-    rgba(21, 18, 14, 0.55) 55%,
-    var(--color-closing) 100%
-  );
-  opacity: var(--ending-edges, 0);
-}
-
-.closing-frame__content {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 96px 72px;
-  text-align: center;
-  opacity: var(--ending-text, 0);
-  /* A few pixels of rise at most, gone by the time the text is legible. */
-  transform: translateY(calc((1 - var(--ending-text, 0)) * 6px));
-}
-
-.closing-frame__content--interactive {
-  pointer-events: auto;
-}
-
-.closing-frame__mark {
-  margin: 0 0 30px;
-  font-family: 'Cormorant', Georgia, serif;
-  font-weight: 500;
-  font-size: 14px;
-  letter-spacing: 0.34em;
-  text-transform: uppercase;
-  color: rgba(var(--color-warm-rgb), 0.55);
-}
-
-.closing-frame__title {
-  margin: 0;
-  font-family: 'Cormorant', Georgia, serif;
-  font-weight: 400;
-  font-size: clamp(32px, 4.6vw, 60px);
-  line-height: 1.12;
-  letter-spacing: 0.01em;
-  color: rgba(var(--color-warm-rgb), 0.92);
-  text-wrap: balance;
-}
-
-.closing-frame__line {
-  display: block;
-}
-
-.closing-frame__line--second {
-  color: rgba(var(--color-warm-rgb), 0.66);
-}
-
-/* The primary action: brighter, larger and underlined — the only underlined
-   thing in the frame. Type and tracking are the site navigation's own. */
-.closing-frame__primary {
-  position: relative;
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.6em;
-  margin-top: 52px;
-  padding-bottom: 7px;
-  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
-  font-size: 13px;
-  letter-spacing: 0.26em;
-  text-transform: uppercase;
-  text-decoration: none;
-  color: rgba(var(--color-warm-rgb), 0.95);
-  border-bottom: 1px solid rgba(var(--color-warm-rgb), 0.42);
-  -webkit-tap-highlight-color: transparent;
-  transition: color 0.26s var(--nav-ease), border-color 0.26s var(--nav-ease);
-}
-
-.closing-frame__arrow {
-  display: inline-block;
-  letter-spacing: 0;
-  transition: transform 0.26s var(--nav-ease);
-}
-
-@media (hover: hover) {
-  .closing-frame__primary:hover {
-    color: rgba(var(--color-warm-rgb), 1);
-    border-color: rgba(var(--color-warm-rgb), 0.9);
-  }
-
-  .closing-frame__primary:hover .closing-frame__arrow {
-    transform: translate(2px, -2px);
-  }
-}
-
-.closing-frame__primary:focus-visible {
-  outline: 1px solid rgba(var(--color-warm-rgb), 0.6);
-  outline-offset: 8px;
-  border-color: rgba(var(--color-warm-rgb), 0.9);
-}
-
-.closing-frame__nav {
-  margin-top: 44px;
-}
-
-.closing-frame__links {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  align-items: center;
-  gap: 10px 0;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.closing-frame__links > li {
-  display: flex;
-  align-items: center;
-}
-
-.closing-frame__links > li + li::before {
-  content: '·';
-  content: '·' / '';
-  padding: 0 16px;
-  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
-  font-size: 11px;
-  color: rgba(var(--color-warm-rgb), 0.35);
-}
-
-.closing-frame__links--work {
-  margin-top: 22px;
-}
-
-/* `display: flex` above would otherwise override the attribute. */
-.closing-frame__links[hidden] {
-  display: none;
-}
-
-/* The secondary links are `.global-nav__link` — same type, colour, hover and
-   focus as the site navigation. This only turns the buttons among them into
-   plain text and gives every one a 44px touch target. */
-.closing-frame__link {
-  position: relative;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: none;
-  cursor: pointer;
-}
-
-.closing-frame__link::after,
-.closing-frame__primary::after {
-  content: '';
-  position: absolute;
-  inset: -16px -8px;
-}
-
-.closing-frame__primary::after {
-  inset: -12px -10px;
-}
-
-.closing-frame__link[aria-expanded='true'] {
-  color: rgba(var(--color-warm-rgb), 0.92);
-}
-
-@media (max-width: 640px) {
-  /* On a phone the side navigation's active label reaches ~100px in, level
-     with the Campaigns row just below the vertical centre — where a centred
-     composition puts the primary action. So the composition ends above that
-     row instead: it sits in the upper-middle of the frame and nothing crosses
-     the navigation. */
-  .closing-frame__content {
-    justify-content: flex-end;
-    padding: 88px 36px calc(50vh - 20px);
-    padding-bottom: calc(50dvh - 20px);
-  }
-
-  .closing-frame__title {
-    font-size: 32px;
-  }
-
-  .closing-frame__mark {
-    margin-bottom: 22px;
-    font-size: 12px;
-  }
-
-  .closing-frame__primary {
-    margin-top: 40px;
-  }
-
-  .closing-frame__nav {
-    margin-top: 36px;
-  }
-
-  /* Separators cannot tell where a row wraps, so on a phone the links are
-     spaced instead. The row gap keeps each one's 44px touch target clear of
-     the next row's. */
-  .closing-frame__links {
-    gap: 32px 28px;
-  }
-
-  .closing-frame__links > li + li::before {
-    content: none;
-  }
-}
-
-/* Short phones: the same composition, tightened, so it keeps clear air below
-   the wordmark as well as above the side navigation. */
-@media (max-width: 640px) and (max-height: 720px) {
-  .closing-frame__mark {
-    margin-bottom: 14px;
-  }
-
-  .closing-frame__title {
-    font-size: 28px;
-  }
-
-  .closing-frame__primary {
-    margin-top: 26px;
-  }
-
-  .closing-frame__nav {
-    margin-top: 24px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .closing-frame__content {
-    transform: none;
-  }
-
-  .closing-frame__primary,
-  .closing-frame__arrow {
-    transition: none;
-  }
-
-  .closing-frame__primary:hover .closing-frame__arrow {
-    transform: none;
   }
 }
 

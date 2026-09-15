@@ -5,15 +5,18 @@ import { ScrollSpacer } from '../experience/timeline/ScrollTimelineProvider.jsx'
 import ScrollLockIndicator from '../experience/ui/ScrollLockIndicator.jsx'
 import SectionIndicator from '../experience/ui/SectionIndicator.jsx'
 import FullscreenButton from '../experience/ui/FullscreenButton.jsx'
-import FilmCaption from '../experience/ui/FilmCaption.jsx'
+import SectionCaption from '../experience/ui/SectionCaption.jsx'
+import { DIGITAL_CAPTION, FILM_CAPTION } from '../experience/ui/sectionCaptions.js'
 import SiteMark from '../experience/ui/SiteMark.jsx'
 import GrainOverlay from '../experience/ui/GrainOverlay.jsx'
-import ClosingFrame from '../experience/ui/ClosingFrame.jsx'
+import LoadErrorBoundary from '../experience/loading/LoadErrorBoundary.jsx'
+import { criticalAssetsSettled, preloadCriticalAssets } from '../experience/loading/criticalAssets.js'
 import {
-  CRITICAL_ASSET_TIMEOUT_MS,
-  criticalAssetsSettled,
-  preloadCriticalAssets,
-} from '../experience/loading/criticalAssets.js'
+  isStartupCoverShown,
+  revealStartupCover,
+  setExperienceRevealed,
+  showStartupFailure,
+} from '../experience/loading/startupCover.js'
 
 /**
  * The cinematic homepage — this file is the previous contents of `App.jsx`,
@@ -34,11 +37,16 @@ import {
  *
  * ---
  *
- * The three phases below are the loading gate. The void is the loader, so
- * there is nothing to show during 'preload' — the page's own background IS the
- * opening state, and rendering nothing is how it stays that way. See
- * `loading/criticalAssets.js` for what is waited on and
- * `loading/SceneReady.jsx` for what finally opens the gate.
+ * The three phases below are the loading gate. There is no loading screen: the
+ * page is black from its first frame (`#startup-cover` in `index.html`, see
+ * `loading/startupCover.js`), the scene builds and renders underneath that
+ * black, and the reveal is the cover fading away. See
+ * `loading/criticalAssets.js` for what is waited on — only what the opening
+ * frame shows — and `loading/SceneReady.jsx` for what finally opens the gate.
+ *
+ * There is no timeout and no minimum duration. Readiness is the opening's
+ * files having arrived (or failed — nothing in the preflight rejects) and the
+ * scene having rendered.
  */
 const PHASE = {
   /** Nothing mounted. The void. */
@@ -60,41 +68,59 @@ export default function Home() {
   useEffect(() => {
     if (phase !== PHASE.PRELOAD) return undefined
     let cancelled = false
-    const advance = () => !cancelled && setPhase(PHASE.WARMUP)
-
-    preloadCriticalAssets().then(advance)
-    // The gate is an improvement, not a dependency. If the network stalls, the
-    // visitor gets the room the way it behaved before this existed rather than
-    // an indefinite black screen.
-    const timeout = setTimeout(advance, CRITICAL_ASSET_TIMEOUT_MS)
-
+    preloadCriticalAssets().then(() => {
+      if (!cancelled) setPhase(PHASE.WARMUP)
+    })
     return () => {
       cancelled = true
-      clearTimeout(timeout)
     }
   }, [phase])
 
+  // Leaving for an internal page hides the experience again, so its input
+  // gate closes until the next reveal.
+  useEffect(() => () => setExperienceRevealed(false), [])
+
   // Stable identity: `SceneReady` holds this in an effect dependency, and a new
   // function each render would restart its warm-up every time.
-  const handleReady = useCallback(() => setPhase(PHASE.READY), [])
+  const handleReady = useCallback(() => {
+    setPhase(PHASE.READY)
+    setExperienceRevealed(true)
+    revealStartupCover()
+  }, [])
 
   if (phase === PHASE.PRELOAD) return null
 
+  /*
+   * Shown as soon as it mounts when the startup cover is over it, rather than
+   * faded in at the reveal. The canvas then reaches the compositor while it is
+   * still covered, so the reveal is only the cover fading away over a view
+   * that is already rendering: the first composite of a full-screen WebGL
+   * layer that had been at opacity 0 was measured as a ~110ms GPU stall on the
+   * first visible frame. Returning from an internal page there is no cover,
+   * and the shell's own fade does the reveal.
+   */
+  const shown = phase === PHASE.READY || isStartupCoverShown()
+
   return (
     <>
-      <div className={`app-shell${phase === PHASE.READY ? ' app-shell--revealed' : ''}`}>
-        <CinematicExperience onReady={handleReady} />
+      <div className={`app-shell${shown ? ' app-shell--revealed' : ''}`}>
+        {/* A scene that cannot start at all (no WebGL, a failed chunk inside
+            it) says so on the startup cover instead of leaving the void. */}
+        <LoadErrorBoundary name="CinematicExperience" onError={showStartupFailure}>
+          <CinematicExperience onReady={handleReady} />
+        </LoadErrorBoundary>
       </div>
       <SiteMark />
       <SectionIndicator />
       <ScrollLockIndicator />
-      <FilmCaption />
+      <SectionCaption caption={FILM_CAPTION} />
+      <SectionCaption caption={DIGITAL_CAPTION} />
       <FullscreenButton />
-      <ClosingFrame />
       <GrainOverlay />
       {/* Mounted with the scene rather than before it, so the page has no
-          scrollable height while the void is up — the experience cannot be
-          started before it is visible. */}
+          scrollable height while the preflight runs. While the scene warms up
+          behind the cover its input is ignored (`isExperienceRevealed`), so
+          the experience still cannot be started before it is visible. */}
       <ScrollSpacer />
     </>
   )

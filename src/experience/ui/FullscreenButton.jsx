@@ -1,25 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { scrollProgress } from '../timeline/ScrollTimelineProvider.jsx'
 import { contentValue } from '../timeline/contentProgress.js'
-import { CAMPAIGNS_GATE_T, FILM_FOCUS_T, MONITOR_SNAP_T } from '../timeline/filmActBeats.js'
+import { DIGITAL_EXIT_T, FILM_FOCUS_T, MONITOR_SNAP_T } from '../timeline/filmActBeats.js'
 import { FILM_MEDIA_SRC, lensIgniteAt } from '../film/CinemaCamera.jsx'
 import { DIGITAL_MEDIA_SRC } from '../digital/Monitor.jsx'
 import FullscreenVideoModal from './FullscreenVideoModal.jsx'
 
 /**
  * Full-screen CTA for Film and Digital, visible from the moment the
- * camera reaches Film (`FILM_FOCUS_T`) until Campaigns takes over
- * (`CAMPAIGNS_GATE_T`) — covers both chapters, since there's no separate
+ * camera reaches Film (`FILM_FOCUS_T`) until it leaves Digital for the MGRT
+ * hero (`DIGITAL_EXIT_T`) — covers both chapters, since there's no separate
  * per-section DOM element to attach a button to (this whole experience is
  * one persistent WebGL canvas; "reaching Film/Digital" is a
  * `scrollProgress` value, not a viewport intersection).
  *
- * Campaigns has no clip of its own to open full screen — the monitor's
- * video is by then a detail inside the billboard's picture of the room,
- * not the thing being shown — so the button ends where that chapter
- * begins. `CAMPAIGNS_GATE_T` is the same boundary
- * `SectionIndicator.jsx`'s `getActiveIndex` uses for the Digital ->
- * Campaigns hand-over, reused rather than a third threshold.
+ * The hero has no clip of its own to open full screen, so the button ends
+ * where the camera leaves the monitor. `DIGITAL_EXIT_T` is the same boundary
+ * `SectionIndicator.jsx`'s `getActiveIndex` uses for the Digital -> hero
+ * hand-over, reused rather than a third threshold.
  *
  * Clicking it opens `FullscreenVideoModal` — a custom full-viewport
  * pop-up playing whichever chapter's own file is currently active — per
@@ -34,7 +32,7 @@ import FullscreenVideoModal from './FullscreenVideoModal.jsx'
  * visible/open boolean flips.
  */
 function isInRange(progress) {
-  return progress >= FILM_FOCUS_T && progress < CAMPAIGNS_GATE_T
+  return progress >= FILM_FOCUS_T && progress < DIGITAL_EXIT_T
 }
 
 /**
@@ -95,7 +93,7 @@ export default function FullscreenButton() {
   }, [])
 
   // Scrolling out of Film/Digital while the modal is open — back toward
-  // the Intro, or forward into Campaigns — shouldn't leave it dangling
+  // the Intro, or forward to the hero — shouldn't leave it dangling
   // over content it no longer matches.
   useEffect(() => {
     if (!visible) setIsOpen(false)
