@@ -689,6 +689,43 @@ Use modern, efficient formats where browser support permits. 3D assets should ge
 ### Caching
 Static assets should be cacheable where appropriate. Asset versioning must prevent stale files from being used after deployment.
 
+### Delivery compression — measured in production, 2026-09-16
+
+**Vercel already serves the GLBs compressed. Nothing needs to be added, and pre-compressed siblings would be wasted work.**
+
+This was checked because Vercel's published compression allowlist does not include `model/gltf-binary` — or any `model/*` type — which made it look as though 898 kB of geometry was shipping uncompressed on every first visit. The documentation is not what production does. Measured against https://mgrtmedia.com with a browser `Accept-Encoding`:
+
+```text
+                          identity      br (prod)    saved
+spark-computer.glb       1,340,544        771,509  569,035
+movie-camera.glb           660,572        467,004  193,568
+camera-stand.glb           143,096         62,939   80,157
+digital-stone.glb          202,360        169,503   32,857
+TOTAL                    2,346,572      1,470,955  875,617 B = 875.6 kB
+```
+
+Every one comes back `content-encoding: br`, `content-type: model/gltf-binary`,
+`cache-control: public, max-age=31536000, immutable`, from the CDN edge. The
+`.hdr` boot sky is compressed too (as `application/octet-stream`), and the
+WebP textures correctly are not — they are already compressed formats.
+
+Content negotiation is correct: `Accept-Encoding: identity` returns the full
+1,340,544 bytes with no encoding, `gzip` returns gzip, `br` returns brotli. The
+four files decompress to bytes IDENTICAL to the ones in `public/models`,
+verified by SHA-256. No `Vary: Accept-Encoding` is emitted, which is worth
+knowing but is not a defect here: Vercel keys its own edge cache by encoding,
+which the per-encoding responses above demonstrate.
+
+The startup total before the opening is visible is therefore **4,250,696 B
+(4250.7 kB / 4151.1 KiB) across 24 unique network transfers** in production,
+against 5,138,865 B locally where `vite preview` sends the GLBs uncompressed.
+The difference is entirely this compression.
+
+Units, since an earlier report got them wrong: `kB` is decimal (1000 B) and
+`KiB` is binary (1024 B). The transfer counts exclude the ~25 zero-byte
+`blob:` and `data:` requests that `GLTFLoader` makes for textures embedded
+inside the GLBs; those never touch the network.
+
 ---
 
 ## 14. Responsive & Mobile Implementation
@@ -935,6 +972,24 @@ Programs linked               49, all at boot
 Per-frame work by render target: composer at 2520x1575 is 123 draws / 1.065 M triangles, the 1440x900 output and GTAO passes are 63 draws / 0.534 M triangles, and the 4096x4096 shadow map is drawn once when the room is complete rather than every frame (see `shadowUpdates.js`).
 
 Two known characteristics of this baseline, both deliberate: the hero preload hints raise DOMContentLoaded on throttled links (218 ms to 543 ms on Fast 4G) because they share bandwidth with the application bundle, which is a trade made in favour of hero readiness; and roughly 180 ms before the reveal is spent waiting on a command-buffer flush attributed to program linking, which `compileAsync` was measured against and did not improve.
+
+### Measured in production (Group B, 2026-09-16)
+
+The figures above are local. These are https://mgrtmedia.com, same viewport and
+DPR, Chrome's own throttling profiles over the real network, so they include
+real RTT to the CDN edge and are not directly comparable with a localhost run.
+
+```text
+Cold, unthrottled              1.35-1.41 s
+Cold, Fast 4G                  4.82 s
+Cold, Slow 4G                  21.3 s
+Warm cache (second load)       1.30 s, 0 bytes transferred
+Transferred before the reveal  4,250,696 B (4250.7 kB / 4151.1 KiB), 24 transfers
+```
+
+No failed requests and no decoding errors. One 404 remains: `/favicon.ico`,
+which the site does not ship, so every load logs one console error. Harmless,
+but it is the only error in a clean load and is worth removing.
 
 ### Testing
 Performance should be tested during development rather than only before launch, including desktop high-refresh displays, standard desktop displays, modern laptops, iOS devices, Android devices, Safari, Chrome, slow network conditions, resize operations, rapid scroll direction changes, long sessions, repeat visits, and reduced-motion mode.
