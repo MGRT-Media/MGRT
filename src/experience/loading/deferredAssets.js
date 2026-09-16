@@ -39,7 +39,18 @@ let activeRenderer = null
  */
 let escalation = null
 
-/** Resolves when nothing is being waited on, so the queue can take the pipe back. */
+/**
+ * Stands down while a visitor is waiting on something they asked for.
+ *
+ * Deliberately unconditional, and that was measured rather than assumed. The
+ * obvious refinement — yield only for work due LATER than what the visitor is
+ * waiting on, so the sky is never postponed for the monitor — was implemented
+ * and tested, and it made things worse: a click on Digital went from 16.6s to
+ * 21.3s on a 400kbit connection while the sky arrived no sooner, because the
+ * sky's lateness is bandwidth, not ordering. 915KB cannot reach a visitor who
+ * scrolls to the Film close-up five seconds after the reveal, whatever order
+ * the queue runs in.
+ */
 function whenNotEscalated() {
   return escalation ?? Promise.resolve()
 }
@@ -119,9 +130,10 @@ export function ensureSectionAssets(sectionKey) {
   // the visitor wait longer for the thing they asked to see. The queue above
   // stands down for the same reason.
   const work = Promise.all(props.map(upgradePropTextures))
-  escalation = work.then(
-    () => { escalation = escalation === work ? null : escalation },
-    () => { escalation = escalation === work ? null : escalation },
-  )
+  const clear = () => {
+    if (escalation === settled) escalation = null
+  }
+  const settled = work.then(clear, clear)
+  escalation = settled
   return work
 }
