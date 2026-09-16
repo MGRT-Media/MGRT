@@ -893,6 +893,27 @@ ADVANCED EXPERIENCE → FEATURE FAILURE → GRACEFUL FALLBACK → ACCESSIBLE CON
 
 The visitor must never encounter a blank page, broken canvas, frozen scroll state, or inaccessible contact path because one advanced feature failed.
 
+### Measured baseline (Group A, 2026-09-16)
+
+The numbers below replace the pre-optimization checkpoint (`b3f9dc6`) as the reference every later performance change is compared against. Conditions: M2 Pro, Chrome, production build, 1440x900, DPR 2 against the renderer's 1.75 cap, measured to the reveal of the opening frame. Network conditions are Chrome's own throttling profiles; runs were interleaved with the previous build to cancel machine drift.
+
+```text
+Cold local, cold DNS          1.061 s
+Fast 4G                       6.51 s
+Slow 4G                       33.47 s
+Phone viewport, Fast 4G       6.47 s
+Warm cache                    1.10 s
+Hero-critical transfer        6.705 MB over 25-26 requests
+Draw calls per frame          186
+Triangles per frame           1.60 M
+Frame time, median / p95      22-25 ms / 23-27 ms
+Programs linked               49, all at boot
+```
+
+Per-frame work by render target: composer at 2520x1575 is 123 draws / 1.065 M triangles, the 1440x900 output and GTAO passes are 63 draws / 0.534 M triangles, and the 4096x4096 shadow map is drawn once when the room is complete rather than every frame (see `shadowUpdates.js`).
+
+Two known characteristics of this baseline, both deliberate: the hero preload hints raise DOMContentLoaded on throttled links (218 ms to 543 ms on Fast 4G) because they share bandwidth with the application bundle, which is a trade made in favour of hero readiness; and roughly 180 ms before the reveal is spent waiting on a command-buffer flush attributed to program linking, which `compileAsync` was measured against and did not improve.
+
 ### Testing
 Performance should be tested during development rather than only before launch, including desktop high-refresh displays, standard desktop displays, modern laptops, iOS devices, Android devices, Safari, Chrome, slow network conditions, resize operations, rapid scroll direction changes, long sessions, repeat visits, and reduced-motion mode.
 

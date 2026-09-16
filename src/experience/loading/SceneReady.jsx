@@ -30,17 +30,6 @@ import { armShadowFreeze, resetShadowUpdates } from '../lighting/shadowUpdates.j
 const WARMUP_FRAMES = 1
 
 /**
- * How long to wait for the driver to finish linking before revealing anyway.
- *
- * `compileAsync` polls `KHR_parallel_shader_compile` for each program it
- * started, and a program that is replaced or disposed while it is waiting
- * never reports ready — a hang with nothing to show for it. The race below
- * bounds that: after this the opening is revealed regardless, which is no
- * worse than the synchronous compile it replaces.
- */
-const COMPILE_TIMEOUT_MS = 2000
-
-/**
  * Decides when the room is actually ready to be looked at.
  *
  * Mounted as a child of the same `Suspense` boundary as `CinemaCamera` and
@@ -64,36 +53,23 @@ export default function SceneReady({ onReady }) {
   const scene = useThree((state) => state.scene)
   const camera = useThree((state) => state.camera)
 
-  /**
-   * Links every program in the scene before anything is shown.
-   *
-   * Measured: all 48 of this experience's programs are linked here — Film,
-   * Digital and the hero introduce none — so this is the only compilation the
-   * visitor can ever pay for, and the only question is whether it blocks.
-   * `compile` did: the first composer render sat in `getProgramParameter` for
-   * 184ms waiting on the driver. `compileAsync` starts the same work and polls
-   * for completion instead, so the wait happens off the main thread while the
-   * page is still covered.
-   */
-  const compileScene = () => {
-    if (typeof gl.compileAsync !== 'function') {
-      gl.compile(scene, camera)
-      return Promise.resolve()
-    }
-    return Promise.race([
-      gl.compileAsync(scene, camera).catch(() => null),
-      new Promise((resolve) => setTimeout(resolve, COMPILE_TIMEOUT_MS)),
-    ])
-  }
-
   useEffect(() => {
     let cancelled = false
     let handle = 0
 
-    whenAssetUpgradesSettled()
-      .then(() => (cancelled ? null : compileScene()))
-      .then(() => {
+    whenAssetUpgradesSettled().then(() => {
       if (cancelled) return
+      // Link every program in the scene now, while nothing is visible. Without
+      // this the first visible frame is the one that pays for compilation,
+      // which on a scene this size is a stall precisely where it is least
+      // wanted.
+      //
+      // All 48 of this experience's programs are linked here — Film, Digital
+      // and the hero introduce none. `compileAsync` was measured as a
+      // replacement and left the 184ms first-use wait unchanged (it is a
+      // command-buffer flush, not a blocking link call), so the simpler
+      // synchronous call stands.
+      gl.compile(scene, camera)
 
       // The room is complete and has been drawn: its shadow map can be held
       // from here rather than redrawn every frame (`shadowUpdates.js`).
@@ -109,7 +85,7 @@ export default function SceneReady({ onReady }) {
         handle = requestAnimationFrame(tick)
       }
       handle = requestAnimationFrame(tick)
-      })
+    })
 
     return () => {
       cancelled = true
