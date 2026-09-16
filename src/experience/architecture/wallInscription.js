@@ -1,6 +1,5 @@
 import * as THREE from 'three'
 import { assetUrl } from '../assets/assetUrl.js'
-import { trackAssetUpgrade } from '../loading/assetReadiness.js'
 import { cloneScannedMaps, scannedStoneReady } from '../materials/scannedStone.js'
 import { planPoint, wallDeviation } from './galleryShellGeometry.js'
 
@@ -354,12 +353,14 @@ export const BRASS_URLS = [assetUrl(`${BRASS_BASE}/albedo.jpg`), assetUrl(`${BRA
 /**
  * The two maps, decoded once and shared.
  *
- * `criticalAssets.js` starts this before the scene mounts, and the material
- * below takes the same textures when it is built, so each file is requested
- * and decoded exactly once. (The preflight used to warm the bytes with a
- * separate `fetch`, and the material then requested them again through its own
- * loader: two requests per file whenever the HTTP cache could not serve the
- * second.) Resolves `null` for a map that failed, never rejects.
+ * Loaded AFTER the opening is on screen (`loading/deferredAssets.js`), not as
+ * part of the hero preflight. The inlay reads as flat brass without them, and
+ * measured against the harness's own run-to-run noise the difference between
+ * the two is below the noise floor at every cinematic beat — including the
+ * hero itself, where the letters are largest. So they are 246KB the opening
+ * frame does not have to wait for, and the swap cannot be seen when it lands.
+ *
+ * Resolves `null` for a map that failed, never rejects.
  */
 let brassMaps = null
 
@@ -393,19 +394,36 @@ export function preloadBrassMaps() {
 }
 
 /**
- * Fire-and-forget, like the scanned stone: nothing suspends on it. The swap is
- * registered with `assetReadiness` so the loading gate can wait for it instead
- * of letting the letters change material in full view. A missing file leaves
- * the flat tint in place rather than a black inlay.
+ * Materials waiting for the brass maps, applied when the deferred load lands.
+ *
+ * Registration rather than a fetch: the inlay's material is built with the
+ * room, long before the maps are wanted, and nothing about the opening frame
+ * depends on them.
  */
+const inscriptionMaterials = new Set()
+
 function loadBrassMaps(material) {
-  trackAssetUpgrade(
-    preloadBrassMaps().then(({ map, roughnessMap }) => {
+  inscriptionMaterials.add(material)
+  if (brassMaps) applyBrassMaps()
+}
+
+function applyBrassMaps() {
+  return preloadBrassMaps().then(({ map, roughnessMap }) => {
+    for (const material of inscriptionMaterials) {
       if (map) material.map = map
       if (roughnessMap) material.roughnessMap = roughnessMap
       if (map || roughnessMap) material.needsUpdate = true
-    }),
-  )
+    }
+  })
+}
+
+/**
+ * Loads the brass maps and dresses every inscription material with them. Called
+ * once the opening is revealed — see `loading/deferredAssets.js`. A missing
+ * file leaves the flat tint in place rather than a black inlay.
+ */
+export function loadInscriptionBrass() {
+  return applyBrassMaps()
 }
 
 /** Where the cutout's edge falls within that chamfer. */

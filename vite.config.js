@@ -3,6 +3,7 @@ import { existsSync, readFileSync, readdirSync, renameSync, rmSync, statSync } f
 import { extname, join, posix, relative, sep } from 'node:path'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { HERO_PRELOADS } from './src/experience/loading/heroAssets.js'
 
 /**
  * Content-fingerprints the static assets under `public/`.
@@ -77,6 +78,24 @@ function fingerprintPublicAssets() {
     load(id) {
       if (id === RESOLVED_ASSET_MANIFEST_ID) return `export default ${JSON.stringify(manifest)}`
       return null
+    },
+
+    /**
+     * Writes the opening's own files into the HTML as preload hints.
+     *
+     * Without them nothing is requested until the bundle has downloaded, been
+     * parsed and run — the browser cannot know a WebGL scene is about to ask
+     * for a GLB. With them the room's models and stone start with the HTML.
+     *
+     * Hero-critical only (`heroAssets.js`), and each with the `as` its loader
+     * will actually use, so nothing is fetched twice and no hint goes unused.
+     */
+    transformIndexHtml() {
+      return HERO_PRELOADS.map(({ path, as }) => ({
+        tag: 'link',
+        injectTo: 'head-prepend',
+        attrs: { rel: 'preload', as, href: manifest[path] ?? path, crossorigin: '' },
+      }))
     },
     closeBundle() {
       if (!fingerprinting) return

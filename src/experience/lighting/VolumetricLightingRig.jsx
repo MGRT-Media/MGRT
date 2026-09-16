@@ -2,6 +2,7 @@ import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import { createVolumetricLighting } from './volumetricLighting.js'
+import { applyShadowUpdates } from './shadowUpdates.js'
 import { contentValue } from '../timeline/contentProgress.js'
 
 // Dark-to-light ignition ramp — replaces the previous approach-fade
@@ -57,6 +58,11 @@ export default function VolumetricLightingRig() {
   }, [controller])
 
   useFrame((state) => {
+    // The room's shadow map is static once the scene is built — see
+    // `shadowUpdates.js`. Checked here because this component already runs
+    // every frame and holds a renderer reference; it is two booleans.
+    applyShadowUpdates(state.gl)
+
     // Content progress (`contentProgress.js`): follows the camera, and a
     // section flight to or from the opening crossfades the lights rather than
     // switching them.

@@ -2,9 +2,9 @@ import { useLoader } from '@react-three/fiber'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js'
 import { MODEL_URLS } from '../models/modelAssets.js'
-import { preloadScannedStone } from '../materials/scannedStone.js'
-import { preloadBrassMaps } from '../architecture/wallInscription.js'
-import { loadSkyTexture } from '../lighting/skyEnvironment.js'
+import { preloadScannedStone, scannedStoneUrls } from '../materials/scannedStone.js'
+import { assetUrl } from '../assets/assetUrl.js'
+import { SKY_HDRI_URL, loadSkyTexture } from '../lighting/skyEnvironment.js'
 
 /**
  * Everything the opening frame needs, fetched before the scene is built.
@@ -18,9 +18,11 @@ import { loadSkyTexture } from '../lighting/skyEnvironment.js'
  * so each in-place swap completes within a frame or two instead of seconds,
  * and `SceneReady` holds the canvas out of sight across those frames.
  *
- * CRITICAL means "visible in, or lighting, the opening frame" — which in this
- * room is every model and surface there is. The chapter videos are absent:
- * their elements carry `preload = 'none'` and together they are 60MB.
+ * CRITICAL means "the opening frame cannot be drawn correctly without it".
+ * The brass inlay maps are NOT here: measured against the capture harness's
+ * own noise they change no beat visibly, so they load once the opening is on
+ * screen (`deferredAssets.js`). The chapter videos are absent too: their
+ * elements carry `preload = 'none'` and together they are 60MB.
  *
  * The memoised promise is also what makes returning from /work, /about or
  * /contact cheap — the second call resolves immediately, so the gate opens on
@@ -39,6 +41,23 @@ const CRITICAL_MODEL_URLS = [
 
 /** Every surface the camera can see at progress 0 is one of these three sets. */
 const CRITICAL_STONE_SETS = ['walls', 'floors', 'columns']
+
+/**
+ * Development guard: the HTML's preload hints (`heroAssets.js`) and this
+ * preflight have to describe the same set of files, or the browser either
+ * fetches something twice or warns about a hint nothing used.
+ */
+if (import.meta.env.DEV) {
+  import('./heroAssets.js').then(({ HERO_PRELOADS }) => {
+    const preloaded = new Set(HERO_PRELOADS.map((p) => assetUrl(p.path)))
+    const waited = new Set([...CRITICAL_MODEL_URLS, ...CRITICAL_STONE_SETS.flatMap(scannedStoneUrls), SKY_HDRI_URL])
+    const missing = [...waited].filter((u) => !preloaded.has(u))
+    const extra = [...preloaded].filter((u) => !waited.has(u))
+    if (missing.length || extra.length) {
+      console.warn('[criticalAssets] preload hints and preflight disagree.', { missing, extra })
+    }
+  })
+}
 
 let pending = null
 let settled = false
@@ -97,8 +116,6 @@ export function preloadCriticalAssets() {
      * only throw away. Same requests, same count — just finished properly.
      */
     ...CRITICAL_STONE_SETS.map(preloadScannedStone),
-    // Through the inscription's own shared decode, like the stone above.
-    preloadBrassMaps(),
   ]).then(() => {
     settled = true
   })

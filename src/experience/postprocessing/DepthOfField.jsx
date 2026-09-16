@@ -365,6 +365,24 @@ export default function DepthOfField() {
 
   // Priority > 0 hands the render loop over from R3F to this callback.
   useFrame(({ camera: activeCamera }, delta) => {
+    /*
+     * Nothing is drawn while the tab is in the background.
+     *
+     * This callback owns the render loop (priority 1), so returning here is
+     * the whole saving: no composer pass, no GTAO, no scene render — a frame
+     * that costs tens of milliseconds of GPU time to produce an image nobody
+     * can see. Browsers already throttle `requestAnimationFrame` in a hidden
+     * tab rather than stopping it, so without this a backgrounded tab keeps
+     * paying for a full frame every second.
+     *
+     * Only this callback stops. Scroll position, the GSAP timeline, Lenis, the
+     * journey's progress and video playback all keep their own state and are
+     * untouched, so returning to the tab resumes the same shot. The focus
+     * distance below stops damping too and picks up from the value it held,
+     * which is what it would do after any frame it had not moved through.
+     */
+    if (document.visibilityState !== 'visible') return
+
     const subjectDistance = Math.min(
       activeCamera.position.distanceTo(FILM_SUBJECT),
       activeCamera.position.distanceTo(DIGITAL_SUBJECT),

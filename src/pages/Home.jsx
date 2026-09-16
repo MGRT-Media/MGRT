@@ -11,6 +11,7 @@ import SiteMark from '../experience/ui/SiteMark.jsx'
 import GrainOverlay from '../experience/ui/GrainOverlay.jsx'
 import LoadErrorBoundary from '../experience/loading/LoadErrorBoundary.jsx'
 import { criticalAssetsSettled, preloadCriticalAssets } from '../experience/loading/criticalAssets.js'
+import { loadDeferredAssets } from '../experience/loading/deferredAssets.js'
 import {
   isStartupCoverShown,
   revealStartupCover,
@@ -86,6 +87,9 @@ export default function Home() {
     setPhase(PHASE.READY)
     setExperienceRevealed(true)
     revealStartupCover()
+    // Everything the opening frame did not need (`deferredAssets.js`), once
+    // the experience is on screen and the page is idle.
+    loadDeferredAssets()
   }, [])
 
   if (phase === PHASE.PRELOAD) return null

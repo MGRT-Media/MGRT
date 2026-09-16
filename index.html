@@ -10,13 +10,35 @@
       an elegant serif for the single discreet site mark
       (src/experience/ui/SiteMark.jsx), not a general UI typeface — every
       other label in this project stays on the existing system-ui sans.
+
+      Loaded as a PRELOAD that promotes itself to a stylesheet on load, not as
+      a plain stylesheet link. A stylesheet in the head blocks the module
+      script below it, so this one file — a third-party request, ~930ms on a
+      cold connection — held up the application bundle, and with it every
+      request for the room's own models and textures. As a preload it is
+      fetched at the same priority and applied the moment it arrives, but
+      nothing waits for it.
+
+      Nothing visible changes: the only Cormorant text in the experience (the
+      wordmark and the section captions) is underneath the startup cover until
+      the scene is revealed, which is far later than this file's arrival, and
+      the URL keeps `display=swap` so a slow font shows Georgia rather than
+      nothing.
     -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
+      rel="preload"
+      as="style"
       href="https://fonts.googleapis.com/css2?family=Cormorant:wght@400;500&display=swap"
-      rel="stylesheet"
+      onload="this.rel='stylesheet'"
     />
+    <noscript>
+      <link
+        href="https://fonts.googleapis.com/css2?family=Cormorant:wght@400;500&display=swap"
+        rel="stylesheet"
+      />
+    </noscript>
     <!--
       The black the opening fades in from. Painted with the HTML itself, so the
       page is the void from its first frame; the scene renders underneath it
