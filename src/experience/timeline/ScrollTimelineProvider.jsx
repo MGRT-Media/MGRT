@@ -28,6 +28,7 @@ import {
   JOURNEY_END_T,
 } from './filmActBeats.js'
 import { cancelSectionFlight, requestSectionFlight } from './sectionFlightRequest.js'
+import { ensureSectionAssets, sectionAssetsReady } from '../loading/deferredAssets.js'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -630,7 +631,32 @@ export function ScrollSpacer() {
       runStep(0)
     }
 
-    const navigateToSection = (sectionKey) => {
+    /**
+     * Holds a move to a section until that section's close-up can be drawn at
+     * full quality — see `ensureSectionAssets`.
+     *
+     * Normally there is nothing to wait for and `start` runs on the spot, so
+     * this is invisible: the check is a boolean, not a promise. When the wait
+     * does happen the visitor keeps the composition they are already looking
+     * at, which is a complete frame, instead of flying to a close-up of a
+     * texture that has not arrived. A later request supersedes an earlier
+     * wait, so clicking twice never runs two moves.
+     */
+    let sectionGateTicket = 0
+    const whenSectionReady = (sectionKey, start) => {
+      if (sectionAssetsReady(sectionKey)) {
+        start()
+        return
+      }
+      const ticket = ++sectionGateTicket
+      ensureSectionAssets(sectionKey).then(() => {
+        if (ticket === sectionGateTicket) start()
+      })
+    }
+
+    const navigateToSection = (sectionKey) => whenSectionReady(sectionKey, () => startNavigateToSection(sectionKey))
+
+    const startNavigateToSection = (sectionKey) => {
       const targetT = SECTION_TARGETS[sectionKey]
       if (targetT === undefined) return
       // The intro cinematic (below) is this file's own one-shot, uninterruptible
@@ -703,7 +729,9 @@ export function ScrollSpacer() {
     // assets start loading, and on arrival manual scrolling simply continues
     // from the section. Content that would react to that jump reads content
     // progress (`contentProgress.js`), which follows the flight instead.
-    const flyToSection = (sectionKey) => {
+    const flyToSection = (sectionKey) => whenSectionReady(sectionKey, () => startFlyToSection(sectionKey))
+
+    const startFlyToSection = (sectionKey) => {
       const targetT = SECTION_TARGETS[sectionKey]
       if (targetT === undefined) return
       // Same rule as a chapter jump: the intro cinematic is uninterruptible.

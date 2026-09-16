@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { useThree } from '@react-three/fiber'
 import { whenAssetUpgradesSettled } from './assetReadiness.js'
 import { armShadowFreeze, resetShadowUpdates } from '../lighting/shadowUpdates.js'
+import { loadDeferredAssets } from './deferredAssets.js'
 
 /**
  * How many frames to render before the canvas is shown.
@@ -80,6 +81,10 @@ export default function SceneReady({ onReady }) {
         frames += 1
         if (frames >= WARMUP_FRAMES) {
           onReady()
+          // Everything the later beats need, from the moment the opening is
+          // actually on screen — see `deferredAssets.js`. Here rather than in
+          // `Home.jsx` because the upgrades need this canvas's renderer.
+          loadDeferredAssets(gl)
           return
         }
         handle = requestAnimationFrame(tick)

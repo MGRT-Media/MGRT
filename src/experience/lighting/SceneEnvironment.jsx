@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { useThree } from '@react-three/fiber'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
-import { loadSkyTexture, resolvedSkyTexture, SKY_ROTATION_Y } from './skyEnvironment.js'
+import { environmentSource, loadSkyTexture, registerSkyUpgrade, resolvedSkyTexture, SKY_ROTATION_Y } from './skyEnvironment.js'
 
 /**
  * Image-based lighting for the room's stone.
@@ -63,16 +63,42 @@ const HDRI_ENVIRONMENT_INTENSITY = 0.40
  * PMREM prefilters an environment into the roughness-indexed mip chain a
  * standard material samples. Without it a map cannot be used as an environment
  * at all — roughness would have nothing to blur toward.
+ *
+ * ONE generator, kept for as long as the scene is mounted, because this room
+ * prefilters twice: once from the boot sky and once from the original that
+ * replaces it. A generator owns a set of internal materials — the equirect
+ * projection and a blur material per mip level — and disposing it releases
+ * their compiled programs, so a second generator had to link all fifteen of
+ * them again. Measured: sixteen program links after the reveal against none
+ * when the generator is retained, spread across the frames right after the
+ * sky upgrade, which is exactly where a hitch is least acceptable.
  */
-function prefilter(gl, build) {
-  const generator = new THREE.PMREMGenerator(gl)
-  const texture = build(generator).texture
-  generator.dispose()
-  return texture
+function usePrefilter(gl) {
+  const generator = useMemo(() => new THREE.PMREMGenerator(gl), [gl])
+  useEffect(() => () => generator.dispose(), [generator])
+  // The render TARGET, not just its texture: the sky upgrade re-renders the
+  // environment into this same target so that `scene.environment` never
+  // changes identity. See `environmentSource`.
+  return useMemo(() => (build) => build(generator), [generator])
+}
+
+/**
+ * Prefilters the sky, at the size the original will need.
+ *
+ * The enlarged copy exists only for the length of this call — PMREM reads it
+ * once into its cube, and holding 4MB of upsampled sky afterwards would buy
+ * nothing.
+ */
+function prefilterSky(prefilter, texture) {
+  const source = environmentSource(texture)
+  const target = prefilter((generator) => generator.fromEquirectangular(source))
+  source.dispose()
+  return target
 }
 
 export default function SceneEnvironment() {
   const { gl, scene } = useThree()
+  const prefilter = usePrefilter(gl)
 
   /**
    * The HDRI, prefiltered at mount — but only when it is ALREADY decoded and
@@ -84,10 +110,14 @@ export default function SceneEnvironment() {
   const hdri = useMemo(() => {
     const texture = resolvedSkyTexture()
     if (!texture) return null
-    return prefilter(gl, (generator) => generator.fromEquirectangular(texture))
-  }, [gl])
+    return prefilterSky(prefilter, texture)
+  }, [prefilter])
 
   const [sky, setSky] = useState(null)
+
+  /** The environment's render target, so the upgrade can render into it. */
+  const hdriRef = useRef(null)
+  hdriRef.current = hdri
 
   /**
    * The stand-in environment, generated in code so it costs no download.
@@ -105,8 +135,8 @@ export default function SceneEnvironment() {
    */
   const generated = useMemo(() => {
     if (hdri) return null
-    return prefilter(gl, (generator) => generator.fromScene(new RoomEnvironment(), 0.04))
-  }, [gl, hdri])
+    return prefilter((generator) => generator.fromScene(new RoomEnvironment(), 0.04))
+  }, [prefilter, hdri])
 
   useEffect(() => {
     // Already resident and prefiltered above; nothing to wait for.
@@ -118,7 +148,7 @@ export default function SceneEnvironment() {
         // The same prefilter, from the photograph instead of the generated
         // box. The equirect source itself stays resident because `SunsetSky`
         // is drawing with it; this cube is the only extra allocation.
-        setSky(prefilter(gl, (generator) => generator.fromEquirectangular(texture)))
+        setSky(prefilterSky(prefilter, texture))
       })
       .catch(() => {
         // Keep the generated environment. A missing sky must not unlight the room.
@@ -126,13 +156,54 @@ export default function SceneEnvironment() {
     return () => {
       cancelled = true
     }
-  }, [gl, hdri])
+  }, [prefilter, hdri])
+
+  /**
+   * The original sky, prefiltered and swapped in without a frame of
+   * disagreement with the dome — see `upgradeSky`.
+   *
+   * The prefilter is the expensive half (measured at 17ms for the original
+   * against 6.5ms for the boot image) and it happens in `prepare`, before
+   * anything is installed. `commit` then assigns the finished cube directly
+   * rather than through state: React would apply it a render later, which is
+   * the one thing this swap cannot afford — the dome and the reflections have
+   * to change on the same frame.
+   */
+  const upgradedRef = useRef(null)
+  useEffect(
+    () =>
+      registerSkyUpgrade((texture) => {
+        // The normal case: the boot sky's environment is already prefiltered at
+        // the original's size, so this renders over its contents and every
+        // material goes on sampling the same texture it always has — nothing
+        // is reassigned, nothing recompiles, and the room's reflections simply
+        // become the real sky's on the next frame.
+        const target = hdriRef.current
+        if (target) {
+          prefilter((generator) => generator.fromEquirectangular(texture, target))
+          return null
+        }
+        // The fallback: the boot sky never arrived and the room is lit by the
+        // generated stand-in, so there is no target to render into and the
+        // environment has to be replaced outright.
+        const next = prefilterSky(prefilter, texture)
+        return () => {
+          const previous = scene.environment
+          upgradedRef.current = next
+          scene.environment = next.texture
+          requestAnimationFrame(() => previous?.dispose())
+        }
+      }),
+    [prefilter, scene],
+  )
+  useEffect(() => () => upgradedRef.current?.dispose(), [])
 
   useEffect(() => {
     // Unchanged values, unchanged precedence: a photographic environment
-    // whichever way it arrived, otherwise the generated one.
-    const photographic = hdri ?? sky
-    scene.environment = photographic ?? generated
+    // whichever way it arrived, otherwise the generated one. The upgraded cube
+    // wins when it exists, so a re-run of this effect cannot undo the swap.
+    const photographic = upgradedRef.current ?? hdri ?? sky
+    scene.environment = (photographic ?? generated)?.texture ?? null
     scene.environmentIntensity = photographic ? HDRI_ENVIRONMENT_INTENSITY : ENVIRONMENT_INTENSITY
     // Reflections have to agree with the sky the room can actually see through
     // the court — see `SKY_ROTATION_Y`.

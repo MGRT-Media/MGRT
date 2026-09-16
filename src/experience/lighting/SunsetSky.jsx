@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import { sunDirection } from './volumetricLighting.js'
-import { loadSkyTexture, SKY_ROTATION_Y } from './skyEnvironment.js'
+import { loadSkyTexture, registerSkyUpgrade, SKY_ROTATION_Y } from './skyEnvironment.js'
 
 /**
  * The sky the roof opening looks out on.
@@ -181,6 +181,20 @@ export default function SunsetSky() {
   )
 
   const geometry = useMemo(() => new THREE.SphereGeometry(SKY_RADIUS, 32, 20), [])
+
+  /**
+   * The same exchange again when the original sky lands, and cheaper still:
+   * the dome only has to point at a different texture. Nothing is prepared
+   * here, so `prepare` goes straight to the commit that `upgradeSky` runs
+   * alongside the environment's.
+   */
+  useEffect(
+    () =>
+      registerSkyUpgrade((texture) => () => {
+        material.uniforms.uSky.value = texture
+      }),
+    [material],
+  )
 
   // Upgrade in place when the photograph arrives. Two uniforms, no remount —
   // the dome that was already drawing simply starts sampling a different

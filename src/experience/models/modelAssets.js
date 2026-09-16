@@ -5,6 +5,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js'
 import { assetUrl } from '../assets/assetUrl.js'
 import { contentValue } from '../timeline/contentProgress.js'
+import { registerPropMaterials } from './propTextureUpgrades.js'
 import { sceneIgniteAt } from '../lighting/VolumetricLightingRig.jsx'
 
 /**
@@ -186,6 +187,20 @@ export function useTreatedMaterials(root, treat) {
       })
     })
   }, [root, treat])
+}
+
+/**
+ * Tells `propTextureUpgrades.js` which materials belong to which model, so the
+ * full-resolution maps that were lifted out of the GLB can be installed over
+ * the 256px ones it ships with.
+ *
+ * A subtree rather than a URL, and a layout effect rather than an effect, for
+ * the same reason `useTreatedMaterials` is one: the materials have to be known
+ * before anything is drawn with them, and a model that mounts after its
+ * upgrade has already run is brought straight up to date.
+ */
+export function usePropTextures(key, root) {
+  useLayoutEffect(() => registerPropMaterials(key, root), [key, root])
 }
 
 /**

@@ -39,7 +39,7 @@ export const FILM_CAPTION = {
 export const DIGITAL_CAPTION = {
   id: 'digital',
   label: 'Digital',
-  description: 'Ideas brought to life in pixels, motion, and interaction.',
+  description: 'Beyond the screen. Into the experience.',
   services: ['Websites & e-commerce', '3D animation', 'Interactive experiences'],
   presenceAt: digitalPresenceAt,
 }

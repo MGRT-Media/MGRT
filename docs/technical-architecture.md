@@ -645,7 +645,25 @@ Assets should be divided into priority levels.
 
 **Near-term** (required shortly after the opening): cinema camera, Film media, monitor, Digital media.
 
-**Deferred** (required later in the experience): secondary environmental details and lower-priority effects. (Everything the room shows is visible in the opening frame, so all models and surfaces load before the reveal; the chapter videos load only when their beat plays.)
+**Deferred** (required later in the experience): secondary environmental details and lower-priority effects. Every model and surface the room shows is present in the opening frame, but not every one of them is there at full resolution: the two props and the sky arrive at the size the opening composition can actually resolve and are upgraded in place afterwards (below). The chapter videos load only when their beat plays.
+
+### Boot quality and the upgrade (2026-09-16)
+
+The opening shows the film camera at about 3% of the frame's width and the monitor at roughly forty pixels, so their 1024px maps cannot be resolved until the close-ups at `FILM_FOCUS_T` (0.45) and `MONITOR_SNAP_T` (0.60). Those files therefore ship at 256px inside the GLB, with the full-resolution maps beside them as separate files; the sky ships as a 512x256 downsample of the same HDRI. `deferredAssets.js` installs the real ones once the room is on screen, ordered by the beat that needs them:
+
+```text
+camera maps (FILM_FOCUS_T) -> sky 1K (FILM_FOCUS_T) -> monitor maps (MONITOR_SNAP_T) -> brass (hero)
+```
+
+Three rules make the exchange invisible, and each of them came from a measurement rather than a precaution:
+
+- **Upload one texture per frame.** Sending a model's six maps to the GPU in one callback cost a 170ms frame.
+- **Never change `scene.environment`'s identity.** three recompiles every material that samples the environment when that texture changes, which cost sixteen program links and a 192ms frame. The boot sky is upsampled before prefiltering so that both PMREM passes are the same size, and the upgrade re-renders the original into the same render target — see `environmentSource`.
+- **Never replace a null texture slot.** Every slot upgraded is one the GLB already filled, so the material's program is unchanged. Shipping the models bare would have meant a recompile the first time each was drawn.
+
+The exchange is one-way: once installed, full-resolution maps stay for the session, so back-scrolling and direct navigation always find them. A jump straight to a section holds the move until that section's own maps exist rather than flying to a degraded close-up (`ensureSectionAssets`); the sky is deliberately not part of that wait, because it is the light on the room rather than the subject of the shot, and including it made a click on a 400kbit connection wait 46 seconds instead of 8.
+
+`asset-sources/` holds the originals, and `scripts/build-prop-assets.mjs` / `scripts/build-sky-boot.mjs` regenerate everything that ships. `digital-stone.glb` carries no textures at all: `useStonePedestal` replaces its material and re-projects its UVs, so the maps it used to embed were downloaded on every visit and never sampled.
 
 ### Progressive loading
 
@@ -660,6 +678,10 @@ Do not introduce loading screens between Film, Digital, and the hero. If an asse
 
 ### 3D asset optimization
 Models should be optimized before entering the application: polygon reduction, mesh compression, texture compression, removal of invisible geometry, material consolidation, efficient UV layouts, shared materials, removal of unused animation data, and appropriate LOD generation.
+
+Measured, and worth knowing before reaching for any of the above again: these GLBs are already meshopt-compressed and quantized, and their textures are already WebP. Re-encoding those textures at their native size made two of the three files LARGER, so on this project resolution is the only remaining lever on texture bytes — and geometry, not texture, is the bulk of every prop file.
+
+**KTX2 was measured and rejected** (2026-09-16), for the record rather than as a verdict for all time. ETC1S barely moved the bytes (2106KB to 2071KB) while the Basis transcoder adds 260KB gzipped to the critical path, and UASTC was four times worse at 9284KB. In its favour: transcode and upload took 103ms against WebP's 152ms, and VRAM fell from about 48MB to 12MB. If mobile GPU memory ever becomes a demonstrated bottleneck, that trade becomes interesting; while hero readiness is the objective, it is a regression.
 
 ### Asset formats
 Use modern, efficient formats where browser support permits. 3D assets should generally use optimized glTF/GLB workflows. Textures should use compressed formats appropriate to the target browsers and devices. Video should use efficient web-compatible encoding and appropriately sized variants.

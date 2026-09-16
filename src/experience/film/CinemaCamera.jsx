@@ -8,6 +8,7 @@ import {
   measure,
   useDarkStateDimming,
   useModel,
+  usePropTextures,
   useTreatedMaterials,
 } from '../models/modelAssets.js'
 import { createScreenVideoMaterial } from '../digital/screenVideoMaterial.js'
@@ -549,6 +550,9 @@ export default function CinemaCamera() {
   const tripod = useFittedTripod()
   const lensAxisCorrection = cameraBody.userData.lensAxisCorrection ?? 0
   useTreatedMaterials(cameraBody, cameraBodyTreatment)
+  // The body's real maps arrive after the reveal — see `propTextureUpgrades.js`.
+  // The tripod has no textures of its own to upgrade.
+  usePropTextures('camera', cameraBody)
   useTreatedMaterials(tripod, cameraStandTreatment)
   // Dark-state only — see `useDarkStateDimming`. Lighter-handed than the
   // monitor's: this body is already the darkest object in the opening

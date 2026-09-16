@@ -4,7 +4,7 @@ import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.j
 import { MODEL_URLS } from '../models/modelAssets.js'
 import { preloadScannedStone, scannedStoneUrls } from '../materials/scannedStone.js'
 import { assetUrl } from '../assets/assetUrl.js'
-import { SKY_HDRI_URL, loadSkyTexture } from '../lighting/skyEnvironment.js'
+import { SKY_BOOT_URL, loadSkyTexture } from '../lighting/skyEnvironment.js'
 
 /**
  * Everything the opening frame needs, fetched before the scene is built.
@@ -50,7 +50,7 @@ const CRITICAL_STONE_SETS = ['walls', 'floors', 'columns']
 if (import.meta.env.DEV) {
   import('./heroAssets.js').then(({ HERO_PRELOADS }) => {
     const preloaded = new Set(HERO_PRELOADS.map((p) => assetUrl(p.path)))
-    const waited = new Set([...CRITICAL_MODEL_URLS, ...CRITICAL_STONE_SETS.flatMap(scannedStoneUrls), SKY_HDRI_URL])
+    const waited = new Set([...CRITICAL_MODEL_URLS, ...CRITICAL_STONE_SETS.flatMap(scannedStoneUrls), SKY_BOOT_URL])
     const missing = [...waited].filter((u) => !preloaded.has(u))
     const extra = [...preloaded].filter((u) => !waited.has(u))
     if (missing.length || extra.length) {

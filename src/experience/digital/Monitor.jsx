@@ -8,6 +8,7 @@ import {
   measure,
   useDarkStateDimming,
   useModel,
+  usePropTextures,
   useTreatedMaterials,
 } from '../models/modelAssets.js'
 import { contentCondition, contentValue } from '../timeline/contentProgress.js'
@@ -507,6 +508,11 @@ export default function Monitor() {
   // in the same night interior as the walls and columns beside them,
   // rather than reading as brighter objects pasted into it.
   useTreatedMaterials(model.holder, casingTreatment)
+  // As with the film camera: the casing's full-resolution maps are installed
+  // well before the monitor is approached. The pedestal is not here — its
+  // material and UVs are replaced outright by `useStonePedestal`, so the maps
+  // its GLB used to carry are not built into the shipped file at all.
+  usePropTextures('monitor', model.holder)
   // The pedestal is deliberately NOT treated or dimmed any more. Both existed
   // to pull a foreign asset's own texture into line with the room; it is now
   // built from the floor's own material, and any per-prop adjustment would
