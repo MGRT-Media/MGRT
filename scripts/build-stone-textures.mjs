@@ -7,14 +7,31 @@
  * them faithful makes them LARGER, and the floor's saves 4.6kB, which is not
  * worth a second encoding of a colour map the camera sits inches from.
  *
- * **The setting that matters is the chroma subsampling, not the quality.**
- * WebP's lossy mode defaults to 4:2:0 — it halves the resolution of the two
- * chroma planes, which is fine for a photograph, where chroma carries little
- * detail, and wrong for these files, where the channels ARE the data: a normal
- * map's red and green are the surface's X and Y tilt, and the ORM's red and
- * green are ambient occlusion and roughness. `smartSubsample` keeps 4:4:4, and
- * measured against the originals it beats 4:2:0 on quality per byte for every
- * one of these six maps.
+ * **What saves the bytes is the quality setting**, nothing cleverer: the
+ * originals were encoded higher than these maps need, and normals at 90 with
+ * ORM at 85 takes the six from 1,546,954 to 1,294,360 bytes.
+ *
+ * `smartSubsample` is NOT a 4:4:4 switch, and an earlier version of this
+ * comment wrongly said it was. Lossy WebP is VP8, and VP8 is always YUV 4:2:0
+ * — the bitstream has no subsampling field to set. The option maps to
+ * libwebp's `use_sharp_yuv`, a better-conditioned 4:2:0 chroma downsample.
+ * Measured on an alternating-column image whose two colours differ only in
+ * chroma, the default encoder keeps 0% of that per-pixel chroma and this
+ * option keeps 6.6%; true 4:4:4 (lossless VP8L) keeps 100%. A refinement of
+ * 4:2:0, not an escape from it.
+ *
+ * It stays because at MATCHED FILE SIZE it is the better encode for five of
+ * the six — walls/normal 1.534 against 1.594 degrees of angular error,
+ * columns/normal 1.43 against 1.844, floors/normal 0.785 against 0.821,
+ * columns/orm 1.570 against 1.703, floors/orm 1.377 against 1.469 — the
+ * exception being walls/orm, at 1.123 against 1.079. It costs about 93KB
+ * across the six at a given quality, so the quality drop alone would have
+ * saved ~345KB and this hands ~93KB of that back for lower chroma error.
+ *
+ * Why chroma matters here at all: in these files the channels ARE the data. A
+ * normal map's red and green are the surface's X and Y tilt, and the ORM's red
+ * and green are ambient occlusion and roughness (it is bound to `aoMap` AND
+ * `roughnessMap` — see `stoneWallMaterial.js`).
  *
  * Quality is then chosen per map type, from how the map is used rather than
  * from one number applied to everything:
@@ -60,12 +77,14 @@ for (const set of SETS) {
     const out = join(PUBLIC, set, `${name}.webp`)
     const was = statSync(source).size
     await sharp(source)
+      // smartSubsample = libwebp's use_sharp_yuv: a sharper 4:2:0 chroma
+      // downsample, not 4:4:4. See the note above.
       .webp({ quality, smartSubsample: true, effort: 6 })
       .toFile(out)
     const now = statSync(out).size
     before += was
     after += now
-    console.log(`${set}/${name}`.padEnd(16) + `q${quality} 4:4:4  ${was} -> ${now} B  (${((now - was) / 1000).toFixed(1)} kB)`)
+    console.log(`${set}/${name}`.padEnd(16) + `q${quality} sharp-yuv  ${was} -> ${now} B  (${((now - was) / 1000).toFixed(1)} kB)`)
   }
 }
 console.log(`\ntotal ${before} -> ${after} B, saving ${before - after} B = ${((before - after) / 1000).toFixed(1)} kB`)

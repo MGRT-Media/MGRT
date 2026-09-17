@@ -688,13 +688,33 @@ startup. Six of them were re-encoded, saving **252.6 kB** with no change of
 resolution, and `scripts/build-stone-textures.mjs` rebuilds them from
 `asset-sources/textures/`.
 
-**The setting that mattered was the chroma subsampling, not the quality.** WebP's
-lossy mode defaults to 4:2:0, which halves the resolution of the two chroma
-planes. That is right for a photograph and wrong for these files, because here
-the channels ARE the data: a normal map's red and green are the surface's X and
-Y tilt, and the ORM's red and green are ambient occlusion and roughness (it is
-bound to `aoMap` AND `roughnessMap`; see `stoneWallMaterial.js`). Encoding 4:4:4
-beat 4:2:0 on quality per byte for all six.
+**The saving is the quality setting.** Normals at 90 and ORM at 85, against
+originals encoded higher than these maps need. Encoder: libwebp 1.6.0 through
+sharp 0.35.4 (libvips 8.18.6); every output is a lossy VP8 keyframe, 1024x1024,
+no alpha chunk, verified from the RIFF/VP8 bitstream rather than from the
+decoded channel count.
+
+**A correction.** The first version of this section, and of the generator's
+comments, claimed `smartSubsample` gave 4:4:4 chroma. It does not, and it
+cannot: lossy WebP is VP8, and VP8 is always YUV 4:2:0 — there is no
+subsampling field in the bitstream. The option maps to libwebp's
+`use_sharp_yuv`, a better-conditioned 4:2:0 downsample. Measured on an
+alternating-column image whose two colours differ only in chroma, the default
+encoder retains 0% of that per-pixel chroma, `use_sharp_yuv` retains 6.6%, and
+true 4:4:4 (lossless VP8L) retains 100%.
+
+The option is kept, on measurement rather than on the wrong story that
+introduced it: at MATCHED FILE SIZE it is the better encode for five of the six
+maps (walls/normal 1.534 vs 1.594 degrees of angular error, columns/normal 1.43
+vs 1.844, floors/normal 0.785 vs 0.821, columns/orm 1.570 vs 1.703, floors/orm
+1.377 vs 1.469), the exception being walls/orm at 1.123 vs 1.079. It costs about
+93kB across the six at a given quality, so the quality drop alone would have
+saved ~345kB and this trades ~93kB back for lower chroma error.
+
+Chroma matters here because in these files the channels ARE the data: a normal
+map's red and green are the surface's X and Y tilt, and the ORM's red and green
+are ambient occlusion and roughness (bound to `aoMap` AND `roughnessMap`; see
+`stoneWallMaterial.js`).
 
 ```text
                     before      after    saved   setting
@@ -719,15 +739,53 @@ costs nothing — a q85 ORM moves the wall's mean shading error from 2.623 to
 re-encode LARGER at any faithful quality, and the floor's saves 4.6kB, which is
 not worth a second encoding of a colour map the camera sits inches from.
 
-A warning for whoever measures this next. Comparing renders between texture
-builds is harder than it looks: smaller textures load faster, which changes the
-camera's pose at capture, and the resulting pixel difference dwarfs the texture
-difference. A first pass "showed" q85 failing badly (hero worst tile 58.7
-against a 0.94 noise floor) purely because of that. The fix was a pose-locked
-protocol — warm cache so both builds load at the same speed, a long settle so
-the camera is at rest, several frames per beat, compare the best-matching pair —
-plus the pose-free shading test above, which is what the decision actually rests
-on.
+### Verifying a texture change in this scene
+
+Comparing renders between texture builds is harder than it looks, and two
+different measurement mistakes were made here before the numbers meant anything.
+Smaller textures load faster, which changes the camera's pose at capture, and
+that difference dwarfs the texture's. A first pass "showed" q85 failing badly
+(hero worst tile 58.7 against a 0.94 noise floor) purely for that reason.
+Choosing the best-matching frame pair to compensate is also not sound: it lets
+the comparison pick its own evidence.
+
+The protocol that does work, and what `stoneverify.mjs` in the perf scratchpad
+implements:
+
+- prime the HTTP cache first, so both builds load at the same speed
+- wait for `prop:camera:swapped`, `sky:swapped` and `prop:monitor:swapped` in
+  both, so deferred readiness is identical
+- reach beats through the app's own section targets, which land on exact scroll
+  positions — record them as evidence (both builds: 0 / 765 / 1020 / 1530 of a
+  2430px document)
+- hide the DOM UI for material frames and capture it separately
+- five frames per beat at fixed spacing, median-combined, which cancels dust and
+  grain without freezing the scene
+- compare PREDEFINED matching beats, never a best-matching pair
+- and run the whole thing baseline-against-baseline first, for a noise floor
+
+Against that floor, the adopted encode measures:
+
+```text
+beat      frame mean   worst tile   >8/255      noise floor (mean / worst)
+opening        0.221         0.72       0%           0.035 / 0.67
+film           0.356         4.71    0.23%           1.091 / 23.47
+digital        1.089         8.07    1.12%           4.752 / 35.68
+hero           0.481         0.86       0%           0.032 / 0.50
+```
+
+Film and Digital sit below their own noise floors — those beats play video, so
+they are noisy between any two runs. Opening and hero are the stable ones, and
+there the difference is a diffuse ~0.2-0.5/255 across the stone with no
+localized artifact at all: worst tile at the noise floor, and not one pixel
+differing by more than 8/255. That is what a mild quality reduction should look
+like, and it is what grazing-light crops of the hero wall show at 3x zoom —
+identical micro-relief, highlight placement and roughness character. UI was
+checked separately and is unchanged (fullscreen button max 3/255; the caption's
+peak is its fade state at capture, not its glyphs).
+
+The standalone shading test above is supporting evidence for choosing between
+candidates, not the acceptance check; the renderer comparison is.
 
 **KTX2 was measured and rejected** (2026-09-16), for the record rather than as a verdict for all time. ETC1S barely moved the bytes (2106KB to 2071KB) while the Basis transcoder adds 260KB gzipped to the critical path, and UASTC was four times worse at 9284KB. In its favour: transcode and upload took 103ms against WebP's 152ms, and VRAM fell from about 48MB to 12MB. If mobile GPU memory ever becomes a demonstrated bottleneck, that trade becomes interesting; while hero readiness is the objective, it is a regression.
 
