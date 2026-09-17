@@ -681,6 +681,54 @@ Models should be optimized before entering the application: polygon reduction, m
 
 Measured, and worth knowing before reaching for any of the above again: these GLBs are already meshopt-compressed and quantized, and their textures are already WebP. Re-encoding those textures at their native size made two of the three files LARGER, so on this project resolution is the only remaining lever on texture bytes — and geometry, not texture, is the bulk of every prop file.
 
+### Encoding the room's stone — 2026-09-17
+
+The nine 1024px maps under `public/textures/` are the largest single block in the
+startup. Six of them were re-encoded, saving **252.6 kB** with no change of
+resolution, and `scripts/build-stone-textures.mjs` rebuilds them from
+`asset-sources/textures/`.
+
+**The setting that mattered was the chroma subsampling, not the quality.** WebP's
+lossy mode defaults to 4:2:0, which halves the resolution of the two chroma
+planes. That is right for a photograph and wrong for these files, because here
+the channels ARE the data: a normal map's red and green are the surface's X and
+Y tilt, and the ORM's red and green are ambient occlusion and roughness (it is
+bound to `aoMap` AND `roughnessMap`; see `stoneWallMaterial.js`). Encoding 4:4:4
+beat 4:2:0 on quality per byte for all six.
+
+```text
+                    before      after    saved   setting
+walls/normal       496,038    435,256  -60.8kB  q90 4:4:4
+columns/normal     423,108    360,716  -62.4kB  q90 4:4:4
+floors/normal      185,342    142,680  -42.7kB  q90 4:4:4
+walls/orm           69,550     44,508  -25.0kB  q85 4:4:4
+columns/orm        201,184    178,176  -23.0kB  q85 4:4:4
+floors/orm         171,732    133,024  -38.7kB  q85 4:4:4
+TOTAL            1,546,954  1,294,360  -252.6kB
+```
+
+Quality is per map type, chosen from how each is used. NORMALS hold at 90:
+shading the maps directly under the room's own sun, q85 doubles the share of
+texels whose luminance moves by more than 8/255 (walls 4.6% -> 12.8%, columns
+5.3% -> 13.8%), and that is the micro-relief the stone is made of, so the extra
+~259kB q85 offered was refused. ORM drops to 85 because the same test says it
+costs nothing — a q85 ORM moves the wall's mean shading error from 2.623 to
+2.655 of 255 — since occlusion and roughness are low-frequency terms.
+
+**Albedo maps are untouched and should stay that way.** Walls' and columns'
+re-encode LARGER at any faithful quality, and the floor's saves 4.6kB, which is
+not worth a second encoding of a colour map the camera sits inches from.
+
+A warning for whoever measures this next. Comparing renders between texture
+builds is harder than it looks: smaller textures load faster, which changes the
+camera's pose at capture, and the resulting pixel difference dwarfs the texture
+difference. A first pass "showed" q85 failing badly (hero worst tile 58.7
+against a 0.94 noise floor) purely because of that. The fix was a pose-locked
+protocol — warm cache so both builds load at the same speed, a long settle so
+the camera is at rest, several frames per beat, compare the best-matching pair —
+plus the pose-free shading test above, which is what the decision actually rests
+on.
+
 **KTX2 was measured and rejected** (2026-09-16), for the record rather than as a verdict for all time. ETC1S barely moved the bytes (2106KB to 2071KB) while the Basis transcoder adds 260KB gzipped to the critical path, and UASTC was four times worse at 9284KB. In its favour: transcode and upload took 103ms against WebP's 152ms, and VRAM fell from about 48MB to 12MB. If mobile GPU memory ever becomes a demonstrated bottleneck, that trade becomes interesting; while hero readiness is the objective, it is a regression.
 
 ### Asset formats
@@ -986,6 +1034,24 @@ Cold, Slow 4G                  21.3 s
 Warm cache (second load)       1.30 s, 0 bytes transferred
 Transferred before the reveal  4,250,696 B (4250.7 kB / 4151.1 KiB), 24 transfers
 ```
+
+The stone re-encode above landed after those production figures were taken, and
+is not in them. Measured locally against the same build without it, interleaved:
+
+```text
+                        baseline        stone re-encode
+transferred (reveal)   5,103,034 B      4,850,435 B   -252,599 B
+cold local               1068/1083 ms      977/947 ms
+Fast 4G                  5337/5323 ms    4978/4972 ms
+Slow 4G                     25,189 ms       23,993 ms
+phone viewport Fast 4G       5232 ms          4868 ms
+warm cache                1066/1004 ms     996/987 ms
+draws / frame                     186              186
+```
+
+Deployed savings will differ: these files are WebP, which the CDN does not
+compress further, so the production reduction should track the file sizes —
+but that is an estimate until measured after the next deploy.
 
 No failed requests and no decoding errors. One 404 remains: `/favicon.ico`,
 which the site does not ship, so every load logs one console error. Harmless,
