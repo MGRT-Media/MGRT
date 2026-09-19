@@ -632,8 +632,10 @@ Loading should be treated as part of the experience rather than as a separate te
 ### Loading philosophy
 
 ```text
-INITIAL REQUEST → DARKNESS → ESSENTIAL ASSETS PREPARE → ENVIRONMENT BECOMES READY → ACT 0 REVEAL
+INITIAL REQUEST → DARKNESS → OPENING IMAGE → ESSENTIAL ASSETS PREPARE → LIVE SCENE READY → CROSSFADE → ACT 0
 ```
+
+The opening image is the scene's own first frame (see "The opening image and the handover" below), so what appears early is the room itself, never a splash, logo or progress indicator.
 
 The visitor should never see unfinished geometry, broken materials, placeholder objects, or incomplete lighting.
 
@@ -672,6 +674,97 @@ ESSENTIAL ENVIRONMENT → INITIAL EXPERIENCE → FILM MEDIA → DIGITAL MEDIA
 ```
 
 The visitor should be able to begin the experience without waiting for every downstream asset to be fully loaded. However, the cinematic timeline must never reveal an asset before its required resources are ready.
+
+### The opening image and the handover (2026-09-19)
+
+The page used to be black until the 3D scene was ready — 4.3s on Fast 4G and
+20s on Slow 4G. It now shows the room from about a second in, as an image, and
+hands over to the live scene when that is ready.
+
+**The image is the first live frame, not a picture of the room.** It is taken
+from the running build by `scripts/capture-opening.mjs` at the moment the
+scene is revealed: progress 0, the boot-quality textures and sky the reveal
+uses, the same post-processing, before any deferred upgrade begins (the script
+refuses to write an image if one has), and with every DOM overlay hidden — the
+wordmark, navigation and grain stay real elements. **Re-run it whenever the
+opening frame changes** — lighting, props, textures, the camera's start pose —
+or the handover will show the difference.
+
+It is captured at DPR 1.75, the renderer's own cap. A first version captured
+at DPR 1 was visibly softer than the live frame on a Retina screen, and since
+depth of field, GTAO and the dust are sized in device pixels it was not just
+softer but differently blurred: the crossfade read as a focus pull.
+
+Three compositions, because the camera's field of view is fixed VERTICALLY: a
+frame captured at a wide aspect, shown with `object-fit: cover`, is exactly
+what the camera renders at any narrower aspect — the same projection, cropped
+at the sides — but never valid for a wider one, where cover would zoom it.
+
+```text
+composition   captured (device px)   serves aspects      bytes
+ultrawide     5600x1575 (32:9)       above 2:1          157,038
+landscape     3150x1575 (2:1)        3:4 to 2:1         122,258
+portrait      1108x1477 (3:4)        below 3:4           38,542
+```
+
+Only the matching `<source>` is fetched, and it is discovered by the preload
+scanner from `index.html`. WebP only: AVIF was 2-4% smaller, not enough for a
+second format and a slower decode. An explicit `rel=preload` for the image was
+tried and moved its decode by 45ms on Fast 4G while making mobile slower — the
+image shares the pipe with the scene's own preloads, and ordering does not
+change that — so it was not kept.
+
+**The handover is the cover's existing fade.** The image lives inside
+`#startup-cover`, whose 400ms fade already was the reveal, so fading it now
+crossfades the image into the canvas rendering the same frame underneath. The
+image occupies exactly the canvas's box — same origin, `100vw`, and the same
+`--app-height`, which `index.html` now sets from its first line so the two
+agree before any bundle has loaded. Measured against the live frame it
+replaces, with UI hidden in both:
+
+```text
+viewport            luminance   mean |diff|   best alignment shift   worst tile
+1440x900 @2          +0.08%       1.29/255         0,0                 4.7
+1920x1080 @1         +0.51%       1.30/255         0,0                 4.7
+390x844 @3           +0.24%       1.53/255         0,0                 7.2
+1024x1366 @2         +0.05%       1.78/255         0,0                 8.7
+2560x1080 @1         +1.09%       1.56/255         0,0                14.0
+```
+
+The residual is the dust, which is frozen in the image and drifting in the
+scene, plus WebP's smoothing of the finest column texture. Tablet portrait is
+the softest match: it enlarges the phone-sized portrait image by ~1.85x.
+
+**Input.** Nothing moves the camera until the crossfade has FINISHED —
+`revealStartupCover`'s `onRevealed` — so image and live frame are never on
+screen out of register. Until then, input is recorded rather than lost:
+`startupCover.js` listens from the main bundle, long before the scene exists,
+and keeps only the latest intent, as a direction. Measured: twelve hard wheel
+ticks while loading become exactly one step (to the intro alignment) after the
+handover, and a section chosen by keyboard before the reveal is flown to once
+it completes. The camera stays at the image's pose throughout. There are no
+non-3D links on `/` to keep working — the wordmark and side navigation both
+drive the timeline.
+
+**Failure** keeps the image and shows the existing retry over it. A missing
+image simply leaves the page black until the reveal, as before.
+
+**Cost**, measured locally against the build without it, same serving:
+
+```text
+                          image visible   live scene     live scene delayed by
+Fast 4G (9 Mbps)              1.43s          4.41s             +100ms
+Slow 4G (1.6 Mbps)            5.87s         20.56s             +600ms
+phone, Fast 4G                1.01s          4.33s              +40ms
+cold local                    0.40s          0.89-1.00s        within noise
+warm cache                    0.40s          0.90-0.97s        none
+```
+
+The delay is the image's bytes sharing the connection with the scene's; a
+smaller, softer image cost less (+66ms / +396ms) but did not match. And the
+experience now accepts input about 0.4s later than before, because it waits
+for the crossfade to end — deliberately, and without dropping what the visitor
+did in the meantime.
 
 ### No visible loading interruptions
 Do not introduce loading screens between Film, Digital, and the hero. If an asset is not ready when its cinematic moment approaches, the implementation should use an appropriate fallback or controlled pacing rather than exposing a broken state.
@@ -712,8 +805,15 @@ bounds set the model's yaw, scale and position.
    on the close-up, which must use the detailed model, so the gate would have
    to wait for the detailed geometry as well as the monitor's full maps.
    Measured on a blank same-origin page so nothing else competes (and matching
-   the app's own gate within 0.3s): textures alone 15.5s on Slow 4G and 3.8s on
-   Fast 4G; with the detailed geometry 25.4s and 6.3s — **+9.9s and +2.4s.**
+   the app's own gate within 0.3s): textures alone 15.5s on a 400 kbps link and
+   3.8s on Slow 4G (1.6 Mbps); with the detailed geometry 25.4s and 6.3s —
+   **+9.9s and +2.4s.** On Fast 4G (9 Mbps) the same 505kB is estimated, not
+   measured, at roughly +0.45s. (Corrected 2026-09-19: these were first
+   recorded as "Slow 4G" and "Fast 4G" because the probe that took them defined
+   those names one step slower than `gpuaudit.mjs` does. Every before/after
+   pair shared one profile, so the comparisons stand; only the labels were
+   wrong. The canonical profiles are Fast 4G = 9 Mbps / 60ms and Slow 4G =
+   1.6 Mbps / 150ms.)
 2. **It is visible at the opening.** Pose-locked, median-combined captures:
    the border-locked LOD's worst tile is 7.84 at the computer against a 0.68
    noise floor — the copper casing's front edge catches a brighter, glossier

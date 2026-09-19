@@ -38,9 +38,10 @@ import {
  * ---
  *
  * The three phases below are the loading gate. There is no loading screen: the
- * page is black from its first frame (`#startup-cover` in `index.html`, see
- * `loading/startupCover.js`), the scene builds and renders underneath that
- * black, and the reveal is the cover fading away. See
+ * page opens on `#startup-cover` in `index.html` — black for an instant, then
+ * the scene's own opening frame as an image (see `loading/startupCover.js`) —
+ * the scene builds and renders underneath it, and the reveal is the cover
+ * crossfading away into the live frame. See
  * `loading/criticalAssets.js` for what is waited on — only what the opening
  * frame shows — and `loading/SceneReady.jsx` for what finally opens the gate.
  *
@@ -84,8 +85,8 @@ export default function Home() {
   // function each render would restart its warm-up every time.
   const handleReady = useCallback(() => {
     setPhase(PHASE.READY)
-    setExperienceRevealed(true)
-    revealStartupCover()
+    // Input opens when the cover has finished crossfading, not as it starts.
+    revealStartupCover({ onRevealed: () => setExperienceRevealed(true) })
   }, [])
 
   if (phase === PHASE.PRELOAD) return null

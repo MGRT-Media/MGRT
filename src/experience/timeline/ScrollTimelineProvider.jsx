@@ -5,7 +5,7 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { createSmoothScroll } from './smoothScroll.js'
 import { setScrollLocked } from './scrollLockEvent.js'
 import { onNavigateRequest } from './sectionNavigationEvent.js'
-import { isExperienceRevealed } from '../loading/startupCover.js'
+import { isExperienceRevealed, onExperienceRevealed, recordStartupIntent, takeStartupIntent } from '../loading/startupCover.js'
 import {
   FILM_FOCUS_T,
   MONITOR_SNAP_T,
@@ -301,6 +301,10 @@ export function ScrollSpacer() {
      * stops the event outright until the reveal.
      */
     const SCROLL_KEYS = new Set(['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End', ' '])
+    // Held, not discarded: `startupCover.js` has already recorded what the
+    // gesture asked for, and it is replayed once the scene is revealed
+    // (`replayHeldIntent`, below). Holding it is what keeps the camera behind
+    // the opening image on the pose the image shows.
     const holdInputUntilRevealed = (event) => {
       if (isExperienceRevealed()) return
       // Keys still work on the startup cover's own retry button.
@@ -1029,10 +1033,32 @@ export function ScrollSpacer() {
 
     // Side navigation clicks fly directly; chapter gestures (below the flight
     // code) keep travelling the journey through `navigateToSection`.
-    const unsubscribeNavigate = onNavigateRequest(flyToSection)
+    // A section request before the reveal is recorded like a gesture rather
+    // than flown: flying would move the camera away from the pose the
+    // startup image shows, behind that image, where nobody can see it go.
+    const onSectionRequest = (sectionKey) => {
+      if (!isExperienceRevealed()) {
+        recordStartupIntent({ type: 'section', key: sectionKey })
+        return
+      }
+      flyToSection(sectionKey)
+    }
+    const unsubscribeNavigate = onNavigateRequest(onSectionRequest)
+
+    // Runs once the startup cover has fully crossfaded into the live scene —
+    // not during the crossfade, where a moving camera would show two frames
+    // out of register — and does exactly one thing: the latest request.
+    const replayHeldIntent = () => {
+      const intent = takeStartupIntent()
+      if (!intent) return
+      if (intent.type === 'section') flyToSection(intent.key)
+      else if (currentChapter === 'intro' && !introCinematicPlayed) playIntroCinematic(INTRO_ALIGN_T)
+    }
+    const unsubscribeRevealed = onExperienceRevealed(replayHeldIntent)
 
     return () => {
       unsubscribeNavigate()
+      unsubscribeRevealed()
       cancelAnimationFrame(raf)
       if (monitorLockTimeoutId) clearTimeout(monitorLockTimeoutId)
       if (lensHoldTimeoutId) clearTimeout(lensHoldTimeoutId)
