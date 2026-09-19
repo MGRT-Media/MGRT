@@ -966,6 +966,39 @@ arrives in 0.40-0.45s over HTTP/2 (production: 0.55s).
   Simulator) is not installed. Every mobile number in this document is Chrome
   device emulation.
 
+### In production (deployed 2026-09-19)
+
+`4074288` is live on mgrtmedia.com (code identical to `9f2ce3b`). The deployed
+`index.html` and all 26 files it references — every JS chunk, the stylesheet,
+the three opening images and the fourteen scene files — are byte-identical to
+the tested build. Measured against production itself, Chrome, same profiles;
+"before" is the previous deployment measured the same morning:
+
+```text
+                      image starts         live 3D                 interactive
+Fast 4G cold       1.93-1.96 -> 0.41s   4.49-4.56 -> 4.41-4.53s   4.91-4.97 -> 4.85-4.98s
+Slow 4G cold            9.71 -> 2.06-2.11s  20.55-20.58 -> 20.61-20.69s  ~21.0 -> 20.99-21.09s
+cached (both)      0.28-0.32 -> 0.26-0.35s  1.18-1.23 -> 0.92-1.01s  1.58-1.65 -> 1.32-1.43s
+phone 4x, Fast 4G          -> 0.36s                  -> 5.80s                 -> 6.21s
+```
+
+- The image is fully in by 0.70s (filmstrip, Fast 4G cold).
+- On Slow 4G production the live scene is ~0.05-0.14s later than before: the one
+  round trip the scene's downloads now wait for, which the local HTTP/2 A/B did
+  not show. Everything else is the same or earlier.
+- Handover against the live frame: 1440x900 @2 mean 1.29/255, 390x844 @3 1.53,
+  best shift 0,0 in both — as locally.
+- A section click right after the handover moves after 0.63s (Film) and
+  1.36-1.38s (Digital) on Fast 4G, 4.49s (Digital) on Slow 4G. The old and new
+  builds wait the same locally over HTTP/2 (1.33-1.38s); it is the wait for
+  that section's full-resolution maps.
+- Wheel input during the load: one step at the handover (15.6s after the
+  input on Slow 4G); forward then back cancels. Failed experience chunk, failed
+  image and reduced motion behave as locally.
+- A normal visit with three section jumps: no failed requests except
+  `/favicon.ico` (404 — the site has none) and the chapter videos' own range
+  requests being aborted by the player, which is normal.
+
 ### Safari 27 (macOS), verified 2026-09-19
 
 Measured from inside Safari by a same-origin harness page (the site in an
