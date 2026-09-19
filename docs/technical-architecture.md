@@ -856,8 +856,12 @@ Fast 4G desktop               1.83 -> 0.34s     4.32 -> 4.05s      4.72 -> 4.45s
 phone 4x, Fast 4G             0.72 -> 0.25s     6.27 -> 5.34s      6.66 -> 5.75s
 phone 4x, Slow 4G             3.38 -> 0.81s    20.67 -> 19.95s    21.08 -> 20.36s
 cold, unthrottled        0.09 -> 0.06-0.09s   1.01-1.29 -> 0.72s   1.33-1.67 -> 1.10-1.11s
-warm cache          0.08-0.09 -> 0.06-0.09s   0.91-1.00 -> 0.71-0.74s  1.32-1.40 -> 1.11-1.13s
 ```
+
+(A "warm cache" row stood here and was wrong: the local HTTP/2 server uses a
+self-signed certificate, and Chrome does not cache responses from an origin
+with a certificate error, so those "warm" loads were cold. Measured cached
+loads are in "Release verification" below.)
 
 "Image visible" is the first frame the image is drawn at non-zero opacity; its
 fade then takes 350ms. Only the matching image downloads in every run.
@@ -888,14 +892,104 @@ input just after handover -> first write         65ms, drawn +20-21ms (both buil
 - On an unthrottled local load the font can still arrive after the scene has
   mounted, and the wordmark then repaints (~50-100ms) around the reveal. On
   every throttled profile it arrives first.
-- Chrome's own FCP does not register the image while it fades from opacity 0:
-  it reports 1.1-3.4s where the image is visible at 0.34s. With reduced motion
-  (no fade) FCP is the image, 0.37s. LCP is ~3.4s in both builds and is not the
-  image — its candidate was not identified. Field metrics will understate how
-  early the page shows something.
-- Safari was not verified: its automation is off on the test machine. The
-  bitmap path is guarded by a runtime test rather than a version number for
-  that reason.
+- Chrome's own FCP does not register the image while it fades from opacity 0,
+  and LCP never can — see "What FCP and LCP measure on this page" below.
+- Safari: see "Release verification" below. The bitmap path is guarded by a
+  runtime test rather than a version number because it could not be verified.
+
+### Release verification (2026-09-19)
+
+**Version.** `9f2ce3b`, clean working tree, one commit ahead of `origin/main`.
+Production (mgrtmedia.com) still serves `9ee9645` — its entry chunk is
+`index-B7L5Saqj.js` and its HTML has no `startHeroPreloads` — so everything
+below labelled HEAD is local, and production numbers are the previous build.
+**Deploying `9f2ce3b` is what brings the HEAD numbers to production.**
+
+**Startup** (Chrome, conditions as above; cached = second load in the same
+profile, over plain HTTP locally so the cache works):
+
+```text
+                          image starts   image full   scene files done   live 3D    interactive
+HEAD  Fast 4G cold           0.33s          0.63s          3.59s          4.03s        4.44s
+prod  Fast 4G cold           1.94s          2.25s          3.77s          4.49-4.56s   4.91-4.97s
+HEAD  Slow 4G cold           2.05s          2.35s         19.78s         19.95s       20.37s
+prod  Slow 4G cold           9.71s         10.02s         20.29s         20.56s       20.98s
+HEAD  cached (either)        0.07s          0.35s          0.03s (0 B)    0.71-0.73s   1.11-1.14s
+prod  cached (either)        0.28-0.32s*    —              0.22s          1.18-1.23s   1.58-1.65s
+```
+
+"Starts" and "full" are from trace filmstrips, which agreed with the page's
+own opacity readings to within 10ms on cold loads (* production's cached
+start is the page's own reading; no filmstrip was taken there). On cached loads the page's
+reading is late (the scene's mount task starves it), and the filmstrip — the
+image full by ~350ms — is the one to trust. The crossfade shows no brightness
+step in the filmstrip. Production is a real network behind the emulation, so
+it is not a like-for-like comparison with local; the earlier local A/B is.
+HEAD starts the scene's downloads only when the image arrives (0.29s / 2.0s),
+and they still finish earlier than production's, which start at ~0.2s.
+
+**The preloads still start** after an image that fails (404: started 6ms
+after the failure), from a cached image (at 11ms), and after a responsive
+switch before the first image loaded (landscape to portrait: only the portrait
+image was fetched, the preloads started when it arrived, each file once).
+
+**Section click right after the handover** waits until that section's
+full-resolution maps are installed (`ensureSectionAssets`), identically in
+HEAD and production. Nothing on screen acknowledges the click meanwhile:
+
+```text
+click 0.3s after handover   Film            Digital
+Fast 4G                     0.50s (0.78)    0.95s (0.93)       (production)
+Slow 4G                     2.14s (2.14)    4.05s (4.07)
+```
+
+**Input during the long loading interval** (Slow 4G, 5s in, trusted events):
+there is nothing to click or focus — until the scene's files have arrived,
+`Home` renders nothing, so the image is the only thing on the page. A click
+where the section marks will be lands on the image and does nothing, and no
+navigation happens later. Twelve wheel ticks (or Arrow/Space) become one step,
+drawn the moment the handover ends — 15.8s after the input. Forward then back
+cancels. This is queued intent, not interaction.
+
+**Also verified (Chrome):** reduced motion (no fade, instant handover), the
+failed experience chunk (image kept, message, focused retry), a failed image
+(normal reveal), stale intent from `/work`, keyboard navigation to a section
+during warm-up, leaving `/` for `/work` during the load and coming back
+(no errors, no stray scroll, one canvas), and rotation — the other image
+arrives in 0.40-0.45s over HTTP/2 (production: 0.55s).
+
+**Not verified, and why:**
+
+- **Safari.** Remote Automation is off (`safaridriver` exits), JavaScript from
+  Apple Events is off, and neither was changed. A same-origin harness page that
+  measures from inside Safari and posts results back was built
+  (`safari/harness.html` in the session scratchpad) and runs in Chrome, but the
+  machine's screen was locked during this session and Safari suspends pages
+  behind the lock screen, so no Safari measurement exists: not the load, the
+  bitmap-or-fallback decision, the handover alignment or the first scroll.
+- **Real mobile.** No iPhone or iPad was connected and Xcode (so the iOS
+  Simulator) is not installed. Every mobile number in this document is Chrome
+  device emulation.
+
+### What FCP and LCP measure on this page
+
+- **LCP is the wordmark, under the cover.** `BUTTON.site-mark`, 2,127 px², is
+  painted when the scene mounts, beneath the startup cover; LCP ignores
+  occlusion. Its time is therefore when the scene's files were ready — 3.4s
+  cold on Fast 4G, 18.3s on Slow 4G, 0.17s cached — not anything the visitor
+  sees.
+- **The opening image can never be the LCP.** Chrome ignores an image that
+  fills the viewport. Isolated test: the same file at 50% of the viewport is
+  reported at 68ms; at 100%, with or without `<picture>`, `alt`,
+  `aria-hidden`, a parent's opacity or `object-fit`, it is not reported at all.
+- **FCP** misses the image while it fades from opacity 0 (it reports 1.0s or
+  3.4s when the filmstrip shows it at 0.33s); with the fade removed it is the
+  image, at 0.34-0.37s.
+
+So for this page: visual readiness is the image (filmstrip), interactive
+readiness is the end of the crossfade, and LCP/FCP in field data describe
+neither. Not changed — the image's full-viewport size is the design, and the
+fade was asked for.
 
 ### No visible loading interruptions
 Do not introduce loading screens between Film, Digital, and the hero. If an asset is not ready when its cinematic moment approaches, the implementation should use an appropriate fallback or controlled pacing rather than exposing a broken state.
