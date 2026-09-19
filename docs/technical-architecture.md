@@ -960,16 +960,54 @@ arrives in 0.40-0.45s over HTTP/2 (production: 0.55s).
 
 **Not verified, and why:**
 
-- **Safari.** Remote Automation is off (`safaridriver` exits), JavaScript from
-  Apple Events is off, and neither was changed. A same-origin harness page that
-  measures from inside Safari and posts results back was built
-  (`safari/harness.html` in the session scratchpad) and runs in Chrome, but the
-  machine's screen was locked during this session and Safari suspends pages
-  behind the lock screen, so no Safari measurement exists: not the load, the
-  bitmap-or-fallback decision, the handover alignment or the first scroll.
+- **Safari** — verified afterwards, see "Safari 27 (macOS)" below; only
+  reduced motion remains untested there.
 - **Real mobile.** No iPhone or iPad was connected and Xcode (so the iOS
   Simulator) is not installed. Every mobile number in this document is Chrome
   device emulation.
+
+### Safari 27 (macOS), verified 2026-09-19
+
+Measured from inside Safari by a same-origin harness page (the site in an
+iframe, results posted back to the test server) — Safari's own automation is
+off and was left off. Local build of `935aa68` (identical output to
+`9f2ce3b`), plain HTTP/1.1 with server-side shaping to the same two profiles,
+fresh port per cold run. Safari is slower than Chrome on this server with the
+old build as well, so compare within this table only.
+
+```text
+                                     old build (prod)   HEAD
+Fast 4G cold: image starts                3.95s          0.31s
+Fast 4G cold: live 3D                     6.81s          6.55s
+Fast 4G cached: image starts / live       0.22s / 1.24s  0.22s / 1.18s
+```
+
+- Background decoding: the runtime flip test passes, so Safari takes the
+  `ImageBitmap` path; the stone renders the right way up.
+- Handover (1728x994 @2): luminance +0.03%, mean difference 1.39/255, best
+  shift 0,0, worst 32px tile 11.9 — the same match as Chrome.
+- Each file is requested ONCE (server log). Safari's resource timing lists a
+  preloaded file twice, once for the preload and once for its reuse; do not
+  read those entries as a second download.
+- First scroll after the handover moves the camera in the next frame. A section
+  click right after the handover moves after 213ms (unthrottled) / 624ms
+  (Fast 4G) — the wait for that section's maps, as in Chrome; a later click,
+  with the maps in, moves in 1-2ms. Input during loading: one step at the
+  handover, nothing clickable before it.
+- Image failure (preloads start 11ms after the 404, normal reveal), experience
+  chunk failure (image kept, message, focused retry), responsive switch
+  (portrait only, preloads after it) and leaving `/` mid-load all behave as in
+  Chrome, with no errors.
+- **The crossfade is cut short in Safari — before and after this work.**
+  WebKit dates a CSS transition from the start of the frame in which the class
+  changed, and the reveal is triggered at the end of a long render, so by the
+  next paint most of the 400ms has "elapsed": the cover reads 0.12-0.21
+  opacity 2-19ms after the class is added and is removed after 81-220ms.
+  Production's build is worse (removed after 5-55ms, no intermediate frames).
+  Because image and live frame match, it reads as a slight pop, not a jump.
+  Likely fix, not yet made: run the fade with the Web Animations API, whose
+  start time is taken at the next frame, instead of a class transition.
+- Not tested: reduced motion (Safari follows the system setting, not changed).
 
 ### What FCP and LCP measure on this page
 
