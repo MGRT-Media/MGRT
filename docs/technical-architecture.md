@@ -681,6 +681,56 @@ Models should be optimized before entering the application: polygon reduction, m
 
 Measured, and worth knowing before reaching for any of the above again: these GLBs are already meshopt-compressed and quantized, and their textures are already WebP. Re-encoding those textures at their native size made two of the three files LARGER, so on this project resolution is the only remaining lever on texture bytes — and geometry, not texture, is the bulk of every prop file.
 
+### A lighter opening computer — tested and rejected, 2026-09-19
+
+The Digital computer is 64,440 triangles and about forty pixels tall at the
+opening, so an opening-only simplified version, swapped for the detailed one
+before the approach, looked like an obvious saving. Measured, it is not worth
+having, for three independent reasons. Recorded so it is not re-attempted
+without new information.
+
+The ceiling was lower than it looked. This model had already been through a
+hidden-geometry pass (see `Monitor.jsx`), so there was no internal geometry
+left to strip, and its geometry is 505,456 bytes over brotli; the rest of the
+751,259-byte file is the 256px boot maps, which are unaffected.
+
+```text
+                         tris   startup file (br)   geometry (br)   fit
+current                64,440        751,259 B        505,456 B
+border-locked LOD      27,414        569,422 B        324,717 B    exact
+aggressive LOD         11,885        413,608 B        168,546 B    pedestal footprint moves ~5.7mm/side
+```
+
+Simplification stalls near 27k triangles with the border locked, because this
+mesh has almost one vertex per triangle — dense UV and normal seams that
+meshopt will not collapse across. Unlocking the border reaches 11.9k but moves
+the vertices `contactFootprint` reads, which would resize the pedestal at the
+swap. `SparkScreen` was left exact in every variant, since its normals and
+bounds set the model's yaw, scale and position.
+
+1. **It makes Digital navigation worse, structurally.** A jump to Digital lands
+   on the close-up, which must use the detailed model, so the gate would have
+   to wait for the detailed geometry as well as the monitor's full maps.
+   Measured on a blank same-origin page so nothing else competes (and matching
+   the app's own gate within 0.3s): textures alone 15.5s on Slow 4G and 3.8s on
+   Fast 4G; with the detailed geometry 25.4s and 6.3s — **+9.9s and +2.4s.**
+2. **It is visible at the opening.** Pose-locked, median-combined captures:
+   the border-locked LOD's worst tile is 7.84 at the computer against a 0.68
+   noise floor — the copper casing's front edge catches a brighter, glossier
+   highlight, because collapsing faces changes which normals and tangents
+   interpolate across them. The aggressive LOD reaches 25.03, opens a hole at
+   the casing's front corner and turns the metal silvery.
+3. **The startup gain does not pay for either.** Border-locked: 178 KiB less
+   before the reveal, Fast 4G 4390 -> 4233ms, Slow 4G 20.1 -> 19.4s. Aggressive:
+   330 KiB, 4390 -> 4114ms, 20.1 -> 18.4s. Against that, total-session bytes
+   rise by 323,619 B (border-locked) or 167,805 B (aggressive), because the
+   detailed geometry still has to follow. Frame time did not change at all —
+   the scene's GPU cost is not in this model's triangles.
+
+The runtime swap was therefore not built. None of the three reasons depends on
+how well the swap is engineered: the navigation cost is set by bytes that must
+arrive before the close-up, and the opening regression is in the asset itself.
+
 ### Encoding the room's stone — 2026-09-17
 
 The nine 1024px maps under `public/textures/` are the largest single block in the
