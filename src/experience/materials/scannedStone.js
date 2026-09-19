@@ -59,6 +59,82 @@ export function scannedStoneUrls(set) {
 const decoded = new Map()
 const inFlight = new Map()
 
+const BITMAP_OPTIONS = { imageOrientation: 'flipY', premultiplyAlpha: 'none', colorSpaceConversion: 'none' }
+
+/**
+ * Whether this browser flips an `ImageBitmap` the way `bitmapTexture` needs —
+ * tested, not assumed from the user agent: a 1x2 image, red over blue, is
+ * decoded with the same options and must come back blue over red. A browser
+ * that ignores the option would otherwise put every stone map on upside down;
+ * one that fails the test simply takes the `<img>` path, as before.
+ */
+let bitmapSupport = null
+function decodesToBitmap() {
+  if (!bitmapSupport) {
+    bitmapSupport = (async () => {
+      if (typeof createImageBitmap === 'undefined') return false
+      const canvas = document.createElement('canvas')
+      canvas.width = 1
+      canvas.height = 2
+      const context = canvas.getContext('2d', { willReadFrequently: true })
+      context.fillStyle = '#f00'
+      context.fillRect(0, 0, 1, 1)
+      context.fillStyle = '#00f'
+      context.fillRect(0, 1, 1, 1)
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve))
+      const bitmap = await createImageBitmap(blob, BITMAP_OPTIONS)
+      context.clearRect(0, 0, 1, 2)
+      context.drawImage(bitmap, 0, 0)
+      bitmap.close()
+      const [red, , blue] = context.getImageData(0, 0, 1, 1).data
+      return blue > 200 && red < 50
+    })().catch(() => false)
+  }
+  return bitmapSupport
+}
+
+function imageTexture(blob) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob)
+    new THREE.TextureLoader().load(
+      url,
+      (texture) => {
+        URL.revokeObjectURL(url)
+        resolve(texture)
+      },
+      undefined,
+      (error) => {
+        URL.revokeObjectURL(url)
+        reject(error)
+      },
+    )
+  })
+}
+
+/**
+ * Decoded to an `ImageBitmap`, off the main thread, as soon as the bytes are
+ * here. Handed to WebGL as a plain `<img>` (what `TextureLoader` makes), each
+ * file was only decoded when first uploaded — synchronously, and all nine in
+ * the one frame before the reveal: 120ms of a 364ms stall (trace, 2026-09-19).
+ * `img.decode()` was tried first and does not help: the upload decodes again.
+ *
+ * The pixels are identical. WebGL ignores `UNPACK_FLIP_Y` and the colour-space
+ * setting for a bitmap, so the flip is done by the decode instead and
+ * `flipY` is cleared; no colour conversion matches the `NONE` three already
+ * uploads these with; the maps are opaque, so premultiplication is moot.
+ *
+ * `fetch`, not an `<img>`, in both branches: the HTML's preload hint for
+ * these files (`heroAssets.js`) is `as: 'fetch'`, and a request of a different
+ * kind would download them twice.
+ */
+async function bitmapTexture(blob) {
+  const bitmap = await createImageBitmap(blob, BITMAP_OPTIONS)
+  const texture = new THREE.Texture(bitmap)
+  texture.flipY = false
+  texture.needsUpdate = true
+  return texture
+}
+
 /**
  * Resolves `null` rather than rejecting on any failure, including the case
  * this project actually hits: a dev server that answers a missing path with
@@ -67,10 +143,19 @@ const inFlight = new Map()
  * which lands here. That removes the three extra probe requests the previous
  * implementation made.
  */
-function loadTexture(url) {
-  return new Promise((resolve) => {
-    new THREE.TextureLoader().load(url, resolve, undefined, () => resolve(null))
-  })
+async function loadTexture(url) {
+  try {
+    const response = await fetch(url)
+    if (!response.ok) return null
+    // Read as bytes, not `response.blob()`: in Chrome, a `blob()` read of a
+    // response served from one of the HTML's preloads failed ("Failed to
+    // fetch") on every throttled test run, which silently dropped the room to
+    // its procedural stone and fetched every map a second time.
+    const blob = new Blob([await response.arrayBuffer()], { type: response.headers.get('content-type') ?? '' })
+    return await ((await decodesToBitmap()) ? bitmapTexture(blob) : imageTexture(blob))
+  } catch {
+    return null
+  }
 }
 
 /**

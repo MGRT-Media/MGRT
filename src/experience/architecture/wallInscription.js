@@ -409,12 +409,36 @@ function loadBrassMaps(material) {
 
 function applyBrassMaps() {
   return preloadBrassMaps().then(({ map, roughnessMap }) => {
+    // Reference assignments only: the stand-ins below gave the material
+    // these two slots from the start, so its program already has them.
     for (const material of inscriptionMaterials) {
       if (map) material.map = map
       if (roughnessMap) material.roughnessMap = roughnessMap
-      if (map || roughnessMap) material.needsUpdate = true
     }
   })
+}
+
+/**
+ * One-texel stand-ins for the two brass maps, in place until they arrive.
+ *
+ * A material's shader depends on which maps it HAS. Built without these two
+ * and given them later, the inscription needed a second program the moment
+ * they landed — a 74ms link in full view of the live room, ~1.8s after the
+ * reveal (trace, 2026-09-19). With a map in each slot from the start the
+ * program is the final one, compiled with everything else before the reveal.
+ *
+ * Each is chosen to change nothing. `agedBrassShader` divides the albedo by
+ * `BRASS_SCAN_MEAN`, so a texel of exactly that value leaves the tint as it
+ * was; the roughness map multiplies by its green channel, so 1 leaves 0.4.
+ * Float and linear so the values are exact, and nearest-filtered because a
+ * float texture is not guaranteed to be linearly filterable.
+ */
+function standInTexture(r, g, b) {
+  const texture = new THREE.DataTexture(new Float32Array([r, g, b, 1]), 1, 1, THREE.RGBAFormat, THREE.FloatType)
+  texture.minFilter = THREE.NearestFilter
+  texture.magFilter = THREE.NearestFilter
+  texture.needsUpdate = true
+  return texture
 }
 
 /**
@@ -627,6 +651,16 @@ function paintMaps(cutoutCanvas, normalCanvas) {
  * the stone behind it — which is the only way this reveal can be the room's
  * reveal instead of a second one running alongside it.
  */
+/** Whether the wordmark's own face is already loaded, rather than only declared. */
+function cormorantLoaded() {
+  return Array.from(document.fonts ?? []).some(
+    (face) =>
+      face.family.replace(/['"]/g, '') === 'Cormorant' &&
+      String(face.weight) === String(FONT_WEIGHT) &&
+      face.status === 'loaded',
+  )
+}
+
 export function createWallInscriptionMaterial(spec = WALL_INSCRIPTION) {
   const width = MAP_WIDTH
   const height = Math.round((MAP_WIDTH * spec.height) / spec.width)
@@ -658,10 +692,17 @@ export function createWallInscriptionMaterial(spec = WALL_INSCRIPTION) {
   // fallback serif is what lands on the wall on a cold load; repainting when
   // the real face resolves corrects it, and both happen long before the
   // ignition ramp makes any of it visible.
-  document.fonts
-    ?.load(`${FONT_WEIGHT} 200px 'Cormorant'`)
-    .then(repaint)
-    .catch(() => {})
+  //
+  // Only when it has not arrived yet, though — which on a real connection it
+  // almost always has: it is a small file requested with the HTML, and the
+  // room is megabytes. A repaint then drew the same letters a second time,
+  // ~100ms inside the task that mounts the scene (trace, 2026-09-19).
+  if (!cormorantLoaded()) {
+    document.fonts
+      ?.load(`${FONT_WEIGHT} 200px 'Cormorant'`)
+      .then(repaint)
+      .catch(() => {})
+  }
 
   const material = new THREE.MeshStandardMaterial({
     // Aged architectural brass, in linear reflectance. The previous tint
@@ -676,6 +717,8 @@ export function createWallInscriptionMaterial(spec = WALL_INSCRIPTION) {
     // Worn rather than polished. At 0.28 each chamfer caught a tight mirror
     // line; old brass scatters that into a broader sheen.
     roughness: 0.4,
+    map: standInTexture(BRASS_SCAN_MEAN.x, BRASS_SCAN_MEAN.y, BRASS_SCAN_MEAN.z),
+    roughnessMap: standInTexture(1, 1, 1),
     normalMap,
     normalScale: new THREE.Vector2(1, 1),
     alphaMap,

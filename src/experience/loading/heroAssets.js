@@ -10,9 +10,9 @@
  * the two cannot drift apart.
  *
  * `as` matters: it has to match how the loader will ask for the file, or the
- * browser fetches it twice. Models and the HDR are read by three's `FileLoader`
- * (fetch), the stone maps by `TextureLoader` (an `<img>` with
- * `crossOrigin="anonymous"`).
+ * browser fetches it twice. Everything here is read with `fetch` — models and
+ * the HDR by three's `FileLoader`, the stone maps by `scannedStone.js`, which
+ * decodes them to `ImageBitmap`s off the main thread.
  *
  * Paths are the plain `public/` ones; the build rewrites them to their
  * fingerprinted names through the same manifest `assetUrl()` uses.
@@ -33,13 +33,13 @@ export const HERO_PRELOADS = [
   { path: '/models/monitor/spark-computer.glb', as: 'fetch' },
   { path: '/models/pedestal/digital-stone.glb', as: 'fetch' },
   { path: '/environment/evening-road-puresky-512.hdr', as: 'fetch' },
-  { path: '/textures/walls/albedo.webp', as: 'image' },
-  { path: '/textures/walls/normal.webp', as: 'image' },
-  { path: '/textures/walls/orm.webp', as: 'image' },
-  { path: '/textures/floors/albedo.webp', as: 'image' },
-  { path: '/textures/floors/normal.webp', as: 'image' },
-  { path: '/textures/floors/orm.webp', as: 'image' },
-  { path: '/textures/columns/albedo.webp', as: 'image' },
-  { path: '/textures/columns/normal.webp', as: 'image' },
-  { path: '/textures/columns/orm.webp', as: 'image' },
+  { path: '/textures/walls/albedo.webp', as: 'fetch' },
+  { path: '/textures/walls/normal.webp', as: 'fetch' },
+  { path: '/textures/walls/orm.webp', as: 'fetch' },
+  { path: '/textures/floors/albedo.webp', as: 'fetch' },
+  { path: '/textures/floors/normal.webp', as: 'fetch' },
+  { path: '/textures/floors/orm.webp', as: 'fetch' },
+  { path: '/textures/columns/albedo.webp', as: 'fetch' },
+  { path: '/textures/columns/normal.webp', as: 'fetch' },
+  { path: '/textures/columns/orm.webp', as: 'fetch' },
 ]

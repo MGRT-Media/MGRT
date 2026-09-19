@@ -712,7 +712,9 @@ scanner from `index.html`. WebP only: AVIF was 2-4% smaller, not enough for a
 second format and a slower decode. An explicit `rel=preload` for the image was
 tried and moved its decode by 45ms on Fast 4G while making mobile slower — the
 image shares the pipe with the scene's own preloads, and ordering does not
-change that — so it was not kept.
+change that — so it was not kept. What does change it is not starting those
+preloads until the image has arrived: see "The startup timeline, measured
+again" below.
 
 **The handover is the cover's existing fade.** The image lives inside
 `#startup-cover`, whose 400ms fade already was the reveal, so fading it now
@@ -749,7 +751,9 @@ drive the timeline.
 **Failure** keeps the image and shows the existing retry over it. A missing
 image simply leaves the page black until the reveal, as before.
 
-**Cost**, measured locally against the build without it, same serving:
+**Cost**, measured locally against the build without it, same serving — an
+HTTP/1.1 test server, which production is not; the next section supersedes
+these absolute times:
 
 ```text
                           image visible   live scene     live scene delayed by
@@ -765,6 +769,133 @@ smaller, softer image cost less (+66ms / +396ms) but did not match. And the
 experience now accepts input about 0.4s later than before, because it waits
 for the crossfade to end — deliberately, and without dropping what the visitor
 did in the meantime.
+
+### The startup timeline, measured again (2026-09-19)
+
+**Conditions.** Every number here is from these, and the earlier tables in this
+document are not comparable with them unless they say the same:
+
+```text
+server    HTTP/2 + TLS, brotli on text/GLB/HDR, immutable assets (production: h2,
+          verified; production's own Slow 4G run matched the local one to ~0.2s)
+Fast 4G   9 Mbps down / 1.5 Mbps up / 60ms latency     (Chrome network emulation)
+Slow 4G   1.6 Mbps down / 750 kbps up / 150ms latency
+CPU       unthrottled M-series Mac, or 4x throttling where it says "phone 4x"
+viewport  desktop 1440x900 @2; phone 390x844 @3, touch
+cache     cold = fresh profile per run; warm = same profile, second load
+```
+
+Earlier reports mixed labels: some ad-hoc runs called 1.6 Mbps "Fast 4G" and
+400 kbps "Slow 4G", and the table above was served over HTTP/1.1. Over
+HTTP/1.1 the six-connection limit happened to queue the scene's files behind
+the image; over HTTP/2 everything starts at once. That is why the image took
+5.87s there and **9.5s** on HTTP/2 and on production.
+
+**Why the image was slow.** Not discovery, decoding, CSS, fonts, JavaScript or
+readiness: it was requested at 170ms and decoded in 30ms. It shared the link.
+The scene's fourteen preload hints were written into `<head>` and started at
+the same instant, so 122 kB competed with ~3.5 MB, and the image finished at
+9.5s on Slow 4G. The hints are now `startHeroPreloads()`, which the image's own
+load (or error) handler calls. The link stays full either way — the image's
+bytes were always on it — so the scene loses at most one round trip, and only
+where nothing else is downloading at that moment (the phone, where the
+portrait image is small). The image never waits for three.js, the app bundle
+or the scene — with the experience's chunk blocked it still appears — only for
+its own decode, which a one-line inline handler reports.
+
+**What the frame before the reveal was doing.** A trace attributed the 364ms
+long frame just before the reveal (not after it: the frame ends before the
+fade starts, so it delayed the reveal rather than freezing a visible frame):
+
+```text
+work in that frame                                   before    after
+nine stone maps decoded synchronously by texImage2D   120ms      0  (decoded to
+                                                                     ImageBitmaps
+                                                                     on workers)
+~20 shader programs linked one at a time              ~180ms   ~80ms wait (compiled
+                                                                     in one batch
+                                                                     beforehand)
+```
+
+- The stone maps are fetched and decoded to `ImageBitmap`s in
+  `scannedStone.js`. `img.decode()` was tried first and does nothing here: the
+  upload decodes again. Bitmaps are flipped at decode, since WebGL ignores
+  `flipY` for them, and the browser is TESTED for that rather than assumed from
+  its user agent (a 1x2 image must come back flipped); one that fails keeps the
+  `<img>` path. Both paths were compared against the previous build, pose-locked
+  and median-combined, and differ from it no more than it differs from itself.
+  The bytes are read with `arrayBuffer()`: `response.blob()` on a response
+  served from one of the HTML's preloads failed ("Failed to fetch") in every
+  throttled Chrome run, which silently fell back to procedural stone and
+  downloaded every map twice (+1.5s).
+- `SceneReady` compiled the scene with no render target bound. three keys a
+  program on that (tone mapping, output colour space), and the composer draws
+  the scene into a target, so every program `gl.compile` built was the wrong
+  variant and the first frame linked the right ones again, serially. It now
+  binds a 1x1 target for the compile.
+
+Found in the same traces, both of them after the handover, in full view:
+
+- **The brass wordmark** gained `map` and `roughnessMap` when its deferred maps
+  arrived, which changed its program: a 74ms link ~1.8s after the reveal. It now
+  starts with one-texel stand-ins that change nothing (the scan's own mean,
+  which the aged-brass shader divides out, and a roughness of 1), so the swap is
+  a reference assignment — the same "never fill a null slot" rule as the props.
+- **Cormorant** is only downloaded when something uses it, which was the scene
+  mounting; its arrival repainted the wordmark's maps, a ~100ms task that landed
+  on the crossfade. `index.html` now asks for both weights once the stylesheet
+  and the opening image have arrived, and the inscription paints once when the
+  face is already loaded instead of painting twice.
+
+**Results**, the build before this work against the build after, same server:
+
+```text
+                              image visible     live 3D ready       interactive
+Slow 4G desktop               9.56 -> 2.06s    20.04 -> 19.94s    20.45 -> 20.34s
+Fast 4G desktop               1.83 -> 0.34s     4.32 -> 4.05s      4.72 -> 4.45s
+phone 4x, Fast 4G             0.72 -> 0.25s     6.27 -> 5.34s      6.66 -> 5.75s
+phone 4x, Slow 4G             3.38 -> 0.81s    20.67 -> 19.95s    21.08 -> 20.36s
+cold, unthrottled        0.09 -> 0.06-0.09s   1.01-1.29 -> 0.72s   1.33-1.67 -> 1.10-1.11s
+warm cache          0.08-0.09 -> 0.06-0.09s   0.91-1.00 -> 0.71-0.74s  1.32-1.40 -> 1.11-1.13s
+```
+
+"Image visible" is the first frame the image is drawn at non-zero opacity; its
+fade then takes 350ms. Only the matching image downloads in every run.
+
+```text
+around the handover (Fast 4G desktop)          before     after
+frame containing the reveal                     191-203ms   67-70ms
+main-thread work in the 4s before the reveal    1174ms      874ms
+worst frame during the crossfade                22ms        22ms
+worst frame in the first 1.5s live               23-24ms     23-25ms
+queued input -> first scroll write               at handover end (0ms), drawn +21ms
+input just after handover -> first write         65ms, drawn +20-21ms (both builds)
+```
+
+**Remaining.**
+
+- The frame before the reveal still waits ~80ms for the GPU process to finish
+  the batch compile, and the post-processing passes (built by the composer
+  after the scene) link ~10 programs on their first use (~50ms). Both are
+  behind the image. `compileAsync` does not help on this platform: its status
+  query is itself a synchronous round trip into the same GPU queue.
+- The React commit that builds the scene (~400ms unthrottled, including the
+  wordmark's canvas maps) is unchanged, also behind the image.
+- Rotating a phone mid-load starts the other composition's image while the
+  scene's files are downloading. Over HTTP/2 it arrives in ~0.45s (0.35s
+  before); over HTTP/1.1 it queues behind six busy connections and took 13s.
+  Production is HTTP/2.
+- On an unthrottled local load the font can still arrive after the scene has
+  mounted, and the wordmark then repaints (~50-100ms) around the reveal. On
+  every throttled profile it arrives first.
+- Chrome's own FCP does not register the image while it fades from opacity 0:
+  it reports 1.1-3.4s where the image is visible at 0.34s. With reduced motion
+  (no fade) FCP is the image, 0.37s. LCP is ~3.4s in both builds and is not the
+  image — its candidate was not identified. Field metrics will understate how
+  early the page shows something.
+- Safari was not verified: its automation is off on the test machine. The
+  bitmap path is guarded by a runtime test rather than a version number for
+  that reason.
 
 ### No visible loading interruptions
 Do not introduce loading screens between Film, Digital, and the hero. If an asset is not ready when its cinematic moment approaches, the implementation should use an appropriate fallback or controlled pacing rather than exposing a broken state.

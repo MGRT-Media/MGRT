@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import * as THREE from 'three'
 import { useThree } from '@react-three/fiber'
 import { whenAssetUpgradesSettled } from './assetReadiness.js'
 import { armShadowFreeze, resetShadowUpdates } from '../lighting/shadowUpdates.js'
@@ -65,12 +66,24 @@ export default function SceneReady({ onReady }) {
       // which on a scene this size is a stall precisely where it is least
       // wanted.
       //
-      // All 48 of this experience's programs are linked here — Film, Digital
-      // and the hero introduce none. `compileAsync` was measured as a
-      // replacement and left the 184ms first-use wait unchanged (it is a
-      // command-buffer flush, not a blocking link call), so the simpler
-      // synchronous call stands.
+      // Compiled against a render target, because that is where the scene is
+      // drawn: `DepthOfField`'s composer renders it off-screen and tones it
+      // afterwards. three keys a program on whether a target is bound (tone
+      // mapping and output colour space), so compiled for the screen, every
+      // program here was the wrong variant. The first frame then threw them
+      // away and linked the right ones one at a time — ~20 serial links, most
+      // of a 250ms stall right before the reveal (trace, 2026-09-19). Any
+      // target will do; it is only bound for the key.
+      //
+      // `compileAsync` would not help: its readiness query is itself a
+      // synchronous round trip into the GPU process's queue, so it waits for
+      // the same compile this frame does.
+      const drawingTo = gl.getRenderTarget()
+      const compileTarget = new THREE.WebGLRenderTarget(1, 1)
+      gl.setRenderTarget(compileTarget)
       gl.compile(scene, camera)
+      gl.setRenderTarget(drawingTo)
+      compileTarget.dispose()
 
       // The room is complete and has been drawn: its shadow map can be held
       // from here rather than redrawn every frame (`shadowUpdates.js`).

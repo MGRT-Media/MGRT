@@ -43,13 +43,37 @@
       the URL keeps `display=swap` so a slow font shows Georgia rather than
       nothing.
     -->
+    <!--
+      The stylesheet only DECLARES the faces; a browser downloads a face when
+      something first uses it. Here that was the scene mounting — the wall
+      inscription asks for it — so the font arrived around the reveal and the
+      inscription repainted its maps then: a ~100ms task in the middle of the
+      handover (trace, 2026-09-19). Asked for here instead, once both the
+      stylesheet and the opening image have arrived (the image calls this
+      too), so it neither competes with the image nor lands on the handover.
+      "Arrived" for the stylesheet is its second load event, as a stylesheet:
+      only then are its faces in document.fonts for load() to find.
+    -->
+    <script>
+      (function () {
+        var arrived = {}
+        var requested = false
+        window.loadCormorant = function (what) {
+          arrived[what] = true
+          if (requested || !arrived.stylesheet || !arrived.image || !document.fonts) return
+          requested = true
+          document.fonts.load("400 1em 'Cormorant'").catch(function () {})
+          document.fonts.load("500 1em 'Cormorant'").catch(function () {})
+        }
+      })()
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       rel="preload"
       as="style"
       href="https://fonts.googleapis.com/css2?family=Cormorant:wght@400;500&display=swap"
-      onload="this.rel='stylesheet'"
+      onload="if (this.rel === 'stylesheet') loadCormorant('stylesheet'); else this.rel = 'stylesheet'"
     />
     <noscript>
       <link
@@ -161,6 +185,9 @@
         this image into the canvas rendering the same frame underneath.
         Discoverable by the preload scanner from here, and only the matching
         <source> is fetched. Decorative — the live scene replaces it.
+        Its arrival (or failure) is what starts the scene's own preloads
+        (startHeroPreloads, written into the head by vite.config.js), so the
+        image has the connection to itself instead of sharing it with ~3.5 MB.
       -->
       <picture class="startup-cover__scene" aria-hidden="true">
         <source media="(max-aspect-ratio: 3/4)" srcset="/src/assets/startup/opening-portrait.webp" type="image/webp" />
@@ -170,7 +197,8 @@
           alt=""
           fetchpriority="high"
           decoding="async"
-          onload="this.decode().catch(function () {}).then(function () { var c = document.getElementById('startup-cover'); if (c) c.classList.add('startup-cover--scene-ready') })"
+          onerror="startHeroPreloads(); loadCormorant('image')"
+          onload="startHeroPreloads(); loadCormorant('image'); this.decode().catch(function () {}).then(function () { var c = document.getElementById('startup-cover'); if (c) c.classList.add('startup-cover--scene-ready') })"
         />
       </picture>
       <p class="startup-cover__message" role="alert" hidden>The experience could not load</p>

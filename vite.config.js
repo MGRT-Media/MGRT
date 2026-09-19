@@ -81,21 +81,47 @@ function fingerprintPublicAssets() {
     },
 
     /**
-     * Writes the opening's own files into the HTML as preload hints.
+     * Writes the opening's own files into the HTML as preload hints, started
+     * the moment the opening image has arrived.
      *
      * Without them nothing is requested until the bundle has downloaded, been
      * parsed and run — the browser cannot know a WebGL scene is about to ask
-     * for a GLB. With them the room's models and stone start with the HTML.
+     * for a GLB. With them the room's models and stone start with the page.
+     *
+     * Not as static `<link>`s, though: those start at the same instant as the
+     * opening image (index.html), and ~3.5 MB of models and stone then share
+     * the link with its 122 kB. On Slow 4G that held the image back to ~9.5s.
+     * So the list is written as `startHeroPreloads()`, which the image's own
+     * load (or error) handler calls. The link stays saturated either way — the
+     * image's bytes were always on it — so the scene loses only a round trip.
      *
      * Hero-critical only (`heroAssets.js`), and each with the `as` its loader
      * will actually use, so nothing is fetched twice and no hint goes unused.
      */
     transformIndexHtml() {
-      return HERO_PRELOADS.map(({ path, as }) => ({
-        tag: 'link',
-        injectTo: 'head-prepend',
-        attrs: { rel: 'preload', as, href: manifest[path] ?? path, crossorigin: '' },
-      }))
+      const hints = HERO_PRELOADS.map(({ path, as }) => ({ href: manifest[path] ?? path, as }))
+      return [
+        {
+          tag: 'script',
+          injectTo: 'head-prepend',
+          children: `(function () {
+  var hints = ${JSON.stringify(hints)}
+  var started = false
+  window.startHeroPreloads = function () {
+    if (started) return
+    started = true
+    hints.forEach(function (hint) {
+      var link = document.createElement('link')
+      link.rel = 'preload'
+      link.as = hint.as
+      link.href = hint.href
+      link.crossOrigin = ''
+      document.head.appendChild(link)
+    })
+  }
+})()`,
+        },
+      ]
     },
     closeBundle() {
       if (!fingerprinting) return
