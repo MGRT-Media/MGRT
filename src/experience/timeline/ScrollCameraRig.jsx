@@ -8,6 +8,7 @@ import {
   sampleCameraPath,
   sampleCameraPathInto,
   setHeroAspect,
+  updateFraming,
 } from './cameraPath.js'
 import { advanceJourney, cameraProgress, renderedProgress, syncJourney } from './journeyProgress.js'
 import { sectionFlightRequest } from './sectionFlightRequest.js'
@@ -98,7 +99,9 @@ export default function ScrollCameraRig() {
     ),
   )
 
-  const heroAspect = useRef(0)
+  // False until the first frame has framed the shot for the real viewport;
+  // that one is set outright, and every change after it is eased.
+  const framingStarted = useRef(false)
   // How far along the path the camera is — the eased quantity. See below.
   const arcPosition = useRef(0)
   // The section flight in progress, if any — see `sectionFlightRoute.js`.
@@ -141,15 +144,30 @@ export default function ScrollCameraRig() {
   }
 
   useFrame(({ camera }, delta) => {
-    // The MGRT hero frames the wordmark by WIDTH, so its stand-off depends on
-    // the viewport's aspect — see `heroDistanceForAspect`. Recomputed only when
-    // the aspect actually changes rather than every frame, since it walks the
-    // wall's plan curve.
-    if (camera.aspect !== heroAspect.current) {
-      const progressBefore = heroAspect.current === 0 ? 0 : pathProgressAtArcLength(arcPosition.current)
-      heroAspect.current = camera.aspect
+    /**
+     * Responsive framing: the hero's stand-off and the Film/Digital pull-backs
+     * are all solved from the viewport's aspect (`updateFraming`,
+     * `applyFramingOffset`), and all of them are eased into place.
+     *
+     * The shots are re-framed by metres of camera travel — at 1440x900 ->
+     * 393x852, 1.65 for Digital and 3.8 for the hero — and a resize applies
+     * that in the frame the new aspect arrives, where the camera is otherwise
+     * settled and its damping has nothing to smooth. Straight through, that
+     * was a jump (measured: a single frame carrying the whole 3.8 at the
+     * hero, which is how the hero behaved before the other two joined it).
+     * Easing turns it into a short glide instead, with no change to where the
+     * camera ends up.
+     *
+     * The progress the path is at is preserved across every one of these
+     * updates, exactly as it was when this ran once per resize: the
+     * geometry moves underneath, the visitor's place in the journey does not.
+     */
+    if (!framingStarted.current) {
+      framingStarted.current = true
       setHeroAspect(camera.aspect)
-      arcPosition.current = pathArcLengthAt(progressBefore)
+    } else {
+      const progressBefore = pathProgressAtArcLength(arcPosition.current)
+      if (updateFraming(camera.aspect, delta)) arcPosition.current = pathArcLengthAt(progressBefore)
     }
 
     const now = performance.now()

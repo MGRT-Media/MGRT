@@ -551,7 +551,7 @@ const HERO_FILL_FRACTION = 0.92
  * (-2.75, -8.76), so the colonnade begins crossing the wordmark. The camera
  * has plenty of physical room beyond that — it is the READ that fails first.
  */
-const HERO_MAX_DISTANCE = 8.6
+const HERO_MAX_DISTANCE = 10.25
 /** Closest approach, so a very wide viewport cannot push into the wall. */
 const HERO_MIN_DISTANCE = 3.4
 
@@ -567,16 +567,135 @@ const HERO_MIN_DISTANCE = 3.4
  * frame keeps a clean, unobstructed view of the wall rather than a complete
  * wordmark seen through a colonnade.
  *
- * 8.6 rather than that 10.25 is the approved framing on the narrowest
- * viewports. It was first set with a margin for a later hand-over that no
- * longer exists, and is kept so the hero's composition on a phone is exactly
- * the one that was signed off.
+ * 8.6 stood here until 2026-09-20 — a margin kept from a hand-over that no
+ * longer exists — and the narrow viewports it capped are exactly the ones that
+ * need the extra reach, so the limit is now the measured one. Nothing changes
+ * on a landscape viewport: the width fit asks for 5.8 units at 16:9 and 7.7 at
+ * 4:3, both well inside either figure. Past this the colonnade starts crossing
+ * the wordmark, which is why the clamp cannot simply be lifted — see the
+ * portrait note on `heroDistanceForAspect`.
  */
 export function heroDistanceForAspect(aspect) {
   const halfFovY = THREE.MathUtils.degToRad(45 / 2)
   const halfFovX = Math.atan(Math.tan(halfFovY) * Math.max(aspect, 0.2))
   const required = HERO_HALF_WIDTH / Math.tan(halfFovX * HERO_FILL_FRACTION)
   return THREE.MathUtils.clamp(required, HERO_MIN_DISTANCE, HERO_MAX_DISTANCE)
+}
+
+/**
+ * Half the horizontal field of view at a given aspect, in radians.
+ *
+ * The vertical field is fixed (45 degrees, `CinematicExperience`'s camera), so
+ * the horizontal one is what the viewport's shape actually changes — and it is
+ * what every width-limited shot in this file is solved against.
+ */
+function halfFovXFor(aspect) {
+  return Math.atan(Math.tan(THREE.MathUtils.degToRad(45 / 2)) * Math.max(aspect, 0.2))
+}
+
+/** Stand-off at which a subject of `halfWidth` fills `fill` of the frame's width. */
+function widthFitDistance(halfWidth, aspect, fill) {
+  return halfWidth / Math.tan(halfFovXFor(aspect) * fill)
+}
+
+/**
+ * How far Film and Digital stand back when the viewport is too narrow for the
+ * shot they were composed for.
+ *
+ * Both were solved against the frame's HEIGHT — the camera's front face fills
+ * ~88% of it, the monitor's screen 92% — which is the binding constraint on
+ * every landscape viewport and on none of the portrait ones. Turn a phone
+ * upright and the horizontal field collapses to about 21 degrees: measured at
+ * 360x800, the monitor ran 3.2x wider than the frame and the camera face 2.4x,
+ * so both were cut off at the sides.
+ *
+ * The fix is the same one the hero has always used, applied to the other two
+ * beats: solve the width as well, and stand back by the difference. The values
+ * below are that difference, and they are ZERO wherever the height still binds
+ * — so every landscape viewport keeps the approved framing exactly, to the
+ * millimetre, and the pull-back grows smoothly as the viewport narrows rather
+ * than switching at a breakpoint.
+ *
+ * Applied as an offset along the shot's own view axis (`applyFramingOffset`)
+ * rather than by moving the keyframes: the descent line, the Film -> Digital
+ * hand-off and the hero approach curve are all constructed from those
+ * keyframes' positions, and a keyframe that moved with the viewport would
+ * change the route itself rather than only how the shot is framed.
+ */
+const FILM_FACE_HALF_EXTENT = CAMERA_ANCHOR.frontFaceHalfHeight
+const MONITOR_SCREEN_HALF_WIDTH = MONITOR_ANCHOR.screenWidth / 2
+
+/**
+ * How much of the frame's width a pulled-back shot is allowed to fill.
+ *
+ * The full width, unlike the fractions the shots were COMPOSED with (0.92 of
+ * the half-FOV for the monitor, 0.99 for the film camera). Those carry the
+ * framing's own breathing room, and solving the width to the same figure stood
+ * the camera back on viewports where nothing was being cut off — 1440x900 lost
+ * a tenth of the monitor that way.
+ *
+ * The margin is already in the subjects these are solved against: the
+ * monitor's is its screen APERTURE, which is wider than the glass inside it
+ * (measured: the visible screen reaches 0.90 of the frame where the aperture
+ * reaches 1.0), and the film camera's is its front face, which is wider than
+ * the lens at its centre. So fitting the aperture to the frame's edge leaves
+ * the thing the visitor is actually looking at comfortably inside it, and the
+ * pull-back stays at exactly zero until a shot would otherwise crop: below 4:3
+ * for the monitor, below ~0.9 for the film camera's face.
+ */
+const FRAMING_WIDTH_FILL = 1
+let filmFramingPull = 0
+let monitorFramingPull = 0
+let filmPullTarget = 0
+let monitorPullTarget = 0
+let heroDistance = 0
+let heroTargetDistance = 0
+
+/**
+ * How quickly the framing follows a viewport change.
+ *
+ * Slower than the camera's own settle, so a re-frame reads as the shot
+ * breathing rather than as the camera being moved; fast enough to have
+ * finished by the time the visitor lets go of the window edge.
+ */
+const FRAMING_DAMP_LAMBDA = 2.5
+
+/**
+ * How far either side of its beat a pull-back is blended in and out.
+ *
+ * The beats are 0.15 apart (`FILM_FOCUS_T` 0.45, `MONITOR_SNAP_T` 0.60), so at
+ * 0.06 each shot owns its own approach and neither reaches the other: the
+ * camera travelling between them is on the authored route, unoffset, and the
+ * offset is only ever fully applied where the visitor comes to rest.
+ */
+const FRAMING_SPAN = 0.06
+
+/** 1 at the beat, easing to 0 at `FRAMING_SPAN` either side. */
+function framingWeight(progress, beatT) {
+  const distance = Math.abs(progress - beatT)
+  if (distance >= FRAMING_SPAN) return 0
+  return 1 - THREE.MathUtils.smoothstep(distance, 0, FRAMING_SPAN)
+}
+
+const framingOffsetScratch = new THREE.Vector3()
+
+/**
+ * Stands the camera back from a narrow viewport's beat, along the shot's own
+ * view axis.
+ *
+ * The look-at is untouched, so the subject stays exactly where it was in the
+ * frame — centred, and square to the camera — and only its size changes. On
+ * every viewport wide enough for the composed framing both pulls are zero and
+ * this is a no-op.
+ */
+function applyFramingOffset(progress, outPosition, outLookAt) {
+  const pull =
+    filmFramingPull * framingWeight(progress, FILM_FOCUS_T) +
+    monitorFramingPull * framingWeight(progress, MONITOR_SNAP_T)
+  if (pull <= 0) return
+  framingOffsetScratch.subVectors(outPosition, outLookAt)
+  if (framingOffsetScratch.lengthSq() < 1e-8) return
+  outPosition.addScaledVector(framingOffsetScratch.normalize(), pull)
 }
 
 /** Camera position for the hero frame at a given stand-off. */
@@ -727,11 +846,71 @@ const heroTraversalKeyframes = [...heroTraversalWaypoints, heroPreDollyKeyframe,
  * `ScrollCameraRig` calls this when the camera's aspect actually changes.
  */
 export function setHeroAspect(aspect) {
+  framingTargets(aspect)
+  heroDistance = heroTargetDistance
+  filmFramingPull = filmPullTarget
+  monitorFramingPull = monitorPullTarget
+  applyHeroDistance()
+}
+
+function framingTargets(aspect) {
+  heroTargetDistance = heroDistanceForAspect(aspect)
+  // Film and Digital are framed from the same aspect, as offsets rather than
+  // keyframes — see `applyFramingOffset`.
+  filmPullTarget = Math.max(
+    0,
+    widthFitDistance(FILM_FACE_HALF_EXTENT, aspect, FRAMING_WIDTH_FILL) - FILM_STOP_FACE_DISTANCE,
+  )
+  monitorPullTarget = Math.max(
+    0,
+    widthFitDistance(MONITOR_SCREEN_HALF_WIDTH, aspect, FRAMING_WIDTH_FILL) - MONITOR_VIEW_DISTANCE,
+  )
+}
+
+function applyHeroDistance() {
   glideLengthsStale = true
   pathArcStale = true
-  const distance = heroDistanceForAspect(aspect)
-  heroKeyframe.position.copy(heroPositionAt(distance))
-  heroPreDollyKeyframe.position.copy(heroPositionAt(distance + HERO_PRE_DOLLY_LEAD))
+  heroKeyframe.position.copy(heroPositionAt(heroDistance))
+  heroPreDollyKeyframe.position.copy(heroPositionAt(heroDistance + HERO_PRE_DOLLY_LEAD))
+}
+
+/**
+ * Follows a viewport change, a frame at a time. Returns true when the framing
+ * actually moved, which is the caller's cue to keep the camera where it was on
+ * the path (`ScrollCameraRig`).
+ *
+ * Eased in METRES of camera travel rather than in aspect: the stand-offs are
+ * ~1/tan(half-FOV) of it, so an evenly-eased aspect still arrives in a rush
+ * where the curve is steepest (measured: 0.41 of Digital's 1.65 in a single
+ * frame). Damping the distances themselves makes every frame a fixed fraction
+ * of what is left, which is what the rest of this camera already does.
+ */
+export function updateFraming(aspect, delta) {
+  framingTargets(aspect)
+  const hero = THREE.MathUtils.damp(heroDistance, heroTargetDistance, FRAMING_DAMP_LAMBDA, delta)
+  const film = THREE.MathUtils.damp(filmFramingPull, filmPullTarget, FRAMING_DAMP_LAMBDA, delta)
+  const monitor = THREE.MathUtils.damp(monitorFramingPull, monitorPullTarget, FRAMING_DAMP_LAMBDA, delta)
+  const moved =
+    Math.abs(hero - heroDistance) > 1e-4 ||
+    Math.abs(film - filmFramingPull) > 1e-5 ||
+    Math.abs(monitor - monitorFramingPull) > 1e-5
+  if (!moved) return false
+  filmFramingPull = film
+  monitorFramingPull = monitor
+  if (Math.abs(hero - heroDistance) > 1e-4) {
+    heroDistance = hero
+    applyHeroDistance()
+  }
+  return true
+}
+
+/** The stand-backs in force, for tests and tooling. */
+export function framingPullsForAspect(aspect) {
+  return {
+    hero: heroDistanceForAspect(aspect),
+    film: Math.max(0, widthFitDistance(FILM_FACE_HALF_EXTENT, aspect, FRAMING_WIDTH_FILL) - FILM_STOP_FACE_DISTANCE),
+    monitor: Math.max(0, widthFitDistance(MONITOR_SCREEN_HALF_WIDTH, aspect, FRAMING_WIDTH_FILL) - MONITOR_VIEW_DISTANCE),
+  }
 }
 
 setHeroAspect(16 / 9)
@@ -1033,7 +1212,10 @@ export function sampleCameraPathInto(progress, outPosition, outLookAt) {
   // The two travelling moves are shaped once, over their whole length — see
   // `GLIDES`. Both use `smootherstep`, so the camera reaches the hero at zero
   // velocity AND zero acceleration.
-  if (sampleGlideInto(p, outPosition, outLookAt)) return
+  if (sampleGlideInto(p, outPosition, outLookAt)) {
+    applyFramingOffset(p, outPosition, outLookAt)
+    return
+  }
 
   let i = 0
   while (i < KEYFRAMES.length - 2 && p > KEYFRAMES[i + 1].t) i += 1
@@ -1049,6 +1231,7 @@ export function sampleCameraPathInto(progress, outPosition, outLookAt) {
 
   segmentPositionInto(i, segmentT, outPosition)
   outLookAt.lerpVectors(a.lookAt, b.lookAt, segmentT)
+  applyFramingOffset(p, outPosition, outLookAt)
 }
 
 /**

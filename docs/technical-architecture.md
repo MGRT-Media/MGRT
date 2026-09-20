@@ -1301,6 +1301,74 @@ Mobile may require different camera positions, different camera targets, differe
 ### Aspect-ratio changes
 The cinematic composition must remain stable across common aspect ratios — portrait phones, landscape phones, tablets, desktop monitors, ultrawide displays. Important objects and typography must not become unintentionally cropped or positioned outside the viewport.
 
+### Framing the three beats by aspect (2026-09-20)
+
+Each beat is composed by fitting its subject to the frame, and until now only
+the hero fitted the WIDTH. Film's stand-off was the camera's front face filling
+~88% of the frame's height, Digital's the monitor's screen aperture filling
+92% of it — both binding on every landscape viewport and on none of the
+portrait ones, where the horizontal field collapses to about 21 degrees.
+Measured at 360x800, before this change:
+
+```text
+subject                    frame widths needed     what the visitor saw
+monitor screen aperture           3.2             video edge to edge, no monitor
+film camera front face            2.4             the film image cut off at the sides
+hero wordmark                     2.6             "GR / EDI"
+```
+
+The fix is one rule applied to all three: solve the width as well, and stand
+back by the difference (`widthFitDistance`, `cameraPath.js`). It is smooth in
+aspect, not a breakpoint, and it is exactly zero wherever the height still
+binds — so every landscape viewport keeps the approved framing (measured:
+1920x1080, 1440x900 and 1280x720 move by at most 2mm, and the aim does not
+change at all at any size).
+
+```text
+                       Film        Digital      hero stand-off
+1920x1080 / 1280x720   unchanged   unchanged    5.80 (unchanged)
+1440x900               unchanged   unchanged    5.98 (unchanged)
+1024x768               unchanged   +0.13        7.68 (unchanged)
+900x900                unchanged   +0.40       10.16 (was clamped to 8.60)
+393x852 portrait       +0.20       +1.65       10.25 (was clamped to 8.60)
+360x800 portrait       +0.21       +1.71       10.25 (was clamped to 8.60)
+```
+
+Film and Digital are applied as an offset along the shot's own view axis
+(`applyFramingOffset`), weighted to peak at the beat and fall to zero 0.06
+either side of it, rather than by moving the keyframes: the descent line, the
+Film -> Digital hand-off and the hero approach curve are all constructed from
+those keyframes, and a keyframe that moved with the viewport would change the
+route rather than the framing. The look-at is untouched, so the subject stays
+centred and square to the camera and only its size changes.
+
+**The hero still cannot be shown whole on a phone.** Its stand-off is capped
+at 10.25 because past that the colonnade crosses the wordmark — verified again
+here by rendering it: at 14 units a column cuts into the letters, and at the
+22.4 units a 360x800 viewport would actually need, a column stands in front of
+the wordmark completely. So the cap was raised from 8.6 (a margin kept from an
+old hand-over) to the measured occlusion limit, which is what makes the hero
+fit completely at 900x900 for the first time, and a phone now sees about half
+its width instead of a third. Fitting it whole on a phone needs a change this
+pass is not allowed to make: a narrower or stacked wordmark for portrait, or a
+hero-only field of view of ~80 degrees (against the project's 45).
+
+**Resizing** re-frames rather than jumps. All three stand-offs are eased in
+metres of camera travel (`updateFraming`, damping 2.5): applied outright they
+arrived in the single frame the new aspect does — 1.65 units at Digital, 3.8
+at the hero, which is how the hero behaved before the other two joined it —
+and eased they glide, with the largest single-frame step measured at 0.01
+(Film), 0.08 (Digital) and 0.20 (hero). Easing the ASPECT instead was tried
+and rejected: the stand-offs are ~1/tan(half-FOV) of it, so an evenly-eased
+aspect still arrives in a rush where that curve is steepest (0.41 of Digital's
+1.65 in one frame).
+
+The visitor's place in the journey is preserved across every one of these
+updates, by the mechanism the resize fix already uses — the path's progress is
+read before the geometry moves and restored after it. Verified at all nine
+breakpoints: Film stays at 0.450, Digital at 0.600 and the hero at 0.900
+through every resize, and scrolling forward and back still works afterwards.
+
 ### Mobile object composition
 Major objects should remain identifiable on small screens. If an object becomes too small to read visually, the composition should change rather than simply accepting the reduced visibility.
 
