@@ -1365,6 +1365,70 @@ VIEWPORT CHANGE → UPDATE CAMERA → UPDATE RENDERER → UPDATE RESPONSIVE COMP
 
 The current cinematic timeline position must remain valid during a resize.
 
+### Keeping the visitor's place across a resize (2026-09-20)
+
+A resize used to move the camera. Progress is a fraction of a scroll range
+that depends on the viewport twice over — the spacer is a multiple of
+`--app-height`, and the trigger ends where the spacer's bottom meets the
+viewport's, so the range is `spacer height - window height` — and nothing
+preserved it. Measured before the fix:
+
+```text
+at Film,    window height 900 -> 700 : progress 0.450 -> 0.390, and restoring
+                                       the height re-fired the lens hold as
+                                       progress "crossed" FILM_FOCUS_T
+at Digital, same resize              : 0.600 -> 0.519
+at the hero, 1440x900 -> 1200x640    : 0.900 -> 0.591
+```
+
+Two separate mechanisms were behind it, and both had to be handled:
+
+1. **The document gets shorter before anything refreshes.** The resize updates
+   `--app-height`, the spacer shrinks with it, and the browser clamps the
+   scroll position into the shorter page. That clamp is an ordinary scroll
+   event, ~300ms before `refreshInit`, so the camera had already moved by the
+   time ScrollTrigger re-measured.
+2. **The refresh itself re-reads the old position through the new numbers.**
+   Left alone, that wrong progress became the next resize's starting point and
+   compounded (0.600 -> 0.519 -> 0.694 over two resizes).
+
+So `ScrollTimelineProvider` holds the camera's own progress across the whole
+change (`holdProgressThroughLayoutChange`): captured on the first sign of a
+viewport change — `resize` in the CAPTURE phase, so it runs before the
+listener that resizes the spacer, plus `visualViewport` resize and
+`orientationchange` — and the trigger's `onUpdate` ignores scroll while the
+hold is on, so neither the clamp nor the refresh is read as the visitor
+scrolling. When the refresh completes (or after `RESIZE_SETTLE_MS`, if none
+comes — a mobile browser bar, a pinch-zoom), the progress is converted back
+into a scroll position with the NEW measurement and the hold ends.
+
+Two details the fix depends on:
+
+- **Lenis is re-measured first.** `lenis.scrollTo` clamps to the page limit
+  Lenis last measured, which after a resize is still the old one, and that
+  silently truncated the restore (asked for 957px, landed on the previous
+  limit of 811).
+- **Moves that tween the scroll position are left alone.** `runJump` and
+  `playIntroCinematic` own the position until they land, and each now ends by
+  syncing scroll to the progress it arrived at (`syncScrollToProgress`), which
+  is also the correction for a resize that happened mid-tween. A section
+  flight is NOT one of those — it parks scroll on its target immediately and
+  flies the camera separately — so it is held like anything at rest, which is
+  what stops a resize from cancelling it as though the visitor had scrolled.
+
+ScrollTrigger still refreshes on every resize, so all responsive measurement
+is unchanged; nothing forces scroll per frame, and the restore happens once,
+after the measurements settle.
+
+Verified in Chrome at Intro, Film, Digital and the hero: height-only,
+width-only, both, nine rapid resizes, DevTools-style viewport changes, mobile
+portrait/landscape rotation, and an address-bar-sized height change — progress
+drift 0.0000 in every case, sampled every frame through the resize as well as
+before and after. Also verified: a resize during a section flight, during the
+intro cinematic and during a chapter gesture all land on their intended beat;
+and the forward and backward journey, step by step, is identical to the build
+before the fix.
+
 ### Browser viewport instability
 Mobile browsers may dynamically change the visible viewport when browser chrome appears or disappears. The implementation must avoid interpreting every transient browser UI change as a meaningful cinematic layout change.
 

@@ -60,6 +60,12 @@ const PROGRESS_EPSILON = 1e-4
 // treats anything past this as the visitor scrolling (see `flyToSection`).
 const FLIGHT_SCROLL_TOLERANCE = 0.003
 
+// How long the camera's position is held after the last viewport change when
+// no ScrollTrigger refresh arrives to release it — see
+// `holdProgressThroughLayoutChange`. Long enough to cover the refresh's own
+// debounce, short enough never to be felt as unresponsive scrolling.
+const RESIZE_SETTLE_MS = 700
+
 function easeLinear(t) {
   return t
 }
@@ -384,6 +390,12 @@ export function ScrollSpacer() {
     let introCinematicActive = false
     let introCinematicPlayed = false
 
+    // --- Viewport resize ---
+    // Set while the scroll position is being put back after a refresh, so the
+    // trigger's `onUpdate` treats that change as the measurement correction it
+    // is rather than as the visitor scrolling.
+    let restoringAfterRefresh = false
+
     // --- Snap 3 (Digital Monitor) — soft lock, unchanged from before ---
     let monitorLockActive = false
     let monitorLockTimeoutId = null
@@ -527,6 +539,13 @@ export function ScrollSpacer() {
         scrub: 0.5,
         onUpdate: (self) => {
           const progress = progressFromScrollFraction(self.progress)
+          // Putting the scroll position back after a resize is not the
+          // visitor scrolling: it must not interrupt a flight, cross into a
+          // lock, or move the camera — see `restoreProgressAfterRefresh`.
+          if (restoringAfterRefresh) {
+            lastRawProgress = progress
+            return
+          }
           // Scroll moving away from a section flight's destination while it
           // flies can only be the visitor scrolling (the flight put scroll
           // there itself). Scroll wins: the flight stops where the camera is
@@ -586,6 +605,105 @@ export function ScrollSpacer() {
     // scroll. Refreshing once after mount, on the next frame, re-measures
     // against final layout without waiting for a resize event to do it.
     const raf = requestAnimationFrame(() => ScrollTrigger.refresh())
+
+    /**
+     * A resize changes what a scroll position MEANS. Keep the visitor where
+     * they are.
+     *
+     * Progress here is a fraction of a scroll range that depends on the
+     * viewport twice over: the spacer is a multiple of `--app-height`, and the
+     * trigger ends where the spacer's bottom meets the viewport's, so the
+     * range is `spacer height - window height`. Make the window shorter and
+     * that range grows. ScrollTrigger's refresh re-measures and keeps the
+     * scroll POSITION, which is the right default for a document — but here
+     * the same position now reads as a different progress, so the camera moved
+     * on its own: measured at Film, 900px -> 700px of window height took
+     * progress 0.450 -> 0.390, and restoring the height then re-fired the lens
+     * hold as progress "crossed" FILM_FOCUS_T on the way back.
+     *
+     * So the camera's own progress is the thing preserved, not the pixel: it
+     * is captured before the refresh and converted back into a scroll position
+     * with the new measurement afterwards. Everything ScrollTrigger, Lenis and
+     * the layout do in between is left alone.
+     *
+     * Not while a move is in flight: `runJump` and `playIntroCinematic` tween
+     * Lenis toward a pixel computed when they started, and that tween owns the
+     * scroll position until it lands. Each one already ends by setting the
+     * progress it arrived at (`arriveAtSection`, the intro's `onComplete`), so
+     * the correction is made there instead — see `syncScrollToProgress`.
+     */
+    const syncScrollToProgress = (trigger, progress) => {
+      if (!trigger) return
+      // Lenis clamps a scrollTo to the page limit it last measured, and after a
+      // resize that limit is the OLD one until its own observer catches up —
+      // which silently truncated the restore (asked for 957px, landed on the
+      // previous limit of 811). Re-measuring first is what makes the target
+      // reachable.
+      smoothScroll.lenis.resize()
+      const target = scrollForProgress(trigger, progress)
+      if (Math.abs(window.scrollY - target) < 0.5) return
+      const wasRestoring = restoringAfterRefresh
+      restoringAfterRefresh = true
+      smoothScroll.lenis.scrollTo(target, { immediate: true, force: true })
+      ScrollTrigger.update()
+      restoringAfterRefresh = wasRestoring
+      lastRawProgress = progress
+    }
+
+    // The progress is captured when the viewport STARTS changing, not when
+    // ScrollTrigger gets around to re-measuring, because the camera has
+    // already moved by then. The resize updates `--app-height`; the spacer is
+    // a multiple of it, so the document gets shorter; the browser clamps the
+    // scroll position into it; and that clamp is an ordinary scroll event. At
+    // the hero, 1440x900 -> 1200x640 moved progress 0.900 -> 0.591 about 300ms
+    // before `refreshInit` fired. Registered in the CAPTURE phase so it runs
+    // ahead of the listener that resizes the spacer (`useViewportHeight`),
+    // whatever order the components mounted in.
+    //
+    // Holding also covers ScrollTrigger's own re-measurement, which updates
+    // the trigger from the old scroll position through the new numbers — left
+    // alone, that wrong progress became the next resize's starting point and
+    // compounded (measured: 0.600 -> 0.519 -> 0.694 at Digital).
+    //
+    // The hold ends with the refresh that follows, or on a timer if no refresh
+    // comes (a mobile browser bar ScrollTrigger decides to ignore, a
+    // pinch-zoom): the camera must never stay frozen.
+    let progressBeforeLayoutChange = null
+    let releaseHoldTimeoutId = null
+    const holdProgressThroughLayoutChange = () => {
+      // Skipped only for the two moves that TWEEN the scroll position
+      // (`runJump`, `playIntroCinematic`): that tween owns the position until
+      // it lands, and corrects itself on arrival. A section flight is not one
+      // of them — it parks scroll on its target immediately and flies the
+      // camera there separately — so it is held like anything else at rest,
+      // which is also what stops the resize's scroll clamp from being read as
+      // the visitor scrolling and cancelling the flight (measured: a resize
+      // mid-flight to Digital landed at 0.787 instead of 0.600).
+      if (introCinematicActive || (isDirectJumpActive && flightTargetT === null)) return
+      if (progressBeforeLayoutChange === null) progressBeforeLayoutChange = scrollProgress.value
+      restoringAfterRefresh = true
+      if (releaseHoldTimeoutId) clearTimeout(releaseHoldTimeoutId)
+      releaseHoldTimeoutId = setTimeout(releaseProgressAfterLayoutChange, RESIZE_SETTLE_MS)
+    }
+    const releaseProgressAfterLayoutChange = () => {
+      if (releaseHoldTimeoutId) {
+        clearTimeout(releaseHoldTimeoutId)
+        releaseHoldTimeoutId = null
+      }
+      const progress = progressBeforeLayoutChange
+      progressBeforeLayoutChange = null
+      if (progress !== null) {
+        syncScrollToProgress(timeline.scrollTrigger, progress)
+        scrollProgress.value = progress
+        lastRawProgress = progress
+      }
+      restoringAfterRefresh = false
+    }
+    window.addEventListener('resize', holdProgressThroughLayoutChange, { capture: true })
+    window.visualViewport?.addEventListener('resize', holdProgressThroughLayoutChange)
+    window.addEventListener('orientationchange', holdProgressThroughLayoutChange, { capture: true })
+    ScrollTrigger.addEventListener('refreshInit', holdProgressThroughLayoutChange)
+    ScrollTrigger.addEventListener('refresh', releaseProgressAfterLayoutChange)
 
     // --- Direct navigation (side nav clicks) ---
     // Tears down whichever driver/lock is currently active so a jump
@@ -694,6 +812,10 @@ export function ScrollSpacer() {
       // next tick can't misread a stale gap as a fresh crossing.
       lastRawProgress = targetT
       scrollProgress.value = targetT
+      // The scroll position this arrived at was computed before any resize
+      // during the move; the progress above is the truth, so the position
+      // follows it.
+      syncScrollToProgress(trigger, targetT)
       if (sectionKey === 'film') engageLensHold(trigger)
       else if (sectionKey === 'digital') engageMonitorLock()
       else if (sectionKey === 'hero') {
@@ -811,6 +933,9 @@ export function ScrollSpacer() {
           introCinematicActive = false
           scrollProgress.value = targetT
           lastRawProgress = targetT
+          // Same as `arriveAtSection`: a resize mid-play leaves this tween
+          // aimed at a pixel from the old measurement.
+          syncScrollToProgress(trigger, targetT)
           if (targetT === 0) {
             // Reverse play landed back at the literal start — ready for
             // the forward cinematic to be triggered again.
@@ -1073,6 +1198,12 @@ export function ScrollSpacer() {
       window.removeEventListener('wheel', onChapterWheel, { capture: true })
       window.removeEventListener('touchstart', onChapterTouchStart, { capture: true })
       window.removeEventListener('touchmove', onChapterTouchMove, { capture: true })
+      window.removeEventListener('resize', holdProgressThroughLayoutChange, { capture: true })
+      window.visualViewport?.removeEventListener('resize', holdProgressThroughLayoutChange)
+      window.removeEventListener('orientationchange', holdProgressThroughLayoutChange, { capture: true })
+      ScrollTrigger.removeEventListener('refreshInit', holdProgressThroughLayoutChange)
+      ScrollTrigger.removeEventListener('refresh', releaseProgressAfterLayoutChange)
+      if (releaseHoldTimeoutId) clearTimeout(releaseHoldTimeoutId)
       timeline.scrollTrigger?.kill()
       timeline.kill()
       smoothScroll.dispose()
