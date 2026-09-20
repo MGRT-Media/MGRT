@@ -1349,6 +1349,21 @@ continuously rather than stepping at a breakpoint. Verified: at 1920x1080,
 1440x900 and 1280x720 all three beats hold their approved pose to 0.000 units
 with the aim and the 45-degree field unchanged.
 
+**The fit lives in the section ANCHORS, and nothing touches the camera after
+it arrives.** It was first applied as an offset weighted by how near the
+journey was to a beat, which put the correction inside — and, because the
+camera eases along the path, after — the final approach. Measured at 393x852:
+scroll settled on Film at 0.450 and the camera then travelled another 1.43
+units and REVERSED direction; at the hero the field went on opening by 37
+degrees for about four seconds after the visitor had stopped. Two things were
+steering: the path, and a fit trailing it. The keyframes now carry the fitted
+stand-off (`applyFraming`), so the route a transition interpolates along
+already ends at the final framing for this viewport, and the hero's field is
+interpolated across the whole Digital -> hero traversal rather than blended in
+at the end. Measured after: no direction reversal on any transition in either
+direction, and the camera is identical frame to frame once it settles
+(0.00000 units, 0.0000 degrees over the two seconds after every arrival).
+
 **The hero also opens its field, and only the hero.** Its stand-off is capped at
 10.25 by the colonnade — rendered from the 22 units a phone's fit asks for, a
 column stands in front of the letters — so past that cap the shot widens its own
@@ -1376,10 +1391,27 @@ approved framing.
 **Re-framing is eased**, in metres of camera travel and degrees of field
 (`updateFraming`, damping 2.5, snapped to the target once within a hair of it),
 so a resize glides rather than jumping, and a viewport that returns to a
-landscape shape lands on exactly the approved framing. The journey's progress
-is preserved across every one of these updates by the mechanism the resize fix
-uses. Verified: Film stays at 0.450, Digital at 0.600 and the hero at 0.900
-across all nine viewports, and scrolling forward and back still works after.
+landscape shape lands on exactly the approved framing. The anchors are written
+on every change, not only when the hero's own distance moves: below 4:3 the
+hero is already at the distance the colonnade allows and stops changing, and
+gating the write on it left Film and Digital on the anchors of whatever
+viewport last moved it (measured: the monitor stuck at its 3:4 framing on a
+phone). The journey's progress is preserved across every one of these updates
+by the mechanism the resize fix uses. Verified: Film stays at 0.450, Digital at
+0.600 and the hero at 0.900 across all nine viewports, and scrolling forward
+and back still works after.
+
+**A mobile browser's chrome is not a layout change.** A phone's address bar
+sliding away grows the viewport by around a tenth, which narrows the aspect,
+which re-fits the shot: measured at 393x852, one address-bar cycle at the hero
+swung its field by 12.9 degrees with the visitor perfectly still. So on a TALL
+viewport a height change under a fifth is treated as chrome and the framing
+keeps the size it had (`framingAspect` in `ScrollCameraRig`); a change of width
+— a rotation, a resized window — or anything larger is adopted at once. Only
+the FIT uses that stabilised size: the renderer and the camera's own aspect
+stay on the real viewport, so the canvas still fills what the visitor sees.
+After the change, an address-bar cycle moves the camera 0.000 units and the
+field 0.00 degrees at both Film and the hero.
 
 ### The canvas follows the visible viewport (2026-09-20)
 

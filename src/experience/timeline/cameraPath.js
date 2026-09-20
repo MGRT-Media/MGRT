@@ -676,6 +676,30 @@ export function heroFovForAspect(aspect) {
   return Math.min(HERO_FOV_MAX_DEGREES, Math.max(45, THREE.MathUtils.radToDeg(halfFovY) * 2))
 }
 
+
+/**
+ * The framing is baked into the section ANCHORS, not applied to the camera
+ * afterwards.
+ *
+ * It used to be an offset weighted by how close the journey was to a beat,
+ * which meant the correction arrived during — and, because the camera eases
+ * along the path, after — the final approach. Measured at 393x852: scroll
+ * settled on Film at 0.450 and the camera then travelled another 1.43 units
+ * and REVERSED direction, and at the hero the field went on opening by 37
+ * degrees for about four seconds after arrival. Two things were steering the
+ * camera: the path, and a fit that trailed it.
+ *
+ * Now the keyframes themselves carry the fitted stand-off, so the path a
+ * transition interpolates along already ends at the final framing for this
+ * viewport, and nothing touches the camera after it gets there. The
+ * corresponding pulls are recomputed only when the viewport changes.
+ */
+const filmAnchorBase = LENS_DIVE_POSITION.clone()
+const monitorAnchorBase = MONITOR_ALIGNED_POSITION.clone()
+/** Backward along each shot's own view axis — the direction a fit stands off in. */
+const filmAnchorBackward = new THREE.Vector3().subVectors(LENS_DIVE_POSITION, LENS_DIVE_LOOKAT).normalize()
+const monitorAnchorBackward = new THREE.Vector3().subVectors(MONITOR_ALIGNED_POSITION, MONITOR_ALIGNED_LOOKAT).normalize()
+
 let filmFramingPull = 0
 let monitorFramingPull = 0
 let filmPullTarget = 0
@@ -693,44 +717,6 @@ let heroFovTarget = 45
  * finished by the time the visitor lets go of the window edge.
  */
 const FRAMING_DAMP_LAMBDA = 2.5
-
-/**
- * How far either side of its beat a pull-back is blended in and out.
- *
- * The beats are 0.15 apart (`FILM_FOCUS_T` 0.45, `MONITOR_SNAP_T` 0.60), so at
- * 0.06 each shot owns its own approach and neither reaches the other: the
- * camera travelling between them is on the authored route, unoffset, and the
- * offset is only ever fully applied where the visitor comes to rest.
- */
-const FRAMING_SPAN = 0.06
-
-/** 1 at the beat, easing to 0 at `FRAMING_SPAN` either side. */
-function framingWeight(progress, beatT) {
-  const distance = Math.abs(progress - beatT)
-  if (distance >= FRAMING_SPAN) return 0
-  return 1 - THREE.MathUtils.smoothstep(distance, 0, FRAMING_SPAN)
-}
-
-const framingOffsetScratch = new THREE.Vector3()
-
-/**
- * Stands the camera back from a narrow viewport's beat, along the shot's own
- * view axis.
- *
- * The look-at is untouched, so the subject stays exactly where it was in the
- * frame — centred, and square to the camera — and only its size changes. On
- * every viewport wide enough for the composed framing both pulls are zero and
- * this is a no-op.
- */
-function applyFramingOffset(progress, outPosition, outLookAt) {
-  const pull =
-    filmFramingPull * framingWeight(progress, FILM_FOCUS_T) +
-    monitorFramingPull * framingWeight(progress, MONITOR_SNAP_T)
-  if (pull <= 0) return
-  framingOffsetScratch.subVectors(outPosition, outLookAt)
-  if (framingOffsetScratch.lengthSq() < 1e-8) return
-  outPosition.addScaledVector(framingOffsetScratch.normalize(), pull)
-}
 
 /** Camera position for the hero frame at a given stand-off. */
 function heroPositionAt(distance) {
@@ -885,12 +871,12 @@ export function setHeroAspect(aspect) {
   filmFramingPull = filmPullTarget
   monitorFramingPull = monitorPullTarget
   heroFov = heroFovTarget
-  applyHeroDistance()
+  applyFraming()
 }
 
 function framingTargets(aspect) {
   // The hero is a keyframe (it dollies along the wall's normal); Film and
-  // Digital are offsets along their own view axis — see `applyFramingOffset`.
+  // Digital stand back along their own view axis — see `applyFraming`.
   // All three are the approved stand-off blended toward the contain-fit as the
   // viewport narrows, and never closer than approved.
   heroTargetDistance = framedDistance({
@@ -914,14 +900,25 @@ function framingTargets(aspect) {
  * approach — the same span the stand-offs blend over, so nothing steps.
  */
 export function framingFov(progress) {
-  return THREE.MathUtils.lerp(45, heroFov, framingWeight(progress, HERO_T))
+  // Across the whole Digital -> hero traversal, so the widening is part of the
+  // move rather than something that happens once the camera has stopped. Zero
+  // everywhere before Digital, and symmetric in reverse.
+  return THREE.MathUtils.lerp(45, heroFov, THREE.MathUtils.smoothstep(progress, MONITOR_SNAP_T, HERO_T))
 }
 
-function applyHeroDistance() {
+/**
+ * Writes the current framing into the keyframes: the hero dollies along the
+ * wall's normal, Film and Digital stand back along their own view axis. Each
+ * keeps its look-at, so every shot stays aimed at the same point and only its
+ * distance changes.
+ */
+function applyFraming() {
   glideLengthsStale = true
   pathArcStale = true
   heroKeyframe.position.copy(heroPositionAt(heroDistance))
   heroPreDollyKeyframe.position.copy(heroPositionAt(heroDistance + HERO_PRE_DOLLY_LEAD))
+  LENS_DIVE_POSITION.copy(filmAnchorBase).addScaledVector(filmAnchorBackward, filmFramingPull)
+  MONITOR_ALIGNED_POSITION.copy(monitorAnchorBase).addScaledVector(monitorAnchorBackward, monitorFramingPull)
 }
 
 /**
@@ -953,10 +950,12 @@ export function updateFraming(aspect, delta) {
   filmFramingPull = film
   monitorFramingPull = monitor
   heroFov = fov
-  if (hero !== heroDistance) {
-    heroDistance = hero
-    applyHeroDistance()
-  }
+  heroDistance = hero
+  // Every time, not only when the hero moved: below 4:3 the hero is already at
+  // the distance the colonnade allows and stops changing, and gating the write
+  // on it left Film and Digital on the anchors of whatever viewport last moved
+  // it (measured: the monitor stuck at its 3:4 framing on a phone).
+  applyFraming()
   return true
 }
 
@@ -1268,10 +1267,7 @@ export function sampleCameraPathInto(progress, outPosition, outLookAt) {
   // The two travelling moves are shaped once, over their whole length — see
   // `GLIDES`. Both use `smootherstep`, so the camera reaches the hero at zero
   // velocity AND zero acceleration.
-  if (sampleGlideInto(p, outPosition, outLookAt)) {
-    applyFramingOffset(p, outPosition, outLookAt)
-    return
-  }
+  if (sampleGlideInto(p, outPosition, outLookAt)) return
 
   let i = 0
   while (i < KEYFRAMES.length - 2 && p > KEYFRAMES[i + 1].t) i += 1
@@ -1287,7 +1283,6 @@ export function sampleCameraPathInto(progress, outPosition, outLookAt) {
 
   segmentPositionInto(i, segmentT, outPosition)
   outLookAt.lerpVectors(a.lookAt, b.lookAt, segmentT)
-  applyFramingOffset(p, outPosition, outLookAt)
 }
 
 /**

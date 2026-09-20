@@ -23,6 +23,36 @@ import { beginContentBlend, endContentBlend, releaseContentBlend } from './conte
 // keeps gliding to its resting spot for a beat after it's already
 // finished turning to face it, rather than both stopping on the same
 // frame.
+/**
+ * The aspect the framing is solved for: the viewport's own, except that a
+ * mobile browser's chrome is not a layout change.
+ *
+ * A phone's address bar sliding away grows the viewport by around a tenth,
+ * which narrows the aspect, which re-fits the shot — measured at 393x852, an
+ * address-bar cycle at the hero swung its field by 12.9 degrees with the
+ * visitor perfectly still. So on a TALL viewport a height change under a fifth
+ * is treated as chrome and the framing keeps the size it had; a change of
+ * width (a rotation, a resized window) or anything larger is a real layout
+ * change and is adopted at once.
+ *
+ * Only the FIT uses this. The renderer and the camera's own aspect stay on the
+ * real viewport, so the canvas always fills what the visitor can see; a phone
+ * with its bar back simply has a little less room above and below a
+ * composition that is already width-bound there.
+ */
+const CHROME_HEIGHT_FRACTION = 0.2
+
+function framingAspect(size, stable) {
+  const sameWidth = size.width === stable.width
+  const tall = size.height > size.width
+  const delta = stable.height > 0 ? Math.abs(size.height - stable.height) / stable.height : 1
+  if (!(sameWidth && tall && delta < CHROME_HEIGHT_FRACTION)) {
+    stable.width = size.width
+    stable.height = size.height
+  }
+  return stable.width / stable.height
+}
+
 const POSITION_DAMP_LAMBDA = 2.6
 const ROTATION_DAMP_LAMBDA = 3.0
 
@@ -103,6 +133,8 @@ export default function ScrollCameraRig() {
   // False until the first frame has framed the shot for the real viewport;
   // that one is set outright, and every change after it is eased.
   const framingStarted = useRef(false)
+  // The viewport the framing is solved for — see `framingAspect`.
+  const stableViewport = useRef({ width: 0, height: 0 })
   // How far along the path the camera is — the eased quantity. See below.
   const arcPosition = useRef(0)
   // The section flight in progress, if any — see `sectionFlightRoute.js`.
@@ -144,7 +176,8 @@ export default function ScrollCameraRig() {
     else angularVelocity.current.set(spinScratch.x / sine, spinScratch.y / sine, spinScratch.z / sine).multiplyScalar(angle / delta)
   }
 
-  useFrame(({ camera }, delta) => {
+  useFrame(({ camera, size }, delta) => {
+
     /**
      * Responsive framing: the hero's stand-off and the Film/Digital pull-backs
      * are all solved from the viewport's aspect (`updateFraming`,
@@ -163,12 +196,13 @@ export default function ScrollCameraRig() {
      * updates, exactly as it was when this ran once per resize: the
      * geometry moves underneath, the visitor's place in the journey does not.
      */
+    const aspect = framingAspect(size, stableViewport.current)
     if (!framingStarted.current) {
       framingStarted.current = true
-      setHeroAspect(camera.aspect)
+      setHeroAspect(aspect)
     } else {
       const progressBefore = pathProgressAtArcLength(arcPosition.current)
-      if (updateFraming(camera.aspect, delta)) arcPosition.current = pathArcLengthAt(progressBefore)
+      if (updateFraming(aspect, delta)) arcPosition.current = pathArcLengthAt(progressBefore)
     }
 
     // The hero opens the field when the room will not let it stand back far
