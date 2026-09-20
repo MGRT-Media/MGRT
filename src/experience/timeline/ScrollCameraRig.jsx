@@ -7,6 +7,7 @@ import {
   pathProgressAtArcLength,
   sampleCameraPath,
   sampleCameraPathInto,
+  framingFov,
   setHeroAspect,
   updateFraming,
 } from './cameraPath.js'
@@ -168,6 +169,15 @@ export default function ScrollCameraRig() {
     } else {
       const progressBefore = pathProgressAtArcLength(arcPosition.current)
       if (updateFraming(camera.aspect, delta)) arcPosition.current = pathArcLengthAt(progressBefore)
+    }
+
+    // The hero opens the field when the room will not let it stand back far
+    // enough for the wordmark — see `heroFovForAspect`. Everywhere else on the
+    // journey this is the project's own 45 degrees.
+    const fov = framingFov(cameraProgress.value)
+    if (Math.abs(camera.fov - fov) > 1e-4) {
+      camera.fov = fov
+      camera.updateProjectionMatrix()
     }
 
     const now = performance.now()

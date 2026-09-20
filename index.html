@@ -5,21 +5,31 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MGRT Media</title>
     <!--
-      The live canvas is sized by --app-height (window.innerHeight, set by
-      useViewportHeight once the experience mounts). The opening image on the
-      startup cover has to occupy exactly that box or the crossfade into the
-      live frame shows a scale jump, so the same value is set here, from the
-      first line of the page, and kept current the same way the hook does it —
-      on a change of width or orientation, never on a toolbar sliding away.
+      The live canvas is sized by --app-height (the visible viewport height,
+      kept current by useViewportHeight once the experience mounts). The
+      opening image on the startup cover has to occupy exactly that box or the
+      crossfade into the live frame shows a scale jump, so the same value is
+      set here, from the first line of the page, and followed the same way the
+      hook follows it.
     -->
     <script>
       (function () {
         var root = document.documentElement
-        var width = window.innerWidth
-        var set = function () { root.style.setProperty('--app-height', window.innerHeight + 'px') }
+        var applied = 0
+        var visible = function () {
+          var viewport = window.visualViewport
+          return viewport && viewport.scale <= 1.01 ? Math.round(viewport.height) : window.innerHeight
+        }
+        var set = function () {
+          var height = visible()
+          if (Math.abs(height - applied) < 2) return
+          applied = height
+          root.style.setProperty('--app-height', height + 'px')
+        }
         set()
-        window.addEventListener('resize', function () { if (window.innerWidth !== width) { width = window.innerWidth; set() } })
+        window.addEventListener('resize', set)
         window.addEventListener('orientationchange', set)
+        if (window.visualViewport) window.visualViewport.addEventListener('resize', set)
       })()
     </script>
     <!--

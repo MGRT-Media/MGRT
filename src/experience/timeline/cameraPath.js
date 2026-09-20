@@ -9,6 +9,7 @@ import {
 } from '../architecture/wallInscription.js'
 import { PILLAR_RING_CENTER, PILLAR_RING_RADIUS } from '../Environment.jsx'
 import { ESTABLISH_T, FILM_FOCUS_T, INTRO_ALIGN_T, JOURNEY_END_T, MONITOR_SNAP_T, HERO_T } from './filmActBeats.js'
+import { containDistance, framedDistance } from './viewportFit.js'
 
 /**
  * Multi-keyframe path, replacing the single straight opening→monitor line
@@ -589,67 +590,100 @@ export function heroDistanceForAspect(aspect) {
  * the horizontal one is what the viewport's shape actually changes — and it is
  * what every width-limited shot in this file is solved against.
  */
-function halfFovXFor(aspect) {
-  return Math.atan(Math.tan(THREE.MathUtils.degToRad(45 / 2)) * Math.max(aspect, 0.2))
-}
+/**
+ * What each stationary beat has to show, as a depth profile in its own shot's
+ * frame — see `viewportFit.js` for what a profile is and why it is not a box.
+ *
+ * Measured off the shipped geometry at the shot's own axes (the harness is
+ * described in docs/technical-architecture.md), because the props are fitted
+ * models rather than the boxes their specs describe, and both are yawed: their
+ * world-aligned sizes are not what the camera sees. Depth is from the shot's
+ * look-at target, negative toward the camera.
+ *
+ * The film camera's TRIPOD is deliberately absent. The approved shot is of the
+ * camera, down its own lens axis; the legs have never been in it, and fitting
+ * them would turn a portrait Film beat into a wide shot of a stand.
+ */
 
-/** Stand-off at which a subject of `halfWidth` fills `fill` of the frame's width. */
-function widthFitDistance(halfWidth, aspect, fill) {
-  return halfWidth / Math.tan(halfFovXFor(aspect) * fill)
-}
+/** The camera's head: hood and lens in front, body and film reel behind. */
+const FILM_COMPOSITION = [
+  { depth: -0.139, halfWidth: 0.079, halfHeight: 0.128 },
+  { depth: -0.039, halfWidth: 0.089, halfHeight: 0.135 },
+  { depth: 0.061, halfWidth: 0.086, halfHeight: 0.135 },
+  { depth: 0.161, halfWidth: 0.131, halfHeight: 0.288 },
+  { depth: 0.261, halfWidth: 0.138, halfHeight: 0.29 },
+  { depth: 0.461, halfWidth: 0.132, halfHeight: 0.29 },
+  { depth: 0.561, halfWidth: 0.134, halfHeight: 0.272 },
+]
+
+/** The monitor entire: case, screen, and the keyboard shelf that reaches forward. */
+const MONITOR_COMPOSITION = [
+  { depth: -0.7, halfWidth: 0.327, halfHeight: 0.364 },
+  { depth: -0.6, halfWidth: 0.453, halfHeight: 0.468 },
+  { depth: -0.4, halfWidth: 0.489, halfHeight: 0.424 },
+  { depth: -0.3, halfWidth: 0.489, halfHeight: 0.439 },
+  { depth: -0.1, halfWidth: 0.456, halfHeight: 0.468 },
+  { depth: 0, halfWidth: 0.452, halfHeight: 0.452 },
+]
 
 /**
- * How far Film and Digital stand back when the viewport is too narrow for the
- * shot they were composed for.
- *
- * Both were solved against the frame's HEIGHT — the camera's front face fills
- * ~88% of it, the monitor's screen 92% — which is the binding constraint on
- * every landscape viewport and on none of the portrait ones. Turn a phone
- * upright and the horizontal field collapses to about 21 degrees: measured at
- * 360x800, the monitor ran 3.2x wider than the frame and the camera face 2.4x,
- * so both were cut off at the sides.
- *
- * The fix is the same one the hero has always used, applied to the other two
- * beats: solve the width as well, and stand back by the difference. The values
- * below are that difference, and they are ZERO wherever the height still binds
- * — so every landscape viewport keeps the approved framing exactly, to the
- * millimetre, and the pull-back grows smoothly as the viewport narrows rather
- * than switching at a breakpoint.
- *
- * Applied as an offset along the shot's own view axis (`applyFramingOffset`)
- * rather than by moving the keyframes: the descent line, the Film -> Digital
- * hand-off and the hero approach curve are all constructed from those
- * keyframes' positions, and a keyframe that moved with the viewport would
- * change the route itself rather than only how the shot is framed.
+ * The wordmark's ink, on its band of wall. One sample: the band is flat, and
+ * the wall's own bow brings its ends up to 0.15 nearer the camera than its
+ * centre, which is the depth carried here.
  */
-const FILM_FACE_HALF_EXTENT = CAMERA_ANCHOR.frontFaceHalfHeight
-const MONITOR_SCREEN_HALF_WIDTH = MONITOR_ANCHOR.screenWidth / 2
+const HERO_COMPOSITION = [
+  { depth: -0.15, halfWidth: (WALL_INSCRIPTION.width * 0.96) / 2, halfHeight: WALL_INSCRIPTION.height / 2 },
+]
 
 /**
- * How much of the frame's width a pulled-back shot is allowed to fill.
- *
- * The full width, unlike the fractions the shots were COMPOSED with (0.92 of
- * the half-FOV for the monitor, 0.99 for the film camera). Those carry the
- * framing's own breathing room, and solving the width to the same figure stood
- * the camera back on viewports where nothing was being cut off — 1440x900 lost
- * a tenth of the monitor that way.
- *
- * The margin is already in the subjects these are solved against: the
- * monitor's is its screen APERTURE, which is wider than the glass inside it
- * (measured: the visible screen reaches 0.90 of the frame where the aperture
- * reaches 1.0), and the film camera's is its front face, which is wider than
- * the lens at its centre. So fitting the aperture to the frame's edge leaves
- * the thing the visitor is actually looking at comfortably inside it, and the
- * pull-back stays at exactly zero until a shot would otherwise crop: below 4:3
- * for the monitor, below ~0.9 for the film camera's face.
+ * The safe area kept around a composition once it is being fitted: 8% on every
+ * side, so nothing important sits against the frame's edge on a phone, where
+ * the browser's own UI and the screen's rounded corners eat into it.
  */
-const FRAMING_WIDTH_FILL = 1
+const FIT_MARGIN = 1.08
+
+const filmFitDistance = (aspect) => containDistance({ profile: FILM_COMPOSITION, aspect, margin: FIT_MARGIN })
+const monitorFitDistance = (aspect) => containDistance({ profile: MONITOR_COMPOSITION, aspect, margin: FIT_MARGIN })
+const heroFitDistance = (aspect) => containDistance({ profile: HERO_COMPOSITION, aspect, margin: FIT_MARGIN })
+
+/**
+ * The vertical field the hero needs when the room will not let it stand back
+ * far enough.
+ *
+ * The wordmark is eight metres of wall and the colonnade closes the sightline
+ * past `HERO_MAX_DISTANCE`: on a phone the fit asks for 22 units and can have
+ * 10.25, and rendered from 22 a column stands in front of the letters.
+ * Widening this shot's own field is the only lever left that does not redesign
+ * the room, and it is applied to this beat alone — `framingFov` blends it in
+ * over the same span the stand-offs use, so every other shot keeps the
+ * project's 45 degrees.
+ *
+ * Horizontally it stays ordinary — 44 degrees across at 360x800 — and the
+ * extra field is spent on the wall above and below the lettering, which is
+ * what a portrait frame has spare.
+ */
+const HERO_FOV_MAX_DEGREES = 84
+
+export function heroFovForAspect(aspect) {
+  const needed = heroFitDistance(aspect)
+  const available = HERO_MAX_DISTANCE
+  if (needed <= available) return 45
+  // The half-width the band still has to cover from the furthest the room
+  // allows, turned back into a vertical field at this aspect.
+  const halfWidth = ((WALL_INSCRIPTION.width * 0.96) / 2) * FIT_MARGIN
+  const halfFovX = Math.atan(halfWidth / available)
+  const halfFovY = Math.atan(Math.tan(halfFovX) / Math.max(aspect, 0.05))
+  return Math.min(HERO_FOV_MAX_DEGREES, Math.max(45, THREE.MathUtils.radToDeg(halfFovY) * 2))
+}
+
 let filmFramingPull = 0
 let monitorFramingPull = 0
 let filmPullTarget = 0
 let monitorPullTarget = 0
 let heroDistance = 0
 let heroTargetDistance = 0
+let heroFov = 45
+let heroFovTarget = 45
 
 /**
  * How quickly the framing follows a viewport change.
@@ -850,21 +884,37 @@ export function setHeroAspect(aspect) {
   heroDistance = heroTargetDistance
   filmFramingPull = filmPullTarget
   monitorFramingPull = monitorPullTarget
+  heroFov = heroFovTarget
   applyHeroDistance()
 }
 
 function framingTargets(aspect) {
-  heroTargetDistance = heroDistanceForAspect(aspect)
-  // Film and Digital are framed from the same aspect, as offsets rather than
-  // keyframes — see `applyFramingOffset`.
-  filmPullTarget = Math.max(
-    0,
-    widthFitDistance(FILM_FACE_HALF_EXTENT, aspect, FRAMING_WIDTH_FILL) - FILM_STOP_FACE_DISTANCE,
-  )
-  monitorPullTarget = Math.max(
-    0,
-    widthFitDistance(MONITOR_SCREEN_HALF_WIDTH, aspect, FRAMING_WIDTH_FILL) - MONITOR_VIEW_DISTANCE,
-  )
+  // The hero is a keyframe (it dollies along the wall's normal); Film and
+  // Digital are offsets along their own view axis — see `applyFramingOffset`.
+  // All three are the approved stand-off blended toward the contain-fit as the
+  // viewport narrows, and never closer than approved.
+  heroTargetDistance = framedDistance({
+    approved: heroDistanceForAspect(aspect),
+    fit: heroFitDistance(aspect),
+    aspect,
+    limit: HERO_MAX_DISTANCE,
+  })
+  filmPullTarget =
+    framedDistance({ approved: FILM_STOP_FACE_DISTANCE, fit: filmFitDistance(aspect), aspect }) -
+    FILM_STOP_FACE_DISTANCE
+  monitorPullTarget =
+    framedDistance({ approved: MONITOR_VIEW_DISTANCE, fit: monitorFitDistance(aspect), aspect }) -
+    MONITOR_VIEW_DISTANCE
+  heroFovTarget = heroFovForAspect(aspect)
+}
+
+/**
+ * The camera's vertical field at a point on the journey: the project's 45
+ * everywhere, opening toward the hero's own only over the last part of the
+ * approach — the same span the stand-offs blend over, so nothing steps.
+ */
+export function framingFov(progress) {
+  return THREE.MathUtils.lerp(45, heroFov, framingWeight(progress, HERO_T))
 }
 
 function applyHeroDistance() {
@@ -887,17 +937,23 @@ function applyHeroDistance() {
  */
 export function updateFraming(aspect, delta) {
   framingTargets(aspect)
-  const hero = THREE.MathUtils.damp(heroDistance, heroTargetDistance, FRAMING_DAMP_LAMBDA, delta)
-  const film = THREE.MathUtils.damp(filmFramingPull, filmPullTarget, FRAMING_DAMP_LAMBDA, delta)
-  const monitor = THREE.MathUtils.damp(monitorFramingPull, monitorPullTarget, FRAMING_DAMP_LAMBDA, delta)
-  const moved =
-    Math.abs(hero - heroDistance) > 1e-4 ||
-    Math.abs(film - filmFramingPull) > 1e-5 ||
-    Math.abs(monitor - monitorFramingPull) > 1e-5
-  if (!moved) return false
+  // Damped toward the target, then snapped once within a hair of it: a
+  // viewport that goes back to a landscape shape has to land on exactly the
+  // approved framing, not on an asymptote a hundredth of a degree short of it.
+  const snap = (value, target, epsilon) => (Math.abs(value - target) < epsilon ? target : value)
+  const hero = snap(THREE.MathUtils.damp(heroDistance, heroTargetDistance, FRAMING_DAMP_LAMBDA, delta), heroTargetDistance, 1e-3)
+  const film = snap(THREE.MathUtils.damp(filmFramingPull, filmPullTarget, FRAMING_DAMP_LAMBDA, delta), filmPullTarget, 1e-4)
+  const monitor = snap(
+    THREE.MathUtils.damp(monitorFramingPull, monitorPullTarget, FRAMING_DAMP_LAMBDA, delta),
+    monitorPullTarget,
+    1e-4,
+  )
+  const fov = snap(THREE.MathUtils.damp(heroFov, heroFovTarget, FRAMING_DAMP_LAMBDA, delta), heroFovTarget, 0.05)
+  if (hero === heroDistance && film === filmFramingPull && monitor === monitorFramingPull && fov === heroFov) return false
   filmFramingPull = film
   monitorFramingPull = monitor
-  if (Math.abs(hero - heroDistance) > 1e-4) {
+  heroFov = fov
+  if (hero !== heroDistance) {
     heroDistance = hero
     applyHeroDistance()
   }

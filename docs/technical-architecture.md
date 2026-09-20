@@ -1301,75 +1301,103 @@ Mobile may require different camera positions, different camera targets, differe
 ### Aspect-ratio changes
 The cinematic composition must remain stable across common aspect ratios — portrait phones, landscape phones, tablets, desktop monitors, ultrawide displays. Important objects and typography must not become unintentionally cropped or positioned outside the viewport.
 
-### Framing the three beats by aspect (2026-09-20)
+### Fitting each beat to the viewport (2026-09-20)
 
-Each beat is composed by fitting its subject to the frame, and until now only
-the hero fitted the WIDTH. Film's stand-off was the camera's front face filling
-~88% of the frame's height, Digital's the monitor's screen aperture filling
-92% of it — both binding on every landscape viewport and on none of the
-portrait ones, where the horizontal field collapses to about 21 degrees.
-Measured at 360x800, before this change:
+Every stationary beat is a head-on shot of one subject, and each was composed
+against the frame's HEIGHT — the camera's front face filling ~88% of it, the
+monitor's screen 92%, the wordmark solved on width but capped. Height binds on
+a landscape viewport and on none of the portrait ones: the vertical field is
+fixed at 45 degrees, so a phone held upright has about 21 degrees across, and
+the sides of each composition fall outside the frame. Measured at 360x800
+before this work, in frame-widths needed: monitor 3.2, film camera 2.4,
+wordmark 2.6.
+
+The system is `viewportFit.js`, and it is the same idea as `object-fit:
+contain`: say what a shot must show, then solve the distance at which all of it
+is inside the frame.
+
+**Compositions are depth PROFILES, in the shot's own frame** — how wide and how
+tall the subject is at each depth, measured off the shipped geometry along the
+shot's axes. Not a bounding box: both props are yawed and neither is a box, and
+a box has to carry the widest part at the nearest depth. The monitor's widest
+point is its case while its nearest is the keyboard shelf 0.66 in front of the
+screen; fitting its box stood the camera 4.5 units back where the profile fits
+it at 3.2.
 
 ```text
-subject                    frame widths needed     what the visitor saw
-monitor screen aperture           3.2             video edge to edge, no monitor
-film camera front face            2.4             the film image cut off at the sides
-hero wordmark                     2.6             "GR / EDI"
+beat      composition                                   profile spans
+Film      camera head: hood and lens, body, film reel   depth -0.14 .. 0.56,
+          (the TRIPOD is not in it — the approved       half 0.08..0.14 wide,
+          shot has never shown the legs)                0.13..0.29 tall
+Digital   the monitor entire: case, screen, and the     depth -0.70 .. 0,
+          keyboard shelf that reaches forward           half 0.33..0.49 wide,
+                                                        0.36..0.47 tall
+hero      the wordmark's ink on its band of wall        one sample at depth
+          (0.96 of the band's width, its full height)   -0.15 (the wall's bow)
 ```
 
-The fix is one rule applied to all three: solve the width as well, and stand
-back by the difference (`widthFitDistance`, `cameraPath.js`). It is smooth in
-aspect, not a breakpoint, and it is exactly zero wherever the height still
-binds — so every landscape viewport keeps the approved framing (measured:
-1920x1080, 1440x900 and 1280x720 move by at most 2mm, and the aim does not
-change at all at any size).
+**The distance** is the largest any sample asks for:
+`max(halfWidth / tanX - depth, halfHeight / tanY - depth)`, where `tanY` is the
+fixed 45-degree half-field and `tanX` follows the live aspect. A **safe area of
+8%** is kept on all four sides (`margin` 1.08), for browser furniture and
+rounded phone corners.
+
+**Desktop is the floor and is untouched.** The approved stand-off is never
+reduced, and the fit is blended in only as the viewport narrows — zero at 16:10
+and wider, full by 4:3, smooth between, so a dragged window re-frames
+continuously rather than stepping at a breakpoint. Verified: at 1920x1080,
+1440x900 and 1280x720 all three beats hold their approved pose to 0.000 units
+with the aim and the 45-degree field unchanged.
+
+**The hero also opens its field, and only the hero.** Its stand-off is capped at
+10.25 by the colonnade — rendered from the 22 units a phone's fit asks for, a
+column stands in front of the letters — so past that cap the shot widens its own
+vertical field instead, up to 84 degrees at 360x800, blended over the same span
+as the stand-offs. Horizontally that is an ordinary 44 degrees across; the extra
+field falls on the wall above and below the lettering, which is what a portrait
+frame has spare. Every other shot keeps the project's 45.
+
+Measured with the real vertices of each composition projected into the frame
+(not bounding boxes, which overstate a yawed mesh by ~10%):
 
 ```text
-                       Film        Digital      hero stand-off
-1920x1080 / 1280x720   unchanged   unchanged    5.80 (unchanged)
-1440x900               unchanged   unchanged    5.98 (unchanged)
-1024x768               unchanged   +0.13        7.68 (unchanged)
-900x900                unchanged   +0.40       10.16 (was clamped to 8.60)
-393x852 portrait       +0.20       +1.65       10.25 (was clamped to 8.60)
-360x800 portrait       +0.21       +1.71       10.25 (was clamped to 8.60)
+                1920  1440  1280  1024x768  768x1024  430x932  393x852  375x812  360x800
+Film          approved close-up      FITS      FITS      FITS     FITS     FITS     FITS
+Digital       approved close-up      FITS      FITS      FITS     FITS     FITS     FITS
+hero          approved framing       FITS      FITS      FITS     FITS     FITS     FITS
 ```
 
-Film and Digital are applied as an offset along the shot's own view axis
-(`applyFramingOffset`), weighted to peak at the beat and fall to zero 0.06
-either side of it, rather than by moving the keyframes: the descent line, the
-Film -> Digital hand-off and the hero approach curve are all constructed from
-those keyframes, and a keyframe that moved with the viewport would change the
-route rather than the framing. The look-at is untouched, so the subject stays
-centred and square to the camera and only its size changes.
+The three landscape columns are the approved close-ups, which deliberately
+crop their subjects — the Film beat is a shot of the lens, not of the camera —
+and are unchanged by this work. One pre-existing detail left alone: at 1920 and
+1280 the outermost 1% of the wordmark's ink sits outside the frame in the
+approved framing.
 
-**The hero still cannot be shown whole on a phone.** Its stand-off is capped
-at 10.25 because past that the colonnade crosses the wordmark — verified again
-here by rendering it: at 14 units a column cuts into the letters, and at the
-22.4 units a 360x800 viewport would actually need, a column stands in front of
-the wordmark completely. So the cap was raised from 8.6 (a margin kept from an
-old hand-over) to the measured occlusion limit, which is what makes the hero
-fit completely at 900x900 for the first time, and a phone now sees about half
-its width instead of a third. Fitting it whole on a phone needs a change this
-pass is not allowed to make: a narrower or stacked wordmark for portrait, or a
-hero-only field of view of ~80 degrees (against the project's 45).
+**Re-framing is eased**, in metres of camera travel and degrees of field
+(`updateFraming`, damping 2.5, snapped to the target once within a hair of it),
+so a resize glides rather than jumping, and a viewport that returns to a
+landscape shape lands on exactly the approved framing. The journey's progress
+is preserved across every one of these updates by the mechanism the resize fix
+uses. Verified: Film stays at 0.450, Digital at 0.600 and the hero at 0.900
+across all nine viewports, and scrolling forward and back still works after.
 
-**Resizing** re-frames rather than jumps. All three stand-offs are eased in
-metres of camera travel (`updateFraming`, damping 2.5): applied outright they
-arrived in the single frame the new aspect does — 1.65 units at Digital, 3.8
-at the hero, which is how the hero behaved before the other two joined it —
-and eased they glide, with the largest single-frame step measured at 0.01
-(Film), 0.08 (Digital) and 0.20 (hero). Easing the ASPECT instead was tried
-and rejected: the stand-offs are ~1/tan(half-FOV) of it, so an evenly-eased
-aspect still arrives in a rush where that curve is steepest (0.41 of Digital's
-1.65 in one frame).
+### The canvas follows the visible viewport (2026-09-20)
 
-The visitor's place in the journey is preserved across every one of these
-updates, by the mechanism the resize fix already uses — the path's progress is
-read before the geometry moves and restored after it. Verified at all nine
-breakpoints: Film stays at 0.450, Digital at 0.600 and the hero at 0.900
-through every resize, and scrolling forward and back still works afterwards.
+`--app-height` — which sizes the canvas, the scroll spacer and the opening
+image — was pinned at load and only followed a change of WIDTH, to stop a
+mobile address bar from resizing the scene mid-scroll. The cost was a crop:
+with the bar back, the canvas stayed 44px taller than the window and the bottom
+of every shot sat below the edge of the screen (measured in emulation: window
+800, canvas 844).
 
-### Mobile object composition
+It now follows the visible height on every change — `visualViewport.height`
+where that is available and the page is not pinch-zoomed (a pinch is not a
+layout change), `window.innerHeight` otherwise, ignoring jitter under 2px. That
+is safe now for the reason the pinning existed: a viewport change no longer
+disturbs the journey, because the camera's progress is held across the relayout
+and the framing re-fits instead of cropping.
+
+### Mobile object composition### Mobile object composition
 Major objects should remain identifiable on small screens. If an object becomes too small to read visually, the composition should change rather than simply accepting the reduced visibility.
 
 ### Mobile typography
