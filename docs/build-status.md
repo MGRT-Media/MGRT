@@ -130,7 +130,7 @@ The Campaigns section and everything after it were removed on explicit request. 
 - `JOURNEY_END_T = HERO_T = 0.9` (`filmActBeats.js`). Every earlier progress value is unchanged, so the pacing of the intro, Film, Digital and the hero traversal is identical; the camera path, its arc-length tables, the scroll↔progress mapping and the page length (`3 × 0.9` viewport heights) end at the hero, and progress is clamped there.
 - Side navigation: Intro · Film · Digital · MGRT Media (hero, unlabeled bookend). Chapter gestures: film → digital → hero; a forward gesture at the hero does nothing.
 - The Digital video pauses once the camera is well into the hero approach (progress 0.8), since the monitor is out of shot and the hero is where the visitor rests.
-- The homepage no longer links to /work, /about or /contact (those links lived in the closing frame); the pages remain reachable by URL.
+- The homepage no longer links to /work, /about or /contact (those links lived in the closing frame); the pages remain reachable by URL. **Resolved 2026-09-20:** the site navigation is mounted on the homepage again (`GlobalNav`'s `home` variant — top-right links, no mark, since the homepage has its own wordmark). It had been taken off the homepage on 2026-09-14 because the closing frame carried those links, and the closing frame was removed the next day, which left the homepage with no way to reach the rest of the site.
 
 ---
 

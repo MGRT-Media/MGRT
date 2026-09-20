@@ -18,15 +18,23 @@ import { NAV_LINKS } from './navLinks.js'
  * them with `display: none`, not opacity — so a screen reader is never
  * offered the same three links twice.
  *
- * Mounted on internal pages only (see `App.jsx`); the cinematic homepage keeps
- * to its own wordmark and side navigation. So it always carries the MGRT mark
- * linking back to '/', and uses the short labels
- * ("Work" for "Selected Work").
+ * `variant`:
+ *   'home' — the cinematic homepage. Links only; no mark, because the
+ *            homepage carries its own wordmark (`SiteMark.jsx`) in that
+ *            corner, and the full labels, there being room for them beside a
+ *            frame that has no other site chrome.
+ *   'page' — internal pages. Adds the MGRT mark linking back to '/', and
+ *            shortens "Selected Work" to "Work".
+ *
+ * Both are mounted outside the lazily-loaded homepage, so this is painted
+ * before the scene exists and is untouched by anything the experience does to
+ * the camera: the responsive viewport fit moves the 3D camera, never this.
  */
-export default function GlobalNav() {
+export default function GlobalNav({ variant = 'home' }) {
   const [isOpen, setIsOpen] = useState(false)
   const leadRef = useRef(null)
   const path = useRoute()
+  const isPage = variant === 'page'
 
   // Outside tap and Escape both close. Only bound while open, so the closed
   // menu costs nothing.
@@ -71,9 +79,11 @@ export default function GlobalNav() {
             <span className="global-nav__bar" />
           </button>
 
-          <RouteLink href="/" className="global-nav__mark">
-            MGRT
-          </RouteLink>
+          {isPage && (
+            <RouteLink href="/" className="global-nav__mark">
+              MGRT
+            </RouteLink>
+          )}
         </div>
 
         <nav
@@ -114,7 +124,7 @@ export default function GlobalNav() {
                 className="global-nav__link"
                 aria-current={path === link.href ? 'page' : undefined}
               >
-                {link.compact}
+                {isPage ? link.compact : link.label}
               </RouteLink>
             </li>
           ))}

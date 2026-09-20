@@ -30,9 +30,13 @@ function Routes() {
 
   return (
     <>
-      {/* Internal pages only. The homepage carries its own marks: the
-          wordmark (back to start) and the side navigation. */}
-      {!isHome && <GlobalNav />}
+      {/* Every route. The homepage's own marks — the wordmark (back to the
+          start) and the side navigation — move the CAMERA; this moves the
+          visitor through the site, and was missing from the homepage between
+          2026-09-14 and today: it was dropped when the closing frame took
+          over those links there, and the closing frame was itself removed a
+          day later. */}
+      <GlobalNav variant={isHome ? 'home' : 'page'} />
       {isHome ? (
         // No fallback: the startup cover from `index.html` is already on
         // screen during the chunk fetch. If the chunk cannot be fetched at

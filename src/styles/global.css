@@ -678,14 +678,17 @@ html.lenis-smooth {
 .site-mark::before {
   content: '';
   position: absolute;
-  inset: -14px -8px;
+  /* Vertical only: sideways it would reach the mobile menu control beside
+     it (navigation/GlobalNav.jsx). */
+  inset: -14px 0;
 }
 
 @media (max-width: 640px) {
   .site-mark {
-    /* The corner at phone width: the same 18px edge as the side navigation
-       below it. */
-    left: 18px;
+    /* Shifted clear of the mobile menu control, which takes the top-left
+       corner at this width (navigation/GlobalNav.jsx). The mark keeps the
+       corner on desktop, where the control is not rendered. */
+    left: 56px;
     top: 18px;
     font-size: 13px;
   }
