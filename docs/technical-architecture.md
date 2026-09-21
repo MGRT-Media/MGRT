@@ -1483,14 +1483,39 @@ moved: mean absolute difference 4.8/255, and the frame's mean level matches to
 spread over the whole image — no shifted edges, no colour cast, no vignette —
 and it lasts one frame at the start of a move.
 
-**The move.** One continuous pull-back, shaped by `smootherstep` SQUARED: the
-first quarter of it costs under 2% of the distance, so the picture is still the
-picture, the sheet's edge then arrives over the second quarter, and the table
-follows. The camera holds square to the print for the first third and only then
-tips over, reaching a three-quarter overhead. The field settles from whatever
-the hero opened it to back to the project's 45 over the first half — free,
-while only a flat sheet square to the lens is in frame, and cancelled exactly
-by standing the camera off far enough to keep the sheet filling the frame.
+**The move, and its pacing (shortened 2026-09-21).** One continuous pull-back.
+It first shipped over 0.10 of progress and a 6.5-second tween, on the reasoning
+that a reveal needs time to be doubted before it is understood. It does — but
+that version spent the time before anything had happened, and seconds in which
+the frame is deliberately unchanged read as the site having stalled rather than
+as suspense. It now runs over **0.06 of progress and a 3-second tween** (the
+same figure the Digital -> hero traversal uses), and most of what was cut was
+the dead opening rather than the reveal itself.
+
+The shape is `smootherstep` raised to **1.6**, down from 2. The exponent is
+what decides how long the frame stays indistinguishable from the room, because
+distance is what makes the sheet's edge appear. At 2 the first quarter of the
+move cost under 2% of the distance; at 1.6 the print covers 0.93 of the frame a
+quarter of the way in, 0.45 at the halfway mark and 0.27 at rest — the illusion
+for the first half-second, the edge by about a second, the table by a second
+and a half. Raising `smootherstep` rather than replacing it keeps what it is
+for: zero velocity AND acceleration at both ends, so the move still leaves the
+hero and arrives at the table without a kick, and is still perfectly still at
+the instant of the cut, which is the only moment that has to be. The camera
+begins tipping at 0.26, just under where the edge appears, so the pull-back and
+the rise read as one move rather than two. The field settles from whatever the
+hero opened it to back to the project's 45 over the first half — free, while
+only a flat sheet square to the lens is in frame, and cancelled exactly by
+standing the camera off far enough to keep the sheet filling the frame.
+
+No camera distance was removed: the stand-off, the elevation and the approved
+composition are untouched, because those ARE the final framing. The move covers
+the same ground, sooner.
+
+Measured end to end, gesture to rest: 3.46s at 1440x900 (was 6.95), 3.27s at
+393x852, 3.25s at 360x800 (was 6.73); reverse 3.06s (was 6.56). The hero and
+Impact resting frames are unchanged across the change — 0.019/255 and 0.168/255
+mean absolute difference, both inside the drifting-dust noise floor.
 
 **Responsive, and baked before the move starts.** The Impact anchors are solved
 in `applyFraming`, off the hero anchor that was just written, so the destination
@@ -1593,6 +1618,20 @@ VIEWPORT CHANGE → UPDATE CAMERA → UPDATE RENDERER → UPDATE RESPONSIVE COMP
 The current cinematic timeline position must remain valid during a resize.
 
 ### Keeping the visitor's place across a resize (2026-09-20)
+
+**A held position must not be restored on top of a move (2026-09-21).** The
+capture side of this mechanism already declines to take a reading during one of
+the two tweening moves, because those own the scroll position until they land.
+The release side had no matching guard, so a hold taken BEFORE a move — a late
+ScrollTrigger refresh while the camera sat at a section — could fire in the
+middle of one and put scroll back where the visitor had been, cancelling it.
+Seen as the Impact reveal starting, travelling about a fifth of the way and
+returning to the hero: three failures in seven runs at 360x800, and none in
+six after the guard. The held value is now dropped rather than applied when a
+jump owns the position; the jump is already taking scroll to a known progress
+and re-syncs it on arrival. Latent in the logic since the resize work, but only
+surfaced by the shorter Impact tween — the previous pacing passed five runs of
+the same test.
 
 A resize used to move the camera. Progress is a fraction of a scroll range
 that depends on the viewport twice over — the spacer is a multiple of

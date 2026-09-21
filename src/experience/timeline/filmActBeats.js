@@ -87,11 +87,20 @@ export const HERO_T = 0.9
  * past the hero is the pull-back that discovers the table
  * (`impact/impactStage.js`).
  *
- * The span is generous on purpose. This is the slowest, most deliberate move
- * in the experience — a reveal that has to be doubted before it is understood
- * — and it gets more of the page than any single earlier transition.
+ * The span is 0.06, shortened from 0.10 on 2026-09-21. The reveal has to be
+ * doubted before it is understood, which argued for room; in practice the room
+ * read as waiting. It is now the shortest leg on the timeline, which is right:
+ * it is one move, and the visitor has already arrived somewhere by the time it
+ * is over.
+ *
+ * Worth knowing when reading this number: past Film the wheel is a chapter
+ * TRIGGER, not a scrubber (`ScrollTimelineProvider`'s chapter gestures), so
+ * this span is crossed by a tween rather than by the visitor continuing to
+ * scroll. The span sets how much page the tween covers and how fast a free
+ * scroll would cross it; what the visitor actually waits through is
+ * `IMPACT_REVEAL_DURATION_SECONDS` below.
  */
-export const IMPACT_T = 1
+export const IMPACT_T = 0.96
 
 /**
  * The end of the journey. The camera path, its distance tables, the scroll
@@ -173,11 +182,19 @@ export const HERO_TRAVERSAL_DURATION_SECONDS = 3
  * The hero -> Impact pull-back, in seconds, when it is driven rather than
  * scrolled (a chapter gesture or a nav click).
  *
- * Much slower than any other transition, per the brief: the whole point is
- * that the visitor has time to believe they are still leaving the room, then
- * time to doubt it. Rushing it turns a reveal into a cut.
+ * 6.5 until 2026-09-21, on the reasoning that a reveal needs time to be
+ * doubted before it is understood. It does — but 6.5 spent that time before
+ * anything had happened, and the first seconds of a move where the frame is
+ * deliberately unchanged read as the site having stalled rather than as
+ * suspense.
+ *
+ * 3, which is the same figure the Digital -> hero traversal uses: this
+ * project's existing value for a long, deliberate move, rather than a new
+ * one. The reveal is not rushed to fit it — most of what was cut was the dead
+ * first quarter, which `revealEase` (`impact/impactStage.js`) now spends much
+ * less of the move on.
  */
-export const IMPACT_REVEAL_DURATION_SECONDS = 6.5
+export const IMPACT_REVEAL_DURATION_SECONDS = 3
 
 export const INTRO_INTENT_DECAY_MS = 150
 

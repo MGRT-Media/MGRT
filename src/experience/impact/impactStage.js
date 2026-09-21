@@ -139,13 +139,18 @@ function endElevationForAspect(aspect) {
 /**
  * When the camera starts to tip over, as a fraction of the move.
  *
- * Nothing about the view angle changes before this: the first third is a pure
+ * Nothing about the view angle changes before this: the opening is a pure
  * pull-back along the print's own normal, which is what keeps the illusion.
  * The frame is still the picture, only smaller, and the only new information
  * is the sheet's own edge arriving — which is the intended moment of doubt,
  * not the answer to it.
+ *
+ * Set just under where the edge appears, so the tip begins as the doubt does
+ * and the two read as one move. Any later and the pull-back visibly finishes
+ * before the rise starts, which is the "several separate camera moves" the
+ * reveal must not break into.
  */
-const TILT_START = 0.30
+const TILT_START = 0.26
 
 /**
  * The field of view settles back to the project's own 45 over the first half
@@ -173,20 +178,26 @@ const FIT_MARGIN = 1.08
 /**
  * The shape of the pull-back.
  *
- * `smootherstep` squared. The square is the whole point: the plain curve is
- * already slow off the mark, but not slow enough to hold a frame that has to
- * stay indistinguishable from the shot before it — at a fifth of the way in it
- * had already given up a quarter of the frame to the sheet's surroundings.
- * Squared, the first quarter of the move costs under 2% of the distance, so
- * the picture is still the picture; the edge then arrives over the second
- * quarter, and the table follows. Both ends still leave and arrive at zero
- * velocity, which is what the square preserves and a plain power curve would
- * not.
+ * `smootherstep` raised to 1.6. The exponent is what decides how long the
+ * frame stays indistinguishable from the room, because distance is what makes
+ * the sheet's edge appear: at 2 — where this started — the first quarter of
+ * the move cost under 2% of the distance, which held the illusion beautifully
+ * and read, at any honest duration, as the site having stopped. At 1.6 the
+ * edge arrives about a fifth of the way in, the table is well into frame by
+ * halfway, and the move is still perfectly still at the instant of the cut,
+ * which is the only moment that actually has to be.
+ *
+ * Raising `smootherstep` rather than replacing it keeps what it is for: zero
+ * velocity AND zero acceleration at both ends, so the move leaves the hero
+ * and arrives at the table without a kick at either. A plain power curve has
+ * neither.
  */
 function revealEase(u) {
   const s = u * u * u * (u * (u * 6 - 15) + 10)
-  return s * s
+  return Math.pow(s, REVEAL_EXPONENT)
 }
+
+const REVEAL_EXPONENT = 1.6
 
 /* ------------------------------------------------------------------ */
 /* Stage placement — solved once per viewport, before the move starts  */

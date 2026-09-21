@@ -699,6 +699,22 @@ export function ScrollSpacer() {
       }
       const progress = progressBeforeLayoutChange
       progressBeforeLayoutChange = null
+      // Never restore ON TOP of a move that owns the scroll position.
+      //
+      // The capture above already declines to take a reading during one of the
+      // two tweening moves. The release had no matching guard, so a hold taken
+      // BEFORE a move — a late ScrollTrigger refresh while the camera sat at a
+      // section — landed in the middle of it and put scroll back where the
+      // visitor had been, cancelling the move. Seen as the Impact reveal
+      // starting, travelling about a fifth of the way, and returning to the
+      // hero: three failures in seven runs at 360x800 before this guard, none
+      // after. The held value is simply dropped; the move is already taking
+      // the scroll position to a known progress, and its own arrival
+      // (`arriveAtSection`) re-syncs it.
+      if (isDirectJumpActive && flightTargetT === null) {
+        restoringAfterRefresh = false
+        return
+      }
       if (progress !== null) {
         syncScrollToProgress(timeline.scrollTrigger, progress)
         scrollProgress.value = progress
