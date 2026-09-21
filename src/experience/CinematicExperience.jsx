@@ -1,4 +1,4 @@
-import { Suspense } from 'react'
+import { Suspense, useCallback } from 'react'
 import { Canvas } from '@react-three/fiber'
 import Environment from './Environment.jsx'
 import Monitor from './digital/Monitor.jsx'
@@ -7,6 +7,8 @@ import { lightingParams } from './lighting/volumetricLighting.js'
 import LoadErrorBoundary from './loading/LoadErrorBoundary.jsx'
 import SceneReady from './loading/SceneReady.jsx'
 import DepthOfField from './postprocessing/DepthOfField.jsx'
+import ImpactStage from './impact/ImpactStage.jsx'
+import { stageSwap } from './impact/stageSwap.js'
 import ScrollCameraRig from './timeline/ScrollCameraRig.jsx'
 import { sampleCameraPath } from './timeline/cameraPath.js'
 
@@ -31,6 +33,24 @@ const SEED_POSITION = sampleCameraPath(0).position
  * jump once `ScrollCameraRig` takes over on the first frame.
  */
 export default function CinematicExperience({ onReady }) {
+  // The two sets, handed to `stageSwap` so `ScrollCameraRig` can cut between
+  // them on the frame the Impact reveal begins. Not React state: the cut
+  // happens inside a frame callback, and re-rendering the whole scene graph to
+  // flip a boolean would drop the one frame in the experience that must not be
+  // dropped.
+  //
+  // Callback refs rather than `useRef` + `useEffect`. The canvas's contents
+  // are mounted by react-three-fiber's OWN reconciler root, which commits
+  // separately from this component — so an effect here runs while both refs
+  // are still null, and the swap would silently have nothing to swap. A
+  // callback ref fires when the node itself attaches, in whichever root.
+  const holdRoom = useCallback((node) => {
+    stageSwap.room = node
+  }, [])
+  const holdImpact = useCallback((node) => {
+    stageSwap.impact = node
+  }, [])
+
   return (
     <Canvas
       className="experience-canvas"
@@ -87,27 +107,37 @@ export default function CinematicExperience({ onReady }) {
       <color attach="background" args={['#0d0d0d']} />
       <fogExp2 attach="fog" args={[lightingParams.fog.color, lightingParams.fog.density]} />
       <ScrollCameraRig />
-      <Environment />
-      {/* Model-backed objects load their GLBs through `useLoader`, which
-          suspends. The boundary is deliberately around these alone:
-          `ScrollCameraRig` and `DepthOfField` must keep running while the
-          assets arrive, and `DepthOfField` in particular owns the render
-          loop — suspending it would stop the frame entirely. */}
-      <Suspense fallback={null}>
-        {/* A model that fails to load costs that object, not the page: without
-            these boundaries the error unmounts the whole root, and
-            `SceneReady` (outside them) would never get to open the gate. */}
-        <LoadErrorBoundary name="CinemaCamera">
-          <CinemaCamera />
-        </LoadErrorBoundary>
-        <LoadErrorBoundary name="Monitor">
-          <Monitor />
-        </LoadErrorBoundary>
-        {/* Inside the boundary deliberately — see `SceneReady`. While the
-            models are still loading this does not exist, so it cannot report
-            a room that is missing two of its objects. */}
-        <SceneReady onReady={onReady} />
-      </Suspense>
+      {/* The room, as one switchable group. The camera rig hides it whole —
+          lights included, since they live inside it — the instant the Impact
+          print takes the frame over. */}
+      <group ref={holdRoom}>
+        <Environment />
+        {/* Model-backed objects load their GLBs through `useLoader`, which
+            suspends. The boundary is deliberately around these alone:
+            `ScrollCameraRig` and `DepthOfField` must keep running while the
+            assets arrive, and `DepthOfField` in particular owns the render
+            loop — suspending it would stop the frame entirely. */}
+        <Suspense fallback={null}>
+          {/* A model that fails to load costs that object, not the page: without
+              these boundaries the error unmounts the whole root, and
+              `SceneReady` (outside them) would never get to open the gate. */}
+          <LoadErrorBoundary name="CinemaCamera">
+            <CinemaCamera />
+          </LoadErrorBoundary>
+          <LoadErrorBoundary name="Monitor">
+            <Monitor />
+          </LoadErrorBoundary>
+          {/* Inside the boundary deliberately — see `SceneReady`. While the
+              models are still loading this does not exist, so it cannot report
+              a room that is missing two of its objects. */}
+          <SceneReady onReady={onReady} />
+        </Suspense>
+      </group>
+      {/* The Impact set. Present from the first frame and invisible until the
+          reveal: it is procedural, so there is nothing to download and nothing
+          to defer, and having it in the scene from the start means its
+          materials are already compiled when the cut happens. */}
+      <ImpactStage groupRef={holdImpact} />
       {/* Last child deliberately: this takes over the render loop (its
           useFrame runs at priority 1), so everything that needs to draw or
           render-to-texture for a frame must already have run. */}

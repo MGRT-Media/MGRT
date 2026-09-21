@@ -7,6 +7,9 @@ import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js'
 import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js'
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
 import { Pass } from 'three/examples/jsm/postprocessing/Pass.js'
+import { captureHeroPlate } from '../impact/heroPlate.js'
+import { stage as impactStage } from '../impact/impactStage.js'
+import { stageSwap } from '../impact/stageSwap.js'
 import { HERO_LOOKAT } from '../timeline/cameraPath.js'
 import { contentValue } from '../timeline/contentProgress.js'
 import { HERO_T } from '../timeline/filmActBeats.js'
@@ -276,11 +279,34 @@ class DustPass extends Pass {
   }
 }
 
+/**
+ * Keeps a still of the composed room, when one has been asked for.
+ *
+ * Sits here — after the lens, before the dust — because this is the last point
+ * at which the buffer is a plain linear image of the room with nothing
+ * overlaid. `heroPlate.js` explains in full why that exact point is the one
+ * that makes the Impact print indistinguishable from the frame before it.
+ *
+ * Reads the buffer and writes nothing into the chain (`needsSwap = false`), so
+ * on every frame that has not asked for a plate this costs one boolean.
+ */
+class HeroPlatePass extends Pass {
+  constructor() {
+    super()
+    this.needsSwap = false
+  }
+
+  render(renderer, writeBuffer, readBuffer) {
+    captureHeroPlate(renderer, readBuffer)
+  }
+}
+
 const drawingBufferScratch = new THREE.Vector2()
 
 export default function DepthOfField() {
   const { gl, scene, camera, size, viewport } = useThree()
   const focusDistance = useRef(null)
+  const focusWasOnImpact = useRef(false)
 
   const { composer, bokeh, gtao } = useMemo(() => {
     // A multisampled target, explicitly. The canvas is created with
@@ -341,6 +367,7 @@ export default function DepthOfField() {
       maxblur: MAX_BLUR,
     })
     composerInstance.addPass(bokehPass)
+    composerInstance.addPass(new HeroPlatePass())
     composerInstance.addPass(new DustPass(dustScene, camera))
 
     // Tone mapping and the output colour-space conversion move here.
@@ -408,16 +435,30 @@ export default function DepthOfField() {
     // Content progress (see `contentProgress.js`), so a section flight past the
     // hero does not rack focus onto a wall it is not stopping at.
     const heroWeight = contentValue(heroFocusWeightAt, 'rendered')
-    const targetDistance = THREE.MathUtils.lerp(
+    let targetDistance = THREE.MathUtils.lerp(
       approachDistance,
       activeCamera.position.distanceTo(HERO_SUBJECT),
       heroWeight,
     )
 
+    // On the Impact set the subject is the print, then the table — both of
+    // which the pose sampler already measures for us. The room's own subjects
+    // are metres away through geometry that is no longer being drawn, so
+    // without this the sheet arrives out of focus, which is the one thing the
+    // handoff cannot survive: measured at 19/255 mean difference across the
+    // cut before this, and it was nearly all blur.
+    if (stageSwap.onImpact) targetDistance = impactStage.aimDistance
+
     focusDistance.current =
-      focusDistance.current === null
-        ? targetDistance
+      focusDistance.current === null || stageSwap.onImpact !== focusWasOnImpact.current
+        ? // Taken whole on the frame the sets swap. The focus DISTANCE changes
+          // enormously (the wall was metres off, the sheet is centimetres), but
+          // the subject is sharp on both sides of the cut and nothing else is
+          // in frame, so there is nothing to see — whereas damping across it
+          // would rack focus onto the print over a third of a second.
+          targetDistance
         : THREE.MathUtils.damp(focusDistance.current, targetDistance, FOCUS_DAMP_LAMBDA, delta)
+    focusWasOnImpact.current = stageSwap.onImpact
 
     // See SHALLOW_FOCUS_DISTANCE: stop down as the subject gets further away,
     // so wide shots hold the architecture and close-ups stay shallow.

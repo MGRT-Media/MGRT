@@ -1413,6 +1413,105 @@ stay on the real viewport, so the canvas still fills what the visitor sees.
 After the change, an address-bar cycle moves the camera 0.000 units and the
 field 0.00 degrees at both Film and the hero.
 
+### Impact: the hero turns out to be a print (2026-09-21)
+
+The journey ended on the MGRT wordmark. It now runs on into one more beat:
+the camera pulls back from that shot, and what it is pulling back from turns
+out to be a PRINT of it, lying on a creative-direction table. Only the
+transition, the table and the print exist at this stage; the three content
+clusters the table is composed to hold are reserved space and nothing else.
+
+**Nothing before the hero changed.** `HERO_T` is still 0.9 and every earlier
+beat keeps the progress value it had, so no route, ease or stand-off moved.
+`JOURNEY_END_T` is now `IMPACT_T` (1.0), which lengthens the page in the same
+proportion it always was (`3 x JOURNEY_END_T` viewport heights) and leaves the
+progress-to-scroll mapping otherwise untouched. Verified rather than asserted:
+the hero frame is pixel-identical before and after the change (0.019/255 mean,
+max 7), and Film and Digital differ by less than their own video playback
+varies between two captures of the same build (Digital 1.24 against a
+same-build control of 1.82).
+
+The Impact leg is deliberately NOT a keyframe in `KEYFRAMES`. Every index, zone
+boundary and glide range in `cameraPath.js` is computed from that array's
+shape, and appending to it would shift all of them — the exact class of change
+that silently re-times an earlier beat. `sampleCameraPathInto` branches instead:
+past `HERO_T` the pose comes from `impact/impactStage.js`, analytically.
+
+**The illusion.** At the moment the move begins, the frame is filled by the
+hero shot and nothing else, so the set is arranged around that single frame.
+The print is sized to BE that frame — the camera's first Impact pose sees it
+edge to edge — and it carries a still of it, captured from the running frame
+the instant before (`impact/heroPlate.js`). Because the print is the hero
+frame, its shape is the viewport's shape: a landscape sheet on a desktop, a
+tall one on a phone. That is what keeps the match exact at every aspect rather
+than only at the one it was authored on. The set is placed so that the first
+Impact camera position is EXACTLY the hero camera position, which keeps the
+path's arc-length table continuous; only the view direction turns, through 90
+degrees, and it is taken whole on the cut rather than slerped, because the
+picture in the frame does not change.
+
+**Where the still is taken from decides whether the cut survives.** The post
+chain is `render -> GTAO -> bokeh -> dust -> output`, and the copy is made
+after BOKEH: the last point at which the buffer is a plain linear image of the
+room. Put back on an unlit surface, those values are tone-mapped once by the
+output pass exactly as they were the first time, the dust is added once rather
+than twice, and GTAO and bokeh re-run over a flat sheet square to the lens
+where they have nothing to do.
+
+Three things were measured and fixed before the cut held up, each of which was
+individually enough to give it away:
+
+- **Focus.** The room's focus subject is the wall, metres away through geometry
+  that is no longer being drawn, so the sheet arrived out of focus. Focus now
+  follows the Impact subject and is taken whole across the cut, since the
+  subject is sharp on both sides and nothing else is in frame.
+- **The crossover.** The print's emission hands over to the table's own light
+  as the reveal proceeds. Driven by raw progress it dimmed the picture by a
+  fifth while the frame was still meant to be indistinguishable; it is driven
+  by how far the camera has actually TRAVELLED instead, which is almost nothing
+  at first by design.
+- **The material.** A `MeshStandardMaterial` carrying the still as emission
+  rendered it about 19/255 brighter than the frame it replaced, with every
+  light in the scene at zero — a whole-frame lift the eye finds immediately.
+  The room phase is therefore drawn by an unlit `MeshBasicMaterial` laid a
+  hundredth of a millimetre above the sheet's lit face, and the move dissolves
+  between the two while both are showing the same picture at the same size.
+
+Measured across the cut, with the reveal slowed so the camera has not yet
+moved: mean absolute difference 4.8/255, and the frame's mean level matches to
+0.02/255 on every channel. The residual is a faint, structure-free softening
+spread over the whole image — no shifted edges, no colour cast, no vignette —
+and it lasts one frame at the start of a move.
+
+**The move.** One continuous pull-back, shaped by `smootherstep` SQUARED: the
+first quarter of it costs under 2% of the distance, so the picture is still the
+picture, the sheet's edge then arrives over the second quarter, and the table
+follows. The camera holds square to the print for the first third and only then
+tips over, reaching a three-quarter overhead. The field settles from whatever
+the hero opened it to back to the project's 45 over the first half — free,
+while only a flat sheet square to the lens is in frame, and cancelled exactly
+by standing the camera off far enough to keep the sheet filling the frame.
+
+**Responsive, and baked before the move starts.** The Impact anchors are solved
+in `applyFraming`, off the hero anchor that was just written, so the destination
+exists before the camera sets off and there is nothing to correct on arrival.
+The final stand-off is a contain-fit built from the real corners of the table
+and the print resolved into the end shot's own basis, and the end ELEVATION is
+itself responsive: the table is wide and shallow, so a tall viewport that fits
+it by width leaves most of its height empty, and standing further over it (48
+degrees to 55, the top of the approved band) turns more of the table toward the
+lens. Once the camera is past the hero the set is FROZEN: resize the window
+standing over the table and the shot re-fits, but the sheet does not change
+size, because sheets do not.
+
+Measured over the whole reveal, sampling the camera every frame: zero backward
+steps at 1920x1080, 1440x900, 393x852 and 360x800, and zero movement in the
+last 1.5 seconds — it arrives and stops. A resize at the hero does not start
+the reveal, and a resize standing at the table does not change the section
+(both inherit the progress hold already built for resizes). A backward gesture
+returns through the same path and lands on a hero frame that is pixel-identical
+to the one it left.
+
 ### The canvas follows the visible viewport (2026-09-20)
 
 `--app-height` — which sizes the canvas, the scroll spacer and the opening

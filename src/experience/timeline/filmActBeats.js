@@ -78,15 +78,32 @@ export const SCROLL_LOCK_HOLD_MS = 1750
 export const HERO_T = 0.9
 
 /**
- * The end of the journey: the hero is the last shot.
+ * Impact — the creative-direction table, and the end of the journey.
  *
- * Every progress value before it kept the value it had when the timeline ran
- * on past the hero, so the pacing of every remaining move is unchanged. The
- * journey simply stops here: the camera path, its distance tables, the scroll
+ * The hero was the last shot until 2026-09-21. Impact is appended AFTER it:
+ * every progress value at or below `HERO_T` keeps exactly the value and the
+ * meaning it already had, so no earlier beat's pacing, framing or route
+ * changes at all. The page simply runs on a little further, and the stretch
+ * past the hero is the pull-back that discovers the table
+ * (`impact/impactStage.js`).
+ *
+ * The span is generous on purpose. This is the slowest, most deliberate move
+ * in the experience — a reveal that has to be doubted before it is understood
+ * — and it gets more of the page than any single earlier transition.
+ */
+export const IMPACT_T = 1
+
+/**
+ * The end of the journey. The camera path, its distance tables, the scroll
  * mapping and the page's scroll length all end at this value, and progress
  * never exceeds it.
  */
-export const JOURNEY_END_T = HERO_T
+export const JOURNEY_END_T = IMPACT_T
+
+/** How far into the Impact reveal a given progress is, as 0..1. */
+export function impactRevealAt(progress) {
+  return Math.min(Math.max((progress - HERO_T) / (IMPACT_T - HERO_T), 0), 1)
+}
 
 // How far (in normalized 0-1 progress) the LIVE scroll position must
 // drift from the pinned snap point while locked before it counts as a
@@ -152,6 +169,16 @@ export const INTRO_TO_FILM_DURATION_SECONDS = 1.5
 // path's own ease is the only one shaping it.
 export const HERO_TRAVERSAL_DURATION_SECONDS = 3
 
+/**
+ * The hero -> Impact pull-back, in seconds, when it is driven rather than
+ * scrolled (a chapter gesture or a nav click).
+ *
+ * Much slower than any other transition, per the brief: the whole point is
+ * that the visitor has time to believe they are still leaving the room, then
+ * time to doubt it. Rushing it turns a reveal into a cut.
+ */
+export const IMPACT_REVEAL_DURATION_SECONDS = 6.5
+
 export const INTRO_INTENT_DECAY_MS = 150
 
 /**
@@ -185,6 +212,7 @@ export const SECTION_TARGETS = {
   film: FILM_FOCUS_T,
   digital: MONITOR_SNAP_T,
   hero: HERO_T,
+  impact: IMPACT_T,
 }
 
 // Direct-navigation jump duration range, in seconds — scaled by travel

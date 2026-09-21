@@ -8,8 +8,17 @@ import {
   WALL_INSCRIPTION_NORMAL,
 } from '../architecture/wallInscription.js'
 import { PILLAR_RING_CENTER, PILLAR_RING_RADIUS } from '../Environment.jsx'
-import { ESTABLISH_T, FILM_FOCUS_T, INTRO_ALIGN_T, JOURNEY_END_T, MONITOR_SNAP_T, HERO_T } from './filmActBeats.js'
+import {
+  ESTABLISH_T,
+  FILM_FOCUS_T,
+  INTRO_ALIGN_T,
+  JOURNEY_END_T,
+  MONITOR_SNAP_T,
+  HERO_T,
+  impactRevealAt,
+} from './filmActBeats.js'
 import { containDistance, framedDistance } from './viewportFit.js'
+import { impactFov, impactPoseInto, syncStage } from '../impact/impactStage.js'
 
 /**
  * Multi-keyframe path, replacing the single straight opening→monitor line
@@ -874,7 +883,10 @@ export function setHeroAspect(aspect) {
   applyFraming()
 }
 
+let framingAspect = 16 / 9
+
 function framingTargets(aspect) {
+  framingAspect = aspect
   // The hero is a keyframe (it dollies along the wall's normal); Film and
   // Digital stand back along their own view axis — see `applyFraming`.
   // All three are the approved stand-off blended toward the contain-fit as the
@@ -900,6 +912,9 @@ function framingTargets(aspect) {
  * approach — the same span the stand-offs blend over, so nothing steps.
  */
 export function framingFov(progress) {
+  // Past the hero the lens settles back off whatever the hero opened it to —
+  // see `impactFov`. Continuous at `HERO_T`, where both sides are `heroFov`.
+  if (progress > HERO_T) return impactFov(impactRevealAt(progress))
   // Across the whole Digital -> hero traversal, so the widening is part of the
   // move rather than something that happens once the camera has stopped. Zero
   // everywhere before Digital, and symmetric in reverse.
@@ -919,6 +934,11 @@ function applyFraming() {
   heroPreDollyKeyframe.position.copy(heroPositionAt(heroDistance + HERO_PRE_DOLLY_LEAD))
   LENS_DIVE_POSITION.copy(filmAnchorBase).addScaledVector(filmAnchorBackward, filmFramingPull)
   MONITOR_ALIGNED_POSITION.copy(monitorAnchorBase).addScaledVector(monitorAnchorBackward, monitorFramingPull)
+  // Impact hangs off the hero anchor that was just written, so the set is
+  // already placed and already fitted for this viewport BEFORE the pull-back
+  // starts. That is the whole of the no-bounce rule: the move's destination is
+  // solved here, once, and the move then goes straight to it.
+  syncStage({ aspect: framingAspect, heroFov, heroPosition: heroKeyframe.position, heroAxis: HERO_AXIS })
 }
 
 /**
@@ -1261,8 +1281,18 @@ function sampleGlideInto(p, outPosition, outLookAt) {
  * tests, same curve. Only the destination changed.
  */
 export function sampleCameraPathInto(progress, outPosition, outLookAt) {
-  // The journey ends at the hero: nothing past it is sampled.
   const p = THREE.MathUtils.clamp(progress, 0, JOURNEY_END_T)
+
+  // Past the hero the camera is on the Impact set, which has its own frame and
+  // its own analytic move (`impactStage.js`). Kept OUT of `KEYFRAMES` on
+  // purpose: every index, zone boundary and glide range in this file is
+  // computed from that array, and appending to it would shift all of them —
+  // which is exactly the class of change that silently re-times an earlier
+  // beat. Nothing at or below `HERO_T` is touched by any of this.
+  if (p > HERO_T) {
+    impactPoseInto(impactRevealAt(p), outPosition, outLookAt, impactUpScratch)
+    return
+  }
 
   // The two travelling moves are shaped once, over their whole length — see
   // `GLIDES`. Both use `smootherstep`, so the camera reaches the hero at zero
@@ -1375,6 +1405,27 @@ export const SECTION_BYPASSES = [
   { sectionT: FILM_FOCUS_T, fromT: 0.3, toT: HANDOFF_PULLBACK_T },
   { sectionT: MONITOR_SNAP_T, fromT: HANDOFF_PULLBACK_T, toT: 0.69 },
 ]
+
+/**
+ * The camera's up vector at a point on the journey.
+ *
+ * World up everywhere except the Impact reveal, which begins looking straight
+ * down at the print — a direction a world-up `lookAt` cannot resolve at all —
+ * and rolls over to level as the camera tips into the finished three-quarter
+ * view. `ScrollCameraRig` builds its target orientation from this rather than
+ * from `camera.up`.
+ */
+const impactUpScratch = new THREE.Vector3(0, 1, 0)
+const WORLD_UP = new THREE.Vector3(0, 1, 0)
+
+export function cameraUpAt(progress, out) {
+  if (progress <= HERO_T) return out.copy(WORLD_UP)
+  impactPoseInto(impactRevealAt(progress), upPositionScratch, upTargetScratch, out)
+  return out
+}
+
+const upPositionScratch = new THREE.Vector3()
+const upTargetScratch = new THREE.Vector3()
 
 const samplePositionScratch = new THREE.Vector3()
 const sampleLookAtScratch = new THREE.Vector3()

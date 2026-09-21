@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 import { scrollProgress } from '../timeline/ScrollTimelineProvider.jsx'
 import { requestNavigate } from '../timeline/sectionNavigationEvent.js'
-import { DIGITAL_EXIT_T, FILM_FOCUS_T, MONITOR_SNAP_T } from '../timeline/filmActBeats.js'
+import { DIGITAL_EXIT_T, FILM_FOCUS_T, HERO_T, IMPACT_T, MONITOR_SNAP_T } from '../timeline/filmActBeats.js'
 
-// Four physical markers for the four narrative states: Intro → Film →
-// Digital → the MGRT hero. Intro and the hero are the bookend states and are
+// Five physical markers for the five narrative states: Intro → Film →
+// Digital → the MGRT hero → Impact. Intro and the hero are the bookend states and are
 // deliberately unlabeled (`label: null`) even when active. `key` matches
 // SECTION_TARGETS' keys (filmActBeats.js), which is what a click hands to the
 // section flight.
@@ -13,10 +13,23 @@ const SECTIONS = [
   { key: 'film', label: 'FILM', ariaName: 'Film' },
   { key: 'digital', label: 'DIGITAL', ariaName: 'Digital' },
   { key: 'hero', label: null, ariaName: 'MGRT Media' },
+  { key: 'impact', label: 'IMPACT', ariaName: 'Impact' },
 ]
 const FILM_INDEX = 1
 const DIGITAL_INDEX = 2
 const HERO_INDEX = 3
+const IMPACT_INDEX = 4
+
+/**
+ * Where the hero mark hands over to Impact.
+ *
+ * Not the instant progress passes the hero. The first part of the Impact move
+ * is deliberately indistinguishable from still being at the hero — that is the
+ * illusion — and a mark that changed there would give it away before the
+ * picture did. Halfway through, the print has an edge and the table is
+ * arriving, so the visitor is unambiguously somewhere new.
+ */
+const IMPACT_ACTIVE_T = HERO_T + (IMPACT_T - HERO_T) * 0.5
 
 /**
  * Which of the four markers is "active" (current-section treatment),
@@ -43,7 +56,8 @@ function getActiveIndex(progress) {
   // way to the wordmark (`DIGITAL_EXIT_T`), not the moment progress passes
   // Digital's resting point — same principle as Film above.
   if (progress < DIGITAL_EXIT_T) return DIGITAL_INDEX
-  return HERO_INDEX
+  if (progress < IMPACT_ACTIVE_T) return HERO_INDEX
+  return IMPACT_INDEX
 }
 
 /**

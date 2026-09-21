@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import { scrollProgress, scrollLockWobble } from './ScrollTimelineProvider.jsx'
 import {
+  cameraUpAt,
   pathArcLengthAt,
   pathProgressAtArcLength,
   sampleCameraPath,
@@ -11,6 +12,10 @@ import {
   setHeroAspect,
   updateFraming,
 } from './cameraPath.js'
+import { HERO_T } from './filmActBeats.js'
+import { heroPlate, heroPlatePending, requestHeroPlate } from '../impact/heroPlate.js'
+import { freezeStage } from '../impact/impactStage.js'
+import { showImpact } from '../impact/stageSwap.js'
 import { advanceJourney, cameraProgress, renderedProgress, syncJourney } from './journeyProgress.js'
 import { sectionFlightRequest } from './sectionFlightRequest.js'
 import { createSectionFlight, stepSectionFlight } from './sectionFlightRoute.js'
@@ -52,6 +57,32 @@ function framingAspect(size, stable) {
   }
   return stable.width / stable.height
 }
+
+/**
+ * The Impact handoff: swapping the room for the table.
+ *
+ * Two things happen on one frame, and they have to be that frame and no
+ * other. The set is shown and the room hidden, and the camera's orientation is
+ * SET rather than damped toward — because the room shot looks level at a wall
+ * and the first Impact pose looks straight down at a sheet, which is a 90
+ * degree turn. Slerping it would swing the camera through the set over a third
+ * of a second. Setting it costs nothing to look at, because the sheet is
+ * carrying a still of the exact frame that was on screen a moment before: the
+ * camera has turned, and the picture has not changed.
+ *
+ * A plate has to exist before any of that is allowed. Until one does, the
+ * drawn progress is held at the hero for a frame and one is asked for.
+ */
+const upScratch = new THREE.Vector3()
+
+/**
+ * How close to the hero the camera has to be before a still is taken.
+ *
+ * Small: the point is the pose, not the neighbourhood. At this distance the
+ * camera is within a thousandth of the hero's own progress and, after the
+ * damping, visually on it.
+ */
+const PLATE_ARM_BAND = 0.001
 
 const POSITION_DAMP_LAMBDA = 2.6
 const ROTATION_DAMP_LAMBDA = 3.0
@@ -135,6 +166,11 @@ export default function ScrollCameraRig() {
   const framingStarted = useRef(false)
   // The viewport the framing is solved for — see `framingAspect`.
   const stableViewport = useRef({ width: 0, height: 0 })
+  // Which viewport the print's still was taken at — `null` once it is stale,
+  // which is either because none has been taken or because the visitor has
+  // been back to the room since.
+  const plateKey = useRef(null)
+  const stageOnImpact = useRef(false)
   // How far along the path the camera is — the eased quantity. See below.
   const arcPosition = useRef(0)
   // The section flight in progress, if any — see `sectionFlightRoute.js`.
@@ -177,6 +213,7 @@ export default function ScrollCameraRig() {
   }
 
   useFrame(({ camera, size }, delta) => {
+    const viewportKey = `${size.width}x${size.height}`
 
     /**
      * Responsive framing: the hero's stand-off and the Film/Digital pull-backs
@@ -275,9 +312,28 @@ export default function ScrollCameraRig() {
       return
     }
 
-    // The journey decides what to draw — not raw scroll: it clamps at the hero,
-    // the last shot, however far scroll runs on (see `journeyProgress.js`).
-    const targetProgress = advanceJourney(scrollProgress.value)
+    // The journey decides what to draw — not raw scroll (see
+    // `journeyProgress.js`).
+    let targetProgress = advanceJourney(scrollProgress.value)
+
+    // Nothing to print yet: hold on the hero rather than cutting to a blank
+    // sheet. The still is asked for at the foot of this callback, once the
+    // camera has actually come to rest on the hero.
+    const wantsImpact = targetProgress > HERO_T
+    if (wantsImpact && !heroPlate.captured) {
+      if (!heroPlatePending()) requestHeroPlate()
+      targetProgress = HERO_T
+      syncJourney(HERO_T)
+    }
+
+    const onImpact = targetProgress > HERO_T
+    freezeStage(onImpact)
+    const cut = showImpact(onImpact)
+    stageOnImpact.current = onImpact
+    // Leaving the set re-arms the capture, so the next approach prints the
+    // hero as it looks at whatever the viewport has since become.
+    if (cut && !onImpact) plateKey.current = null
+
     sampleCameraPathInto(targetProgress, pathPositionScratch, pathLookAtScratch)
 
     // Position is damped in DISTANCE ALONG THE PATH, then placed on the path.
@@ -328,17 +384,37 @@ export default function ScrollCameraRig() {
       targetQuaternionScratch,
       pathPositionScratch,
       pathLookAtScratch,
-      camera.up,
+      // World up for the whole journey; the Impact reveal supplies its own,
+      // because it opens looking straight down where world up means nothing.
+      cameraUpAt(targetProgress, upScratch),
     )
     // Frame-rate-independent slerp factor with the same exponential shape
     // as THREE.MathUtils.damp, so rotation and position share one
     // consistent "catch-up" feel despite using different lambdas/math.
     const rotationAlpha = 1 - Math.exp(-ROTATION_DAMP_LAMBDA * delta)
-    dampedQuaternion.current.slerp(targetQuaternion, rotationAlpha)
+    // On the handoff frame the turn is taken whole — see the note on
+    // `upScratch` above.
+    if (cut) dampedQuaternion.current.copy(targetQuaternion)
+    else dampedQuaternion.current.slerp(targetQuaternion, rotationAlpha)
     camera.quaternion.copy(dampedQuaternion.current)
     measureMotion(delta)
 
     // (`dampedQuaternion` is updated below; measured once it has been.)
+
+    // The still the Impact print carries.
+    //
+    // Asked for HERE, at the foot of the frame, and only once the camera has
+    // settled: `targetProgress` reaches the hero well before the camera does,
+    // and a plate taken on the way in is a wider frame than the one it has to
+    // replace — measured, when it was armed on the target instead, as the
+    // wordmark visibly shrinking across the cut. The composer runs after this
+    // callback, so the capture is of the pose written just above.
+    if (!onImpact && settled && cameraProgress.value >= HERO_T - PLATE_ARM_BAND) {
+      if (!heroPlatePending() && plateKey.current !== viewportKey) {
+        requestHeroPlate()
+        plateKey.current = viewportKey
+      }
+    }
 
     // Resistance wobble: decays toward 0 every frame regardless of
     // whether the lock is still active, so a released lock's residual

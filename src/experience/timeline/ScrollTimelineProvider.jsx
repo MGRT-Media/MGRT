@@ -23,6 +23,8 @@ import {
   JUMP_MAX_DURATION_SECONDS,
   CHAPTER_GESTURE_THRESHOLD,
   HERO_T,
+  IMPACT_T,
+  IMPACT_REVEAL_DURATION_SECONDS,
   HERO_TRAVERSAL_DURATION_SECONDS,
   DIGITAL_EXIT_T,
   JOURNEY_END_T,
@@ -52,8 +54,13 @@ function easeSectionJump(t) {
 const GLIDE_LEGS = [
   { from: INTRO_ALIGN_T, to: FILM_FOCUS_T, seconds: INTRO_TO_FILM_DURATION_SECONDS },
   { from: MONITOR_SNAP_T, to: HERO_T, seconds: HERO_TRAVERSAL_DURATION_SECONDS },
+  // The Impact reveal. Evenly paced here so that the only shape on it is the
+  // one the camera path itself applies (`impactStage.js`'s `revealEase`) — the
+  // very slow start that pull-back depends on would be fought by a second
+  // ease-out layered on top of it.
+  { from: HERO_T, to: IMPACT_T, seconds: IMPACT_REVEAL_DURATION_SECONDS },
 ]
-const LEG_BOUNDARIES = [INTRO_ALIGN_T, FILM_FOCUS_T, MONITOR_SNAP_T, HERO_T]
+const LEG_BOUNDARIES = [INTRO_ALIGN_T, FILM_FOCUS_T, MONITOR_SNAP_T, HERO_T, IMPACT_T]
 const PROGRESS_EPSILON = 1e-4
 
 // Scroll pixels round to a few ten-thousandths of progress; a section flight
@@ -361,7 +368,7 @@ export function ScrollSpacer() {
     // Film onward. `hero`, the MGRT wordmark, is the last chapter.
     let currentChapter = 'intro'
     let chapterModeActive = false
-    const CHAPTER_ORDER = ['film', 'digital', 'hero']
+    const CHAPTER_ORDER = ['film', 'digital', 'hero', 'impact']
 
     // --- Direct navigation (side nav clicks) ---
     // Set for the duration of a nav-triggered jump; suppresses the
@@ -818,12 +825,12 @@ export function ScrollSpacer() {
       syncScrollToProgress(trigger, targetT)
       if (sectionKey === 'film') engageLensHold(trigger)
       else if (sectionKey === 'digital') engageMonitorLock()
-      else if (sectionKey === 'hero') {
-        // The hero has no lock of its own: it is the end of the journey, and
-        // the camera simply rests there. Chapter state still has to be
-        // recorded, or a subsequent backward gesture would compute the wrong
-        // neighbour.
-        currentChapter = 'hero'
+      else if (sectionKey === 'hero' || sectionKey === 'impact') {
+        // Neither has a lock of its own: the camera simply rests. Chapter
+        // state still has to be recorded, or a subsequent backward gesture
+        // would compute the wrong neighbour. Impact is now the last chapter,
+        // so a forward gesture there has nowhere to go.
+        currentChapter = sectionKey
         chapterModeActive = true
       } else {
         // 'intro' — also exits chapter mode if the visitor was in it
@@ -856,6 +863,19 @@ export function ScrollSpacer() {
     // from the section. Content that would react to that jump reads content
     // progress (`contentProgress.js`), which follows the flight instead.
     const flyToSection = (sectionKey) => whenSectionReady(sectionKey, () => startFlyToSection(sectionKey))
+
+    /**
+     * What a side-navigation click does.
+     *
+     * Every section flies — straight there, around whatever is in between —
+     * except Impact, which travels the path. The Impact reveal only exists as
+     * a continuous pull-back OUT of the hero shot: the whole illusion is that
+     * the frame you are leaving turns out to be a print, and there is nothing
+     * to leave if the camera arrives from somewhere else. So a click on it
+     * takes the journey through the hero, exactly as a scroll would.
+     */
+    const goToSection = (sectionKey) =>
+      sectionKey === 'impact' ? navigateToSection(sectionKey) : flyToSection(sectionKey)
 
     const startFlyToSection = (sectionKey) => {
       const targetT = SECTION_TARGETS[sectionKey]
@@ -895,7 +915,15 @@ export function ScrollSpacer() {
       isDirectJumpActive = false
       cancelSectionFlight()
       currentChapter =
-        progress >= DIGITAL_EXIT_T ? 'hero' : progress >= MONITOR_SNAP_T ? 'digital' : progress >= FILM_FOCUS_T ? 'film' : 'intro'
+        progress > HERO_T
+          ? 'impact'
+          : progress >= DIGITAL_EXIT_T
+            ? 'hero'
+            : progress >= MONITOR_SNAP_T
+              ? 'digital'
+              : progress >= FILM_FOCUS_T
+                ? 'film'
+                : 'intro'
     }
 
     // --- Intro cinematic playback ---
@@ -1166,7 +1194,7 @@ export function ScrollSpacer() {
         recordStartupIntent({ type: 'section', key: sectionKey })
         return
       }
-      flyToSection(sectionKey)
+      goToSection(sectionKey)
     }
     const unsubscribeNavigate = onNavigateRequest(onSectionRequest)
 
@@ -1176,7 +1204,7 @@ export function ScrollSpacer() {
     const replayHeldIntent = () => {
       const intent = takeStartupIntent()
       if (!intent) return
-      if (intent.type === 'section') flyToSection(intent.key)
+      if (intent.type === 'section') goToSection(intent.key)
       else if (currentChapter === 'intro' && !introCinematicPlayed) playIntroCinematic(INTRO_ALIGN_T)
     }
     const unsubscribeRevealed = onExperienceRevealed(replayHeldIntent)

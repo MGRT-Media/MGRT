@@ -127,6 +127,15 @@ The Campaigns section and everything after it were removed on explicit request. 
 - **Assets:** `public/models/billboard/`, `public/models/streetlights/`, `public/textures/asphalt/`, `public/textures/earth/`, `public/textures/grass-hill/`, `public/textures/sky/`, and their originals in `source-assets/` (still in git history).
 
 ### How the journey ends now
+- **Updated 2026-09-21:** the journey no longer ends at the hero. `JOURNEY_END_T`
+  is now `IMPACT_T` (1.0) and the stretch past `HERO_T` is the Impact reveal —
+  the camera pulls back from the wordmark and discovers it is a print on a
+  creative-direction table. Everything at or below `HERO_T` keeps the progress
+  value, route and framing it had; the page is proportionally longer. Side
+  navigation is now Intro · Film · Digital · MGRT Media · Impact. Built and
+  verified this round: transition, table and hero print only — the Hero, Film
+  and Digital clusters the table is composed to hold are RESERVED SPACE and
+  deliberately empty, pending review before any content goes on the table.
 - `JOURNEY_END_T = HERO_T = 0.9` (`filmActBeats.js`). Every earlier progress value is unchanged, so the pacing of the intro, Film, Digital and the hero traversal is identical; the camera path, its arc-length tables, the scroll↔progress mapping and the page length (`3 × 0.9` viewport heights) end at the hero, and progress is clamped there.
 - Side navigation: Intro · Film · Digital · MGRT Media (hero, unlabeled bookend). Chapter gestures: film → digital → hero; a forward gesture at the hero does nothing.
 - The Digital video pauses once the camera is well into the hero approach (progress 0.8), since the monitor is out of shot and the hero is where the visitor rests.
