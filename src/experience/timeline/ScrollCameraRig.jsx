@@ -16,6 +16,7 @@ import { HERO_T } from './filmActBeats.js'
 import { heroPlate, heroPlatePending, requestHeroPlate } from '../impact/heroPlate.js'
 import { freezeStage } from '../impact/impactStage.js'
 import { showImpact } from '../impact/stageSwap.js'
+import { announceCameraSettled } from './cameraRestEvent.js'
 import { advanceJourney, cameraProgress, renderedProgress, syncJourney } from './journeyProgress.js'
 import { sectionFlightRequest } from './sectionFlightRequest.js'
 import { createSectionFlight, stepSectionFlight } from './sectionFlightRoute.js'
@@ -110,6 +111,16 @@ const ROTATION_DAMP_LAMBDA = 3.0
  * scrollbar is raw. This is tight enough to be visually exact within a frame
  * or two and loose enough to stay smooth.
  */
+/**
+ * The speed below which the camera counts as stopped, in world units a second.
+ *
+ * 1.2mm/s. At the hero's stand-off a pixel is about 5.3mm across, so this is
+ * roughly a fifth of a pixel per second — a camera moving this slowly is
+ * stationary to anyone watching, and stays inside a fifth of a pixel across a
+ * whole second of holding.
+ */
+const REST_SPEED = 0.0012
+
 const IMPACT_POSITION_DAMP_LAMBDA = 16
 const IMPACT_ROTATION_DAMP_LAMBDA = 18
 
@@ -195,6 +206,8 @@ export default function ScrollCameraRig() {
   // Which viewport the print's still was taken at — `null` once it is stale,
   // which is either because none has been taken or because the visitor has
   // been back to the room since.
+  // Announced once per settle, not per settled frame — see `cameraRestEvent`.
+  const settleAnnounced = useRef(false)
   const plateKey = useRef(null)
   const stageOnImpact = useRef(false)
   // How far along the path the camera is — the eased quantity. See below.
@@ -335,6 +348,7 @@ export default function ScrollCameraRig() {
       camera.position.copy(dampedPosition.current)
       camera.quaternion.copy(dampedQuaternion.current)
       measureMotion(delta)
+      settleAnnounced.current = false
       return
     }
 
@@ -396,6 +410,24 @@ export default function ScrollCameraRig() {
     // camera resting on the hero is placed on exactly the same pose every frame.
     const settled = Math.abs(targetArc - arcPosition.current) < 1e-4
     cameraProgress.value = settled ? targetProgress : pathProgressAtArcLength(arcPosition.current)
+    // "The camera has stopped", for anything that has to begin from a still
+    // frame (`cameraRestEvent.js`).
+    //
+    // Two ways to be stopped, and the second one matters. `settled` is the
+    // exact test — the camera is ON its target and is placed there rather than
+    // interpolated toward it. But a damped follow approaches its target
+    // asymptotically, and the tail of that approach is far below anything a
+    // viewer can see long before it is mathematically over: on the Digital ->
+    // hero traversal the camera is under a fifth of a pixel per second for
+    // more than half a second before `settled` flips. Waiting for the exact
+    // test would spend that half second inside a pause that is supposed to
+    // measure a second, so a speed this low counts as stopped too.
+    const stopped = settled || velocity.current.lengthSq() < REST_SPEED * REST_SPEED
+    if (!stopped) settleAnnounced.current = false
+    else if (!settleAnnounced.current) {
+      settleAnnounced.current = true
+      announceCameraSettled(cameraProgress.value)
+    }
     sampleCameraPathInto(cameraProgress.value, pos, handBackPathScratch)
     // Left over from an interrupted flight: fades with the same weight as the
     // rest of the camera's settle.

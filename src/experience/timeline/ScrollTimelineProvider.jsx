@@ -5,6 +5,7 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { createSmoothScroll } from './smoothScroll.js'
 import { setScrollLocked } from './scrollLockEvent.js'
 import { onNavigateRequest } from './sectionNavigationEvent.js'
+import { onCameraSettled } from './cameraRestEvent.js'
 import { isExperienceRevealed, onExperienceRevealed, recordStartupIntent, takeStartupIntent } from '../loading/startupCover.js'
 import {
   FILM_FOCUS_T,
@@ -23,6 +24,7 @@ import {
   JUMP_MAX_DURATION_SECONDS,
   CHAPTER_GESTURE_THRESHOLD,
   HERO_T,
+  HERO_HOLD_MS,
   IMPACT_T,
   IMPACT_REVEAL_DURATION_SECONDS,
   HERO_TRAVERSAL_DURATION_SECONDS,
@@ -368,6 +370,28 @@ export function ScrollSpacer() {
     // Film onward. `hero`, the MGRT wordmark, is the last chapter.
     let currentChapter = 'intro'
     let chapterModeActive = false
+
+    /**
+     * The final beat: Digital -> hero -> [hold] -> Impact, on one gesture.
+     *
+     * An explicit state rather than a scroll threshold, so that a resize, a
+     * ScrollTrigger refresh or a stray wheel event cannot be mistaken for
+     * navigation partway through it:
+     *
+     *   'idle'     nothing pending
+     *   'settling' the hero has been reached FORWARD; waiting for the camera
+     *              to actually stop (the traversal's own tail runs on for
+     *              most of three seconds after its scroll tween lands)
+     *   'holding'  the camera is still on the hero; the one-second look
+     *   ('impact' is then just the ordinary jump, which owns its own lock)
+     *
+     * Only ever entered from a FORWARD chapter gesture — see `arriveAtSection`
+     * — which is what keeps the reverse direction navigable: coming back from
+     * Impact lands on the hero with this still 'idle', so nothing fires and the
+     * visitor can carry on to Digital.
+     */
+    let finalBeat = 'idle'
+    let heroHoldTimeoutId = null
     const CHAPTER_ORDER = ['film', 'digital', 'hero', 'impact']
 
     // --- Direct navigation (side nav clicks) ---
@@ -733,7 +757,56 @@ export function ScrollSpacer() {
     // always starts from a clean slate, reusing each mechanism's own
     // release function rather than duplicating its cleanup (listener
     // removal, timers, etc).
+    /**
+     * Drops whatever the final beat was waiting to do.
+     *
+     * Called from `cancelActiveDriversAndLocks`, so ANY other navigation —
+     * a nav click, a backward gesture during the settle, the intro replaying —
+     * supersedes it. There is no path that leaves a timer running against a
+     * camera that has gone somewhere else.
+     */
+    const cancelFinalBeat = () => {
+      finalBeat = 'idle'
+      if (heroHoldTimeoutId) {
+        clearTimeout(heroHoldTimeoutId)
+        heroHoldTimeoutId = null
+      }
+    }
+
+    const startImpactAfterHold = () => {
+      heroHoldTimeoutId = null
+      // Superseded while the hold was running, or the visitor is no longer on
+      // the hero: do nothing rather than dragging them somewhere.
+      if (finalBeat !== 'holding' || currentChapter !== 'hero') {
+        finalBeat = 'idle'
+        return
+      }
+      finalBeat = 'idle'
+      navigateToSection('impact')
+    }
+
+    /**
+     * The camera has come to rest. If that happened on the hero and we got
+     * there going forward, this is the start of the one-second look.
+     *
+     * Guarded on the state, not on a timer id, so a viewport change that makes
+     * the camera move and settle again mid-hold cannot start a second one: by
+     * then the state is 'holding', not 'settling'.
+     */
+    const onSettled = () => {
+      if (finalBeat !== 'settling') return
+      // Checked against where the camera was SENT, not where it has got to:
+      // the last sliver of a damped approach is below the speed that counts as
+      // stopped while the camera is still a hair short of its target, and on
+      // an eased glide that hair is worth a few thousandths of progress.
+      if (Math.abs(scrollProgress.value - HERO_T) > 1e-3) return
+      finalBeat = 'holding'
+      if (heroHoldTimeoutId) clearTimeout(heroHoldTimeoutId)
+      heroHoldTimeoutId = setTimeout(startImpactAfterHold, HERO_HOLD_MS)
+    }
+
     const cancelActiveDriversAndLocks = () => {
+      cancelFinalBeat()
       if (lensHoldActive) releaseLensHold()
       if (monitorLockActive) releaseMonitorLock()
       scrollLockWobble.value = 0
@@ -799,9 +872,10 @@ export function ScrollSpacer() {
       })
     }
 
-    const navigateToSection = (sectionKey) => whenSectionReady(sectionKey, () => startNavigateToSection(sectionKey))
+    const navigateToSection = (sectionKey, options) =>
+      whenSectionReady(sectionKey, () => startNavigateToSection(sectionKey, options))
 
-    const startNavigateToSection = (sectionKey) => {
+    const startNavigateToSection = (sectionKey, options) => {
       const targetT = SECTION_TARGETS[sectionKey]
       if (targetT === undefined) return
       // The intro cinematic (below) is this file's own one-shot, uninterruptible
@@ -822,12 +896,12 @@ export function ScrollSpacer() {
 
       // Paced by `planJump`: the two glides at their own even rate, everything
       // else with the distance-scaled ease-out.
-      runJump(trigger, token, targetT, () => arriveAtSection(sectionKey, trigger))
+      runJump(trigger, token, targetT, () => arriveAtSection(sectionKey, trigger, options))
     }
 
     // What arriving at a section means, however the camera got there — a
     // chapter gesture's journey or a section flight.
-    const arriveAtSection = (sectionKey, trigger) => {
+    const arriveAtSection = (sectionKey, trigger, options) => {
       const targetT = SECTION_TARGETS[sectionKey]
       isDirectJumpActive = false
       // Matches releaseLensHold's own reset: pins the crossing-
@@ -848,6 +922,13 @@ export function ScrollSpacer() {
         // so a forward gesture there has nowhere to go.
         currentChapter = sectionKey
         chapterModeActive = true
+        // Reaching the hero as the forward step of the journey arms the final
+        // beat. `options.forward` is set only by `goToNextChapter`, so this
+        // cannot be reached by coming BACK from Impact (which would send the
+        // visitor straight out again and make the reverse direction
+        // impossible), nor by clicking the hero's own navigation mark, where
+        // the visitor has asked to be at the hero rather than past it.
+        if (sectionKey === 'hero' && options?.forward) finalBeat = 'settling'
       } else {
         // 'intro' — also exits chapter mode if the visitor was in it
         // (e.g. clicking the Intro mark while at Film/Digital), so
@@ -1095,7 +1176,12 @@ export function ScrollSpacer() {
     let chapterTouchLastY = null
 
     const isChapterTransitionLocked = () =>
-      isDirectJumpActive || lensHoldActive || monitorLockActive || introCinematicActive
+      // `finalBeat === 'holding'` is the one-second look: the reveal is coming
+      // on its own, so a stray wheel notch must not start a competing move.
+      // 'settling' is deliberately NOT locked — the camera is visibly at the
+      // hero by then, and a visitor who decides to turn back should be able
+      // to. Doing so cancels the beat through `cancelActiveDriversAndLocks`.
+      isDirectJumpActive || lensHoldActive || monitorLockActive || introCinematicActive || finalBeat === 'holding'
 
     const resetChapterGesture = () => {
       chapterGestureAccum = 0
@@ -1147,7 +1233,7 @@ export function ScrollSpacer() {
     // jump-cut: `playIntroCinematic` is bidirectional by construction,
     // driven by the exact same `sampleCameraPath`, a pure function of
     // progress.
-    const goToChapterIndex = (nextIndex) => {
+    const goToChapterIndex = (nextIndex, forward) => {
       if (nextIndex < -1) {
         playIntroCinematic(0)
         return
@@ -1159,11 +1245,11 @@ export function ScrollSpacer() {
       // The hero is the last chapter: a forward gesture there has nowhere to
       // go, and the camera stays exactly where it is.
       if (nextIndex >= CHAPTER_ORDER.length) return
-      navigateToSection(CHAPTER_ORDER[nextIndex])
+      navigateToSection(CHAPTER_ORDER[nextIndex], { forward })
     }
 
-    const goToNextChapter = () => goToChapterIndex(CHAPTER_ORDER.indexOf(currentChapter) + 1)
-    const goToPreviousChapter = () => goToChapterIndex(CHAPTER_ORDER.indexOf(currentChapter) - 1)
+    const goToNextChapter = () => goToChapterIndex(CHAPTER_ORDER.indexOf(currentChapter) + 1, true)
+    const goToPreviousChapter = () => goToChapterIndex(CHAPTER_ORDER.indexOf(currentChapter) - 1, false)
 
     const handleChapterGesture = (deltaY) => {
       if (isChapterTransitionLocked()) return
@@ -1213,6 +1299,7 @@ export function ScrollSpacer() {
       goToSection(sectionKey)
     }
     const unsubscribeNavigate = onNavigateRequest(onSectionRequest)
+    const unsubscribeSettled = onCameraSettled(onSettled)
 
     // Runs once the startup cover has fully crossfaded into the live scene —
     // not during the crossfade, where a moving camera would show two frames
@@ -1227,7 +1314,9 @@ export function ScrollSpacer() {
 
     return () => {
       unsubscribeNavigate()
+      unsubscribeSettled()
       unsubscribeRevealed()
+      if (heroHoldTimeoutId) clearTimeout(heroHoldTimeoutId)
       cancelAnimationFrame(raf)
       if (monitorLockTimeoutId) clearTimeout(monitorLockTimeoutId)
       if (lensHoldTimeoutId) clearTimeout(lensHoldTimeoutId)

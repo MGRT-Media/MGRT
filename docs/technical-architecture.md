@@ -1539,6 +1539,68 @@ mean matching exactly. The hero and Impact resting frames are unchanged
 (0.020 and 0.024 of 255), the return to the hero is pixel-identical, and
 resize still holds progress to 0.00000 at Film, Digital, the hero and Impact.
 
+**The final beat runs itself (2026-09-21).** Reaching the hero used to leave
+the visitor holding a gesture they had no reason to know they still owed. One
+forward gesture at Digital now carries the whole ending: the camera travels to
+the wordmark, comes to a complete stop, holds for a second, and the reveal
+starts on its own.
+
+It is an explicit state in `ScrollTimelineProvider`, not a scroll threshold,
+so that a resize, a ScrollTrigger refresh or a stray wheel notch cannot be
+mistaken for navigation partway through:
+
+```text
+idle → settling → holding → (the ordinary Impact jump) → idle
+```
+
+`settling` is entered ONLY from `arriveAtSection('hero', …, { forward: true })`,
+and `forward` is set only by `goToNextChapter`. That is the whole of the
+direction test, and it is what keeps the reverse navigable: coming back from
+Impact arrives at the hero through `goToPreviousChapter`, so the state stays
+`idle`, nothing fires, and the next backward gesture goes on to Digital. A
+click on the hero's own navigation mark does not arm it either — a visitor who
+asks to be AT the hero should not be carried past it.
+
+**The hold waits for stillness, not for arrival.** Those are not the same
+moment: the traversal's scroll tween lands, and the camera is still closing the
+last of the distance behind it for most of three seconds afterwards, because
+the rig damps toward the path rather than being placed on it. A hold started at
+the arrival would be a hold over a camera still creeping into place. So it
+starts on `cameraRestEvent.js` — announced when the camera is on its target
+exactly, OR when it is slower than 1.2mm/s, which at the hero's stand-off is
+about a fifth of a pixel per second. The looser test matters: the exact one
+flips more than half a second after the camera has visibly stopped, and that
+half second would come out of a pause that is meant to measure one second.
+
+Measured, from one forward gesture at Digital, with nothing else touched:
+
+| viewport | traversal | hold | reveal |
+| --- | --- | --- | --- |
+| 1440x900 | 5.75s | **1.05s** | **1.47s** |
+| 393x852 | 5.71s | **0.93s** | **1.52s** |
+
+Across the hold the camera moves less than a fifth of a pixel; consecutive
+frames differ by 0.07-0.10 of 255. It is not bit-identical, because the hold
+deliberately begins at the point the camera is visibly rather than
+mathematically still — waiting for the latter costs half the pause.
+
+Input is refused for the hold and the reveal (`isChapterTransitionLocked`
+includes `finalBeat === 'holding'`; the jump owns its own lock) and released
+the moment the reveal lands. Nine wheel events fired during the hold — six
+forward, three back — changed nothing: the sequence still arrived at Impact
+once, because a locked gesture is dropped before it can accumulate. `settling`
+is deliberately NOT locked: by then the camera is visibly at the hero, and a
+visitor who decides to turn back can, which cancels the beat through
+`cancelActiveDriversAndLocks` like any other supersession. One timer, cleared
+there, so no path leaves one running against a camera that has gone elsewhere.
+A resize during the hold neither restarts nor duplicates it — the guard is on
+the state, so a viewport change that makes the camera move and settle again
+finds `holding` rather than `settling`.
+
+The side navigation keeps the hero mark through the hold and the first half of
+the reveal, switching to Impact at `IMPACT_ACTIVE_T` — halfway, where the sheet
+covers under half the frame and the table is plainly the subject.
+
 **Responsive, and baked before the move starts.** The Impact anchors are solved
 in `applyFraming`, off the hero anchor that was just written, so the destination
 exists before the camera sets off and there is nothing to correct on arrival.

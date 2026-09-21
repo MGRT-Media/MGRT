@@ -200,6 +200,21 @@ export const HERO_TRAVERSAL_DURATION_SECONDS = 3
  */
 export const IMPACT_REVEAL_DURATION_SECONDS = 1.15
 
+/**
+ * The last look at the wordmark before the reveal takes it away.
+ *
+ * The final beat is no longer "scroll, then scroll again". One forward gesture
+ * at Digital now carries the visitor all the way: the camera travels to the
+ * hero, comes to a complete stop, holds this long, and then the Impact reveal
+ * starts on its own.
+ *
+ * Measured from the camera actually being STILL, not from the traversal's
+ * scroll tween landing — those are nearly three seconds apart on this leg, and
+ * a hold that began at the first would be a hold over a camera still creeping
+ * into place. See `cameraRestEvent.js`.
+ */
+export const HERO_HOLD_MS = 1000
+
 export const INTRO_INTENT_DECAY_MS = 150
 
 /**
