@@ -1561,28 +1561,38 @@ Impact arrives at the hero through `goToPreviousChapter`, so the state stays
 click on the hero's own navigation mark does not arm it either — a visitor who
 asks to be AT the hero should not be carried past it.
 
-**The hold waits for stillness, not for arrival.** Those are not the same
-moment: the traversal's scroll tween lands, and the camera is still closing the
-last of the distance behind it for most of three seconds afterwards, because
-the rig damps toward the path rather than being placed on it. A hold started at
-the arrival would be a hold over a camera still creeping into place. So it
-starts on `cameraRestEvent.js` — announced when the camera is on its target
-exactly, OR when it is slower than 1.2mm/s, which at the hero's stand-off is
-about a fifth of a pixel per second. The looser test matters: the exact one
-flips more than half a second after the camera has visibly stopped, and that
-half second would come out of a pause that is meant to measure one second.
+**The hold waits for stillness, not for arrival — and stillness means what the
+viewer thinks it means.** Arrival and rest are not the same moment: the
+traversal's scroll tween lands, and the camera keeps closing distance behind it,
+because the rig damps toward the path rather than being placed on it. So the
+hold starts on `cameraRestEvent.js`, announced when the camera is on its target
+exactly or is slower than **11mm/s** — two pixels a second at the hero's
+stand-off, which is where a slow move stops reading as movement.
 
-Measured, from one forward gesture at Digital, with nothing else touched:
+That threshold was 1.2mm/s to begin with, on the reasoning that a fifth of a
+pixel a second is unarguably still. Measured against the real deceleration,
+that was far too strict, and it made the feature worse than the thing it
+replaced. The traversal is under four pixels a second at 4.70s and under two at
+4.96s — but does not reach a fifth of a pixel until **6.37s**. The hold was
+therefore beginning a second and a half after the camera had visibly stopped,
+and that second and a half sat on the front of a pause meant to last one. The
+instrumentation used the same strict threshold, so it reported a 1.05s hold
+while the viewer was sitting through about 2.6 seconds of held frame. A
+measurement that agrees with the code and disagrees with the person watching is
+measuring the wrong thing.
+
+The cost of the looser test is real and small: the camera is still closing a
+gap of roughly speed/lambda when the hold starts, about four millimetres, under
+a pixel, and decaying. Consecutive frames across the hold differ by 0.24-0.46
+of 255. The hold is not bit-identical; it is still to anybody looking at it.
+
+Measured from one forward gesture at Digital, with "still" defined as under two
+pixels a second:
 
 | viewport | traversal | hold | reveal |
 | --- | --- | --- | --- |
-| 1440x900 | 5.75s | **1.05s** | **1.47s** |
-| 393x852 | 5.71s | **0.93s** | **1.52s** |
-
-Across the hold the camera moves less than a fifth of a pixel; consecutive
-frames differ by 0.07-0.10 of 255. It is not bit-identical, because the hold
-deliberately begins at the point the camera is visibly rather than
-mathematically still — waiting for the latter costs half the pause.
+| 1440x900 | 4.81s | **1.05s** | **1.39s** |
+| 393x852 | 4.74s | **1.02s** | **1.45s** |
 
 Input is refused for the hold and the reveal (`isChapterTransitionLocked`
 includes `finalBeat === 'holding'`; the jump owns its own lock) and released

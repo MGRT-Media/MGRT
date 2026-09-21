@@ -114,12 +114,24 @@ const ROTATION_DAMP_LAMBDA = 3.0
 /**
  * The speed below which the camera counts as stopped, in world units a second.
  *
- * 1.2mm/s. At the hero's stand-off a pixel is about 5.3mm across, so this is
- * roughly a fifth of a pixel per second — a camera moving this slowly is
- * stationary to anyone watching, and stays inside a fifth of a pixel across a
- * whole second of holding.
+ * About 11mm/s, which at the hero's stand-off — where a pixel spans roughly
+ * 5.3mm — is two pixels a second. That is the point at which a slow camera
+ * move stops reading as movement, and it is the number that matters, because
+ * anything keyed to this is really keyed to what the viewer believes.
+ *
+ * It was 1.2mm/s, a fifth of a pixel a second, chosen to be unarguably still.
+ * Measured against the real deceleration that was far too strict: the
+ * Digital -> hero traversal is under four pixels a second at 4.70s and under
+ * two at 4.96s, but does not reach a fifth of a pixel until 6.37s. The hero
+ * hold therefore began a second and a half after the camera had visibly
+ * stopped, and that second and a half was added to a pause meant to last one —
+ * reported as a 1.05s hold while the viewer was sitting through about 2.6s.
+ *
+ * The cost of the looser test is real and small: the camera is still closing a
+ * gap of roughly v/lambda when the hold starts, which at this speed is about
+ * four millimetres, under a pixel, and decaying.
  */
-const REST_SPEED = 0.0012
+const REST_SPEED = 0.011
 
 const IMPACT_POSITION_DAMP_LAMBDA = 16
 const IMPACT_ROTATION_DAMP_LAMBDA = 18
