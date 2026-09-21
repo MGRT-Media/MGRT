@@ -132,6 +132,21 @@ The Campaigns section and everything after it were removed on explicit request. 
 - The Digital video pauses once the camera is well into the hero approach (progress 0.8), since the monitor is out of shot and the hero is where the visitor rests.
 - The homepage no longer links to /work, /about or /contact (those links lived in the closing frame); the pages remain reachable by URL. **Resolved 2026-09-20:** the site navigation is mounted on the homepage again (`GlobalNav`'s `home` variant — top-right links, no mark, since the homepage has its own wordmark). It had been taken off the homepage on 2026-09-14 because the closing frame carried those links, and the closing frame was removed the next day, which left the homepage with no way to reach the rest of the site.
 
+### A white page in Chrome only (2026-09-21, resolved)
+The live site rendered a white page in Chrome while Safari, on the same machine
+at the same moment, was correct. Cause: a single 503 on `/assets/index-*.css`,
+the file that carries the entire layout, combined with the `immutable` cache
+header `vercel.json` puts on everything under `/assets/` — which the CDN also
+attaches to its **error** responses. Chrome cached the empty 503 as the
+stylesheet and stopped asking, so the fault persisted across visits in that one
+browser. Nothing in the 3D scene, the responsive viewport-fit work or the
+restored navigation was involved; the scene was rendering the whole time,
+underneath an unstyled document. `index.html` now notices a stylesheet that
+parsed to zero rules and re-requests it under a cache-busting URL, so an
+affected browser heals itself on the next visit with no action from the
+visitor. Full account in `technical-architecture.md` §20.
+
+
 ---
 
 ## 4. Phase 1D — Digital / Monitor Foundation

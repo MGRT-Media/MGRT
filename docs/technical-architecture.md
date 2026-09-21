@@ -1696,6 +1696,63 @@ ADVANCED EXPERIENCE → FEATURE FAILURE → GRACEFUL FALLBACK → ACCESSIBLE CON
 
 The visitor must never encounter a blank page, broken canvas, frozen scroll state, or inaccessible contact path because one advanced feature failed.
 
+### When the stylesheet is the thing that fails (2026-09-21)
+
+The site was reported white in Chrome and correct in Safari, on the same
+machine, at the same moment. Neither the scene nor any of the recent
+responsive-framing work was involved: every model, texture and script arrived
+with a 200, the WebGL context was alive, and the canvas was drawing. What had
+failed was one request — `/assets/index-*.css`, the file that carries the whole
+layout — which came back **503**.
+
+Without it there is no `position: fixed` on `.app-shell`, so the canvas stopped
+being a full-viewport backdrop and laid itself out as what an unstyled
+`<canvas>` is: an inline element, 300x150 by default, sitting in normal flow
+below the browser's own 8px body margin, on the browser's own white. Measured
+in the failing tab: `body` margin 8px, background `rgba(0,0,0,0)`, `.app-shell`
+`position: static; height: 150px`, canvas rect `[8, -527, 1712, 150]`. The
+stylesheet's `CSSStyleSheet` object existed and parsed to **zero rules** — a
+503 body served as `text/css` loads successfully and simply contains nothing,
+which is why no error handler anywhere fired.
+
+What made it a permanent, per-browser condition rather than a moment's bad luck
+is `vercel.json`. It sets
+
+```text
+/assets/(.*)  →  Cache-Control: public, max-age=31536000, immutable
+```
+
+by **path**, and the CDN applies that header to its error responses too — a
+request for a deliberately missing asset returns `404` carrying a full year of
+`immutable` (verified 2026-09-21). A browser that catches one such response
+stores it as the file, and never asks again: a second request for the same
+missing asset was served from disk with `transferSize: 0`. So Chrome, which
+happened to catch the 503, had the empty stylesheet nailed in place for a year;
+Safari, which had caught a good one, was unaffected. Hence "broken in one
+browser only", with a healthy origin behind it — `curl` returned 200 and 13,973
+bytes throughout, and 12 sequential and 4x16 concurrent refetches from the
+failing tab were all 200.
+
+The recovery is at the foot of `index.html`: after the head has been parsed —
+where a pending stylesheet has already blocked the script, so every `<link>`
+above has either applied or failed — each same-origin stylesheet is checked for
+`cssRules.length`, and an empty one is re-requested under a URL carrying a
+`reload=<timestamp>` query, which is a key neither the browser cache nor the
+CDN cache has an answer for. `cssRules` rather than the load event, because the
+load event reports success. Once only, and nothing happens at all when the
+styles are fine (verified: one stylesheet, one CSS request, no retry element).
+
+The inline `<style>` in the head also now paints `html, body` the void. That is
+not the fix and does not conceal anything — the retry still runs and the
+console still carries the failed request — it only means the seconds before
+recovery are the right colour rather than white.
+
+Untouched deliberately: the `immutable` header itself, which is correct for
+hashed build output and is what keeps repeat visits cheap. Vercel's header
+rules cannot be conditioned on response status, so the error-caching behaviour
+cannot be fixed in configuration; it is handled in the page instead.
+
+
 ### Measured baseline (Group A, 2026-09-16)
 
 The numbers below replace the pre-optimization checkpoint (`b3f9dc6`) as the reference every later performance change is compared against. Conditions: M2 Pro, Chrome, production build, 1440x900, DPR 2 against the renderer's 1.75 cap, measured to the reveal of the opening frame. Network conditions are Chrome's own throttling profiles; runs were interleaved with the previous build to cancel machine drift.

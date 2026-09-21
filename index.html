@@ -101,6 +101,17 @@
       bundle, which is part of what is being waited for.
     -->
     <style>
+      /* The void, in case the application's stylesheet never arrives. Every
+         colour on this page comes from that one file, so without it the
+         document falls back to the browser's white — which is the most
+         alarming possible way to fail, and the least like this site. The
+         recovery for that failure is at the end of the body; this is only so
+         the seconds before it are dark. */
+      html,
+      body {
+        margin: 0;
+        background: #0d0d0d;
+      }
       .startup-cover {
         --startup-warm: 255, 241, 220;
         position: fixed;
@@ -215,6 +226,48 @@
       <button type="button" class="startup-cover__retry" hidden>Try again</button>
     </div>
     <div id="root"></div>
+    <!--
+      The application's entire layout lives in one stylesheet. If that single
+      request fails nothing else on the page does: the bundle still runs and
+      the scene still renders, but the canvas lays itself out as an ordinary
+      inline element on an unstyled document. That is the "white page in one
+      browser, correct in another" this guards against.
+
+      A failed request is normally a moment's bad luck. Ours was sticky:
+      everything under /assets/ is served `max-age=31536000, immutable`
+      (vercel.json), and the CDN puts that header on its ERROR responses too,
+      so a browser that caught one 503 stored it AS the stylesheet and went on
+      serving it from disk, without asking again, on every later visit — for a
+      year. The other browser, which happened to catch a good response, stayed
+      perfectly fine, which is what made it look like a Chrome bug.
+
+      So: notice, and ask again under a URL neither cache has an answer for.
+      The test is `cssRules`, not the load event, because a 503 body served as
+      text/css loads successfully and simply parses to nothing. This runs
+      below the head, and a pending stylesheet up there blocks it, so by the
+      time it does every <link> above has either applied or failed. Once only,
+      and a no-op whenever the styles are fine.
+    -->
+    <script>
+      (function () {
+        var links = document.querySelectorAll('link[rel="stylesheet"]')
+        for (var i = 0; i < links.length; i += 1) {
+          var link = links[i]
+          if (new URL(link.href, location.href).origin !== location.origin) continue
+          var empty
+          try {
+            empty = !link.sheet || link.sheet.cssRules.length === 0
+          } catch (error) {
+            continue
+          }
+          if (!empty) continue
+          var again = document.createElement('link')
+          again.rel = 'stylesheet'
+          again.href = link.href + (link.href.indexOf('?') === -1 ? '?' : '&') + 'reload=' + Date.now()
+          link.parentNode.insertBefore(again, link.nextSibling)
+        }
+      })()
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
