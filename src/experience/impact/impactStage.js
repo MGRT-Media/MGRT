@@ -150,7 +150,7 @@ function endElevationForAspect(aspect) {
  * before the rise starts, which is the "several separate camera moves" the
  * reveal must not break into.
  */
-const TILT_START = 0.26
+const TILT_START = 0.22
 
 /**
  * The field of view settles back to the project's own 45 over the first half
@@ -178,14 +178,17 @@ const FIT_MARGIN = 1.08
 /**
  * The shape of the pull-back.
  *
- * `smootherstep` raised to 1.6. The exponent is what decides how long the
+ * `smootherstep` raised to 1.35. The exponent is what decides how long the
  * frame stays indistinguishable from the room, because distance is what makes
  * the sheet's edge appear: at 2 — where this started — the first quarter of
  * the move cost under 2% of the distance, which held the illusion beautifully
- * and read, at any honest duration, as the site having stopped. At 1.6 the
- * edge arrives about a fifth of the way in, the table is well into frame by
- * halfway, and the move is still perfectly still at the instant of the cut,
- * which is the only moment that actually has to be.
+ * and read, at any honest duration, as the site having stopped. 1.6 fixed most
+ * of that; 1.35 finishes the job, and is what a move this short can afford.
+ * The sheet covers 0.91 of the frame a quarter of the way in, 0.48 at the
+ * halfway mark and 0.30 at three quarters — so the pull-back is visibly under
+ * way almost at once, the edge and the table arrive together in the middle
+ * third, and the last third is the rise. The move is still perfectly still at
+ * the instant of the cut, which is the only moment that actually has to be.
  *
  * Raising `smootherstep` rather than replacing it keeps what it is for: zero
  * velocity AND zero acceleration at both ends, so the move leaves the hero
@@ -197,7 +200,7 @@ function revealEase(u) {
   return Math.pow(s, REVEAL_EXPONENT)
 }
 
-const REVEAL_EXPONENT = 1.6
+const REVEAL_EXPONENT = 1.35
 
 /* ------------------------------------------------------------------ */
 /* Stage placement — solved once per viewport, before the move starts  */

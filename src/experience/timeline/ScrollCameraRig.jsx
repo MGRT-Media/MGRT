@@ -87,6 +87,32 @@ const PLATE_ARM_BAND = 0.001
 const POSITION_DAMP_LAMBDA = 2.6
 const ROTATION_DAMP_LAMBDA = 3.0
 
+/**
+ * How closely the camera follows the path through the Impact reveal.
+ *
+ * Everywhere else the camera TRAILS the pose it is given, and that lag is the
+ * point: it is what gives a scroll-driven camera weight, and what lets it
+ * settle after the visitor stops. It also means the camera is still arriving
+ * well after the move that drove it has landed — measured on the Impact
+ * reveal, a 3 second scroll tween produced a 5.4 second camera move, of which
+ * 1.8 seconds was this damper closing the last 1% of the distance on an
+ * exponential that never quite gets there.
+ *
+ * The Impact leg does not need the lag, because unlike a scroll-driven stretch
+ * its motion is already fully authored: `revealEase` shapes the whole move and
+ * leaves it at zero velocity AND zero acceleration at both ends. Trailing that
+ * curve adds nothing but delay at the front and a tail at the back. So on this
+ * leg the camera follows it closely instead, which is what makes a decisive
+ * 1.5 second reveal possible at all.
+ *
+ * Still damped rather than pinned: the leg is reachable by dragging the
+ * scrollbar as well as by the gesture, and an undamped camera on a dragged
+ * scrollbar is raw. This is tight enough to be visually exact within a frame
+ * or two and loose enough to stay smooth.
+ */
+const IMPACT_POSITION_DAMP_LAMBDA = 16
+const IMPACT_ROTATION_DAMP_LAMBDA = 18
+
 // How quickly an attempted-scroll wobble (ScrollTimelineProvider.jsx's
 // Snap 2 hard lock, "Subtle Resistance Fallback") decays back toward 0
 // once the visitor stops pushing against it — a spring release, not an
@@ -356,7 +382,15 @@ export default function ScrollCameraRig() {
     // middle of the room at more than twice the old peak.
     const pos = dampedPosition.current
     const targetArc = pathArcLengthAt(targetProgress)
-    arcPosition.current = THREE.MathUtils.damp(arcPosition.current, targetArc, POSITION_DAMP_LAMBDA, delta)
+    // Either end of the leg counts: going forward the target crosses first,
+    // coming back the camera is still past the hero while the target is on it.
+    const onImpactLeg = targetProgress > HERO_T || cameraProgress.value > HERO_T
+    arcPosition.current = THREE.MathUtils.damp(
+      arcPosition.current,
+      targetArc,
+      onImpactLeg ? IMPACT_POSITION_DAMP_LAMBDA : POSITION_DAMP_LAMBDA,
+      delta,
+    )
     // Settled: use the target itself, so a stretch of path where only the aim
     // changes cannot leave the camera parked at the wrong end of it — and so a
     // camera resting on the hero is placed on exactly the same pose every frame.
@@ -391,7 +425,8 @@ export default function ScrollCameraRig() {
     // Frame-rate-independent slerp factor with the same exponential shape
     // as THREE.MathUtils.damp, so rotation and position share one
     // consistent "catch-up" feel despite using different lambdas/math.
-    const rotationAlpha = 1 - Math.exp(-ROTATION_DAMP_LAMBDA * delta)
+    const rotationAlpha =
+      1 - Math.exp(-(onImpactLeg ? IMPACT_ROTATION_DAMP_LAMBDA : ROTATION_DAMP_LAMBDA) * delta)
     // On the handoff frame the turn is taken whole — see the note on
     // `upScratch` above.
     if (cut) dampedQuaternion.current.copy(targetQuaternion)

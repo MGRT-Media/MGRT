@@ -1483,39 +1483,61 @@ moved: mean absolute difference 4.8/255, and the frame's mean level matches to
 spread over the whole image — no shifted edges, no colour cast, no vignette —
 and it lasts one frame at the start of a move.
 
-**The move, and its pacing (shortened 2026-09-21).** One continuous pull-back.
-It first shipped over 0.10 of progress and a 6.5-second tween, on the reasoning
-that a reveal needs time to be doubted before it is understood. It does — but
-that version spent the time before anything had happened, and seconds in which
-the frame is deliberately unchanged read as the site having stalled rather than
-as suspense. It now runs over **0.06 of progress and a 3-second tween** (the
-same figure the Digital -> hero traversal uses), and most of what was cut was
-the dead opening rather than the reveal itself.
+**The move, and its pacing (shortened twice, 2026-09-21).** One continuous
+pull-back. It first shipped over 0.10 of progress and a 6.5-second scroll
+tween, then 0.06 and 3 seconds, and now **0.04 of progress and a 1.15-second
+tween**, which measures as a **~1.5-second camera move**.
 
-The shape is `smootherstep` raised to **1.6**, down from 2. The exponent is
-what decides how long the frame stays indistinguishable from the room, because
-distance is what makes the sheet's edge appear. At 2 the first quarter of the
-move cost under 2% of the distance; at 1.6 the print covers 0.93 of the frame a
-quarter of the way in, 0.45 at the halfway mark and 0.27 at rest — the illusion
-for the first half-second, the edge by about a second, the table by a second
-and a half. Raising `smootherstep` rather than replacing it keeps what it is
-for: zero velocity AND acceleration at both ends, so the move still leaves the
-hero and arrives at the table without a kick, and is still perfectly still at
-the instant of the cut, which is the only moment that has to be. The camera
-begins tipping at 0.26, just under where the edge appears, so the pull-back and
-the rise read as one move rather than two. The field settles from whatever the
-hero opened it to back to the project's 45 over the first half — free, while
-only a flat sheet square to the lens is in frame, and cancelled exactly by
-standing the camera off far enough to keep the sheet filling the frame.
+That gap between the tween and the move is the thing worth understanding here,
+because it is where the slowness actually lived. `ScrollCameraRig` does not
+place the camera on the path; it damps toward it, and that lag is deliberate
+everywhere else — it is what gives a scroll-driven camera weight. Measured
+frame by frame from the camera's first movement to its last, the 3-second
+version produced a **5.42-second** move: 1.6s to cover the first quarter, and
+**1.8 seconds spent closing the final 1%** on an exponential that never quite
+arrives. Shortening the tween alone would not have touched either end of that.
 
-No camera distance was removed: the stand-off, the elevation and the approved
-composition are untouched, because those ARE the final framing. The move covers
-the same ground, sooner.
+Three changes, all of them pacing:
 
-Measured end to end, gesture to rest: 3.46s at 1440x900 (was 6.95), 3.27s at
-393x852, 3.25s at 360x800 (was 6.73); reverse 3.06s (was 6.56). The hero and
-Impact resting frames are unchanged across the change — 0.019/255 and 0.168/255
-mean absolute difference, both inside the drifting-dust noise floor.
+- **The tween**: 3s to 1.15s.
+- **The curve**: `smootherstep` to the 1.35 rather than 1.6. The exponent is
+  what decides how long the frame stays indistinguishable from the room,
+  because distance is what makes the sheet's edge appear. The sheet now covers
+  0.91 of the frame a quarter of the way in, 0.48 at the halfway mark and 0.30
+  at three quarters — the pull-back is visibly under way almost at once, the
+  edge and the table arrive together through the middle third, and the last
+  third is the rise. The tip starts at 0.22 so the two read as one move.
+- **The follow**: on this leg alone the camera tracks the path at damping
+  lambda 16 (rotation 18) instead of 2.6/3.0. The Impact leg does not need the
+  lag, because unlike a scroll-driven stretch its motion is already fully
+  authored — `revealEase` shapes the whole move and leaves it at zero velocity
+  AND acceleration at both ends. Trailing that curve added delay at the front
+  and a tail at the back and nothing else. It is still damped rather than
+  pinned, because the leg is reachable by dragging the scrollbar as well as by
+  the gesture. The gate is strict (`targetProgress > HERO_T ||
+  cameraProgress.value > HERO_T`), so no other transition is touched: the
+  Digital -> hero traversal ends exactly AT `HERO_T` and never exceeds it.
+
+Nothing was taken off the camera path. The stand-off, the elevation and the
+approved composition ARE the final framing, so the move covers the same ground
+— 2.54 units at 1440x900, 8.76 at 393x852, unchanged to three decimals — just
+sooner.
+
+Measured, camera first movement to camera fully stopped (below 1mm/s):
+
+| viewport | forward | reverse |
+| --- | --- | --- |
+| 1920x1080 | 1.47s | 1.41s |
+| 1440x900 | 1.45s | 1.41s |
+| 393x852 | 1.50s | 1.53s |
+| 360x800 | 1.51s | 1.53s |
+
+Zero backward steps in either direction at any size. The handoff is unaffected:
+measured with the move slowed so the camera has not yet travelled, the frame
+across the cut is now **identical** — mean absolute difference 0, every channel
+mean matching exactly. The hero and Impact resting frames are unchanged
+(0.020 and 0.024 of 255), the return to the hero is pixel-identical, and
+resize still holds progress to 0.00000 at Film, Digital, the hero and Impact.
 
 **Responsive, and baked before the move starts.** The Impact anchors are solved
 in `applyFraming`, off the hero anchor that was just written, so the destination

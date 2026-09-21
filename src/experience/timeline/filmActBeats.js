@@ -87,7 +87,7 @@ export const HERO_T = 0.9
  * past the hero is the pull-back that discovers the table
  * (`impact/impactStage.js`).
  *
- * The span is 0.06, shortened from 0.10 on 2026-09-21. The reveal has to be
+ * The span is 0.04, shortened from 0.10 and then 0.06 on 2026-09-21. The reveal has to be
  * doubted before it is understood, which argued for room; in practice the room
  * read as waiting. It is now the shortest leg on the timeline, which is right:
  * it is one move, and the visitor has already arrived somewhere by the time it
@@ -100,7 +100,7 @@ export const HERO_T = 0.9
  * scroll would cross it; what the visitor actually waits through is
  * `IMPACT_REVEAL_DURATION_SECONDS` below.
  */
-export const IMPACT_T = 0.96
+export const IMPACT_T = 0.94
 
 /**
  * The end of the journey. The camera path, its distance tables, the scroll
@@ -188,13 +188,17 @@ export const HERO_TRAVERSAL_DURATION_SECONDS = 3
  * deliberately unchanged read as the site having stalled rather than as
  * suspense.
  *
- * 3, which is the same figure the Digital -> hero traversal uses: this
- * project's existing value for a long, deliberate move, rather than a new
- * one. The reveal is not rushed to fit it — most of what was cut was the dead
- * first quarter, which `revealEase` (`impact/impactStage.js`) now spends much
- * less of the move on.
+ * Then 3, and now 1.15. This is the SCROLL tween's duration, which is not the
+ * same as how long the camera moves for: the rig trails the path it is given
+ * and finishes arriving after the tween has landed. Measured end to end — from
+ * the camera's first movement to its last — 3 produced a 5.42 second move, of
+ * which 1.8 seconds was the damper's tail after the last 1% of the distance.
+ * 1.15 plus the tighter follow on this leg (`ScrollCameraRig`) lands the whole
+ * thing at about 1.5 seconds, which is the brief.
+ *
+ * Do not read this number as the transition's length. Measure it.
  */
-export const IMPACT_REVEAL_DURATION_SECONDS = 3
+export const IMPACT_REVEAL_DURATION_SECONDS = 1.15
 
 export const INTRO_INTENT_DECAY_MS = 150
 
