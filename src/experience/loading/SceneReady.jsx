@@ -3,7 +3,6 @@ import * as THREE from 'three'
 import { useThree } from '@react-three/fiber'
 import { whenAssetUpgradesSettled } from './assetReadiness.js'
 import { armShadowFreeze, resetShadowUpdates } from '../lighting/shadowUpdates.js'
-import { loadDeferredAssets } from './deferredAssets.js'
 
 /**
  * How many frames to render before the canvas is shown.
@@ -50,7 +49,7 @@ const WARMUP_FRAMES = 1
  * the loop over at priority 1, and a later subscription on a component that
  * renders nothing was observed never to be driven.
  */
-export default function SceneReady({ onReady }) {
+export default function SceneReady({ onReady, afterReady }) {
   const gl = useThree((state) => state.gl)
   const scene = useThree((state) => state.scene)
   const camera = useThree((state) => state.camera)
@@ -94,10 +93,10 @@ export default function SceneReady({ onReady }) {
         frames += 1
         if (frames >= WARMUP_FRAMES) {
           onReady()
-          // Everything the later beats need, from the moment the opening is
-          // actually on screen — see `deferredAssets.js`. Here rather than in
-          // `Home.jsx` because the upgrades need this canvas's renderer.
-          loadDeferredAssets(gl)
+          // Whatever the scene defers until the opening is actually on
+          // screen. Called from here rather than by the page because the
+          // work needs this canvas's renderer.
+          afterReady?.(gl)
           return
         }
         handle = requestAnimationFrame(tick)
@@ -112,7 +111,7 @@ export default function SceneReady({ onReady }) {
       // unfrozen again.
       resetShadowUpdates()
     }
-  }, [gl, scene, camera, onReady])
+  }, [gl, scene, camera, onReady, afterReady])
 
   return null
 }

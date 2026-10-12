@@ -4,7 +4,7 @@ How the Creative Table experience is built. What the visitor sees is defined in 
 
 Sections 1 to 6 describe the target architecture for the redesign. Section 7 onward records **measured findings from the previous build that still apply**. The full tables and methods behind them are in `archive/greek-room/technical-architecture.md` (§13 to §17).
 
-> Status: sections 2 to 6 are the approved plan, not yet implemented. Module names under `studio/` are proposed and may change during the foundations phase. Room dimensions and camera poses are deliberately absent: they are set only after the blockout has been validated in the browser.
+> Status: sections 2 to 4 describe what Phase 1 built. Sections 5 and 6 are the approved plan for later phases. Room dimensions and camera poses in the code are provisional blockout values; they are set properly only after the blockout has been validated in the browser.
 
 ---
 
@@ -33,9 +33,11 @@ Sections 1 to 6 describe the target architecture for the redesign. Section 7 onw
 
 The Greek-room experience keeps working on this branch until the replacement is approved.
 
-- The new scene is built beside the old one under `src/experience/studio/`, with its own root component.
-- `Home.jsx` mounts one experience or the other through a single switch. The old scene stays the default until cutover.
-- Shared modules (camera rig, progress plumbing, loading, post-processing) may be generalised, but only in ways that leave the old scene's behaviour unchanged. Where that is not practical, the new scene gets its own module rather than a fork inside the old one.
+- The new scene lives under `src/experience/studio/`, with its own page, `src/pages/StudioHome.jsx`.
+- **Scene selector:** `?scene=creative-table` mounts the new scene; anything else mounts the original. An inline script at the top of `index.html` reads the query and records it as `data-scene` on `<html>`; `src/sceneSelection.js` reads that attribute once. The choice holds for the whole page load.
+- `App.jsx` lazy-loads one page or the other through **two separate loader functions**. Written as one function choosing between two `import()` calls, Vite preloads both chunks' dependencies whichever is chosen (found in Phase 1: the old scene's chunk and GSAP were fetched on the new scene's page).
+- The startup cover's opening image and the preload hints belong to the original scene. With `data-scene` set, the image is hidden and `startHeroPreloads()` does nothing.
+- Shared modules may be generalised only in ways that leave the old scene's behaviour unchanged. Phase 1 made two such changes: the bokeh pass moved into `postprocessing/DepthAwareBokehPass.js`, and `SceneReady` takes its deferred-loading step as an `afterReady` prop.
 - Greek-room source and assets are deleted only in the cutover phase.
 
 ---
@@ -43,41 +45,55 @@ The Greek-room experience keeps working on this branch until the replacement is 
 ## 3. Scene structure
 
 ```text
-src/experience/
-  studio/
-    studioLayout.js        room, table, lettering and zone dimensions (single source)
-    StudioExperience.jsx   canvas root for the new scene
-    StudioRoom.jsx         walls and floor
-    CreativeTable.jsx      the table
-    WallLettering.jsx      the lettering GLB and its material
-  lighting/
-    studioLighting.js      light definitions and per-stage levels
-    StudioLightingRig.jsx  applies them each frame
-  timeline/
-    beats.js               the six stages: progress, camera pose, look-at, field of view, light levels
-    (camera rig, progress and navigation modules, reused)
-  postprocessing/  loading/  models/  materials/  ui/     (reused)
+src/pages/StudioHome.jsx     the page: loading gate, canvas, overlays, input
+src/sceneSelection.js        which scene this page load runs
+src/experience/studio/
+  studioLayout.js            room, table, lettering, zones and light fixtures (single source)
+  stageBeats.js              the six stages: camera pose, look-at, field of view, light levels
+  stageSampling.js           reads the stages at any point between them
+  stageNavigation.js         which stage is requested: goToStage, stepStage
+  StageInput.jsx             wheel, touch and keyboard into stage steps
+  StudioExperience.jsx       canvas root
+  StudioCameraRig.jsx        moves the camera to the requested stage
+  StudioLightingRig.jsx      holds each light at its stage's level
+  StudioDepthOfField.jsx     post-processing chain and focus
+  StudioRoom.jsx             PLACEHOLDER geometry, replaced in Phase 2
 ```
+
+Everything for the new scene is in `studio/` so the cutover is a matter of deleting the old folders.
 
 ### Centralised definitions
 
 Two modules hold every number that describes the experience:
 
-- **`studioLayout.js`** — where things are: room size, table size and position, lettering position, the Film, MGRT and Digital zones.
-- **`beats.js`** — what happens at each stage: its progress value, camera pose, look-at target, field of view and light levels.
+- **`studioLayout.js`** — where things are: room size, table size, lettering position, the Film, MGRT and Digital zones, and each light fixture's position, colour and full intensity.
+- **`stageBeats.js`** — what happens at each stage: camera position, look-at target, field of view, and each light's level from 0 to 1. Also the travel time between stages.
 
-Camera, lighting, depth of field and navigation read from these. No component holds a position or a progress literal. This replaces the previous arrangement, where `cameraPath.js` and `DepthOfField.jsx` imported anchors directly from scene components and could not outlive them.
+Camera, lighting, depth of field and navigation read from these. No component holds a position or a level literal. Stages are only resting states; `stageSampling.js` derives everything in between. This replaces the previous arrangement, where `cameraPath.js` and `DepthOfField.jsx` imported anchors directly from scene components and could not outlive them.
 
 ### What is reused
 
 | Area | Modules |
 |---|---|
-| Progress | `timeline/journeyProgress.js`, `timeline/contentProgress.js` |
-| Camera | `timeline/ScrollCameraRig.jsx` (damping, slerp, settle event), `timeline/sectionFlight*.js` (direct navigation), `timeline/viewportFit.js` |
-| Scroll | `timeline/smoothScroll.js`, the one-gesture-per-leg model and the resize hold from `ScrollTimelineProvider.jsx` |
-| Loading | everything under `loading/`, the startup cover in `index.html`, the fingerprint plugin in `vite.config.js` |
-| Assets | `models/modelAssets.js`, `models/propTextureUpgrades.js`, the scanned-PBR loader in `materials/scannedStone.js`, `assets/assetUrl.js` |
-| Rendering | `postprocessing/DepthOfField.jsx`, `lighting/shadowUpdates.js`, the dust system in `lighting/volumetricLighting.js`, `ui/GrainOverlay.jsx` |
+Used by the new scene now:
+
+| Area | Modules |
+|---|---|
+| Progress | `timeline/journeyProgress.js` (the two progress objects), `timeline/contentProgress.js` |
+| Loading | `loading/SceneReady.jsx`, `loading/startupCover.js`, `loading/LoadErrorBoundary.jsx`, the startup cover in `index.html` |
+| Rendering | `postprocessing/DepthAwareBokehPass.js`, `lighting/shadowUpdates.js`, `ui/GrainOverlay.jsx` |
+| Shell | `App.jsx`, the router, `GlobalNav`, `ui/SiteMark.jsx`, `timeline/sectionNavigationEvent.js`, `hooks/useViewportHeight.js` |
+
+To be adopted in later phases:
+
+| Area | Modules |
+|---|---|
+| Framing | `timeline/viewportFit.js` (Phase 2) |
+| Assets | `models/modelAssets.js`, `models/propTextureUpgrades.js`, the scanned-PBR loader in `materials/scannedStone.js`, `assets/assetUrl.js`, the fingerprint plugin (Phase 3) |
+| Atmosphere | the dust system in `lighting/volumetricLighting.js`, which is currently tied to the old sun (Phase 3) |
+| Loading | `loading/criticalAssets.js`, `loading/deferredAssets.js`, `loading/heroAssets.js` as patterns (Phase 6) |
+
+Not reused, because they are built around the old room: `timeline/ScrollTimelineProvider.jsx`, `timeline/ScrollCameraRig.jsx`, `timeline/cameraPath.js`, `timeline/sectionFlight*.js`, `postprocessing/DepthOfField.jsx`.
 | Reference | `impact/impactStage.js`, `impact/ImpactStage.jsx`, `impact/tableWood.js`: an earlier table with an elevated three-quarter pose and aspect-aware framing |
 
 ### What is retired at cutover
@@ -88,19 +104,24 @@ Camera, lighting, depth of field and navigation read from these. No component ho
 
 ## 4. Scroll and camera
 
-### Scroll
+### Stage progression
 
-- Scroll is a normalised progress value. Six stages are six stops on it.
-- One scroll gesture moves one stage, as the current chapter navigation does.
-- Progress lives in mutable module objects, never React state.
-- The intro cinematic, the lens-hold locks and the automatic final beat from the old timeline are not carried over.
+- **The page does not scroll.** A stage is a state, not a scroll position. `StageInput.jsx` listens for wheel, touch and keyboard input and calls `stepStage(±1)`. There is no scroll spacer, ScrollTrigger or Lenis in the new scene, and GSAP is not loaded by it.
+- This removes a class of problem the old scene needed code for: with no scroll range, a resize cannot move the camera, and a coasting trackpad cannot overshoot.
+- **One gesture, one stage.** A wheel gesture counts once it has travelled 50 units and stays spent until the wheel has been quiet for 140 ms, so a flick's momentum is part of the gesture that started it. A touch counts once per finger-down after 50 px. Arrow keys, Page Up and Down, Space, Home and End work from the keyboard.
+- Progress is in **stage units**: 0 to 5. `renderedProgress` holds the requested stage, a whole number; `cameraProgress` holds where the camera actually is.
+- The intro cinematic, timed holds, scroll locks and automatic final beat of the old timeline do not exist here.
+- Input made before the reveal is kept as one forward step, as before.
 
 ### Camera
 
-- The existing damped rig is kept: arc-length damping for position, quaternion slerp for rotation, and a settle event when the camera comes to rest.
-- The path is a spline through the stage poses in `beats.js`. **No complex path is authored until room proportions and framing have been validated in the blockout.** Until then, poses are simple and adjustable.
-- Each stage's framing adapts to the viewport through `viewportFit.js` (§10).
-- Direct navigation between Film, Digital and Overview uses the existing section-flight system, which blends content state along the way so lights do not pop.
+- `StudioCameraRig.jsx` animates one number, `cameraProgress`, toward the requested stage with a critically damped spring. It starts from rest, settles without overshoot, and a new request mid-move (including a reversal) bends the motion instead of restarting it. `STAGE_TRAVEL_SECONDS` (0.45) sets the pace: about 1.1 s to cover 95% of a stage.
+- Position and look-at are centripetal Catmull-Rom splines through the stage poses, sampled so stage N sits at exactly N. Neighbouring stages must not share an identical point.
+- Field of view and light levels interpolate linearly between neighbouring stages.
+- Because everything is a pure function of one number, reversing is exact and camera and lighting cannot drift apart.
+- With reduced motion, the camera goes straight to the requested stage.
+- **Overview framing:** stages marked `fitTableWidth` (the overview, stages 2 and 5) solve their distance and aim height for the live aspect ratio, so the table spans 75% of the viewport width and sits centred. `OVERVIEW_FRAMING` in `stageBeats.js` holds the target, a height limit for ultrawide windows and the distance limits.
+- **Not yet built:** framing for the other stages and for portrait (Phase 2), and direct flights between Film, Digital and Overview that do not pass through the stage between (Phase 5). `goToStage(n)` already exists for navigation to call.
 
 ---
 
@@ -135,7 +156,7 @@ Camera, lighting, depth of field and navigation read from these. No component ho
 
 ### Post-processing
 
-The chain is kept: render, ambient occlusion (GTAO), depth-aware bokeh, dust, output. Focus targets come from the beats instead of prop anchors.
+`StudioDepthOfField.jsx` runs render, ambient occlusion (GTAO), depth-aware bokeh and output. The focal plane sits on the current stage's look-at point, read from the stage definitions, so the lens knows nothing about the room's geometry. Dust joins the chain in Phase 3.
 
 ---
 

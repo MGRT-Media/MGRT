@@ -6,6 +6,7 @@ import CinemaCamera from './film/CinemaCamera.jsx'
 import { lightingParams } from './lighting/volumetricLighting.js'
 import LoadErrorBoundary from './loading/LoadErrorBoundary.jsx'
 import SceneReady from './loading/SceneReady.jsx'
+import { loadDeferredAssets } from './loading/deferredAssets.js'
 import DepthOfField from './postprocessing/DepthOfField.jsx'
 import ImpactStage from './impact/ImpactStage.jsx'
 import { stageSwap } from './impact/stageSwap.js'
@@ -130,7 +131,9 @@ export default function CinematicExperience({ onReady }) {
           {/* Inside the boundary deliberately — see `SceneReady`. While the
               models are still loading this does not exist, so it cannot report
               a room that is missing two of its objects. */}
-          <SceneReady onReady={onReady} />
+          {/* `loadDeferredAssets`: everything the later beats need, started
+              once the opening is on screen — see `deferredAssets.js`. */}
+          <SceneReady onReady={onReady} afterReady={loadDeferredAssets} />
         </Suspense>
       </group>
       {/* The Impact set. Present from the first frame and invisible until the

@@ -5,13 +5,22 @@ import { PAGE_TITLES } from './navigation/navLinks.js'
 import BlankPage from './pages/BlankPage.jsx'
 import LoadErrorBoundary from './experience/loading/LoadErrorBoundary.jsx'
 import { revealStartupCover, showStartupFailure } from './experience/loading/startupCover.js'
+import { CREATIVE_TABLE_SCENE, selectedScene } from './sceneSelection.js'
 
 /**
  * Lazy on purpose, and the single most important line in this file: it is
  * what keeps Three.js, the scene assets and the scroll timeline out of the
  * initial bundle for /work, /about and /contact. See `pages/Home.jsx`.
  */
-const Home = lazy(() => import('./pages/Home.jsx'))
+const loadHome = () => import('./pages/Home.jsx')
+const loadStudioHome = () => import('./pages/StudioHome.jsx')
+
+// One scene per page load, each its own chunk — see `sceneSelection.js`. The
+// scene that is not selected is never requested, and neither are its assets.
+// Two separate loaders rather than one function choosing between two imports:
+// written as one expression, the build preloads both chunks' dependencies
+// whichever is chosen.
+const Home = lazy(selectedScene === CREATIVE_TABLE_SCENE ? loadStudioHome : loadHome)
 
 function Routes() {
   const path = useRoute()

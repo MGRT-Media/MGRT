@@ -5,6 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MGRT Media</title>
     <!--
+      Development scene selector. `?scene=creative-table` mounts the Creative
+      Table scene in place of the default one (src/sceneSelection.js reads the
+      attribute set here). Decided before anything else runs, because the
+      startup cover and the preload hints below both belong to the default
+      scene and have to stand down for any other.
+    -->
+    <script>
+      if (new URLSearchParams(location.search).get('scene') === 'creative-table') {
+        document.documentElement.dataset.scene = 'creative-table'
+      }
+    </script>
+    <!--
       The live canvas is sized by --app-height (the visible viewport height,
       kept current by useViewportHeight once the experience mounts). The
       opening image on the startup cover has to occupy exactly that box or the
@@ -158,6 +170,11 @@
          half-painted image. */
       .startup-cover--scene-ready .startup-cover__scene {
         opacity: 1;
+      }
+      /* The opening image is a capture of the default scene. Any other scene
+         opens from the plain black cover until it has a capture of its own. */
+      [data-scene] .startup-cover__scene {
+        display: none;
       }
       .startup-cover__message {
         position: relative;

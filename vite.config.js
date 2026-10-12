@@ -108,7 +108,9 @@ function fingerprintPublicAssets() {
   var hints = ${JSON.stringify(hints)}
   var started = false
   window.startHeroPreloads = function () {
-    if (started) return
+    // These are the default scene's files. A scene chosen with ?scene= (see
+    // index.html) loads its own and must not pull these as well.
+    if (started || document.documentElement.dataset.scene) return
     started = true
     hints.forEach(function (hint) {
       var link = document.createElement('link')
