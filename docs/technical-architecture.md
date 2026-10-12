@@ -54,10 +54,13 @@ src/experience/studio/
   stageNavigation.js         which stage is requested: goToStage, stepStage
   StageInput.jsx             wheel, touch and keyboard into stage steps
   StudioExperience.jsx       canvas root
+  stageFraming.js            solves a fitted stage's camera for the live viewport
   StudioCameraRig.jsx        moves the camera to the requested stage
   StudioLightingRig.jsx      holds each light at its stage's level
   StudioDepthOfField.jsx     post-processing chain and focus
-  StudioRoom.jsx             PLACEHOLDER geometry, replaced in Phase 2
+  StudioRoom.jsx             the room and table as a blockout
+  WallLettering.jsx          the wordmark, flat placeholder until Phase 3
+  ZoneGuides.jsx             TEMPORARY outlines of the three table areas
 ```
 
 Everything for the new scene is in `studio/` so the cutover is a matter of deleting the old folders.
@@ -120,8 +123,14 @@ Not reused, because they are built around the old room: `timeline/ScrollTimeline
 - Field of view and light levels interpolate linearly between neighbouring stages.
 - Because everything is a pure function of one number, reversing is exact and camera and lighting cannot drift apart.
 - With reduced motion, the camera goes straight to the requested stage.
-- **Overview framing:** stages marked `fitTableWidth` (the overview, stages 2 and 5) solve their distance and aim height for the live aspect ratio, so the table spans 75% of the viewport width and sits centred. `OVERVIEW_FRAMING` in `stageBeats.js` holds the target, a height limit for ultrawide windows and the distance limits.
-- **Not yet built:** framing for the other stages and for portrait (Phase 2), and direct flights between Film, Digital and Overview that do not pass through the stage between (Phase 5). `goToStage(n)` already exists for navigation to call.
+- **Fixed and fitted stages.** A fixed stage's camera is used as written (stages 0 and 1). A fitted stage (2 to 5) declares what it must show as a box and gives only a viewing direction; `stageFraming.js` solves the rest for the live aspect ratio, like CSS `object-fit: contain`:
+  1. the nearest distance at which the box spans no more than the stage's share of the frame (`FRAMING` defaults: 75% of width, 80% of height);
+  2. never beyond the room: 0.25 m from any wall or the ceiling;
+  3. if the room is too small, the lens widens only as far as needed, up to 58°;
+  4. the aim slides until the box is centred.
+- **Portrait.** Below an aspect ratio of 0.9 a stage's `portraitPosition` direction is used if it has one. Stages 2 and 5 use this to view the table from its end.
+- The solve runs when the aspect ratio changes, not per frame, and moves that stage's points on the path splines.
+- **Not yet built:** easing of a re-fit on resize, and direct flights between Film, Digital and Overview that do not pass through the stage between (Phase 5). `goToStage(n)` already exists for navigation to call.
 
 ---
 

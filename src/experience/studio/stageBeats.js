@@ -1,4 +1,4 @@
-import { LETTERING_CENTER, TABLE_TOP_CENTER, ZONES } from './studioLayout.js'
+import { ROOM, TABLE_BOUNDS, TABLE_TOP_CENTER, ZONES } from './studioLayout.js'
 
 /**
  * The six stages of the Creative Table sequence, in order.
@@ -9,77 +9,112 @@ import { LETTERING_CENTER, TABLE_TOP_CENTER, ZONES } from './studioLayout.js'
  * neighbouring stages, so a stage is only ever a resting state — the moves
  * between them are derived, not authored.
  *
+ * A stage's camera is one of two kinds:
+ *
+ * - **Fixed.** `position` and `lookAt` are used as written.
+ * - **Fitted** (`fit`). The shot is defined by what it must show rather than
+ *   by where the camera stands: `position` gives only the DIRECTION the
+ *   subject is viewed from, and `stageFraming.js` solves the distance, the aim
+ *   and if need be the field of view for the live viewport. `portraitPosition`
+ *   is the direction used instead on an upright screen.
+ *
  * `lookAt` is also the lens's focus subject: every shot here looks at what it
  * is about.
  *
  * `lights` are levels from 0 to 1 of the fixtures in `studioLayout.js`.
  *
- * `fitTableWidth` marks a stage whose distance is solved per viewport — see
- * `OVERVIEW_FRAMING`.
- *
  * Neighbouring stages must not share an identical `position` or `lookAt`: the
  * path is a spline through them, and a repeated point puts a small loop in it.
- *
- * PROVISIONAL: poses and levels are placeholders for validating the system.
- * They are tuned against the real room in Phase 2 and Phase 3.
  */
+
 /**
- * How much of the viewport's width the table spans in the overview.
+ * How fitted shots are framed.
  *
- * A fraction of the width cannot be a fixed camera position: the field of view
- * is fixed vertically, so the same position shows the table narrower on a wide
- * window and wider on a narrow one. The overview's `position` therefore gives
- * the DIRECTION the camera views the table from, and `stageSampling.js` solves
- * the distance along it for the live aspect ratio — and the height it aims at,
- * so the table sits centred in the frame rather than low in it.
- *
- * Two things can stop the table reaching this fill. On a very wide window it
- * would outgrow the frame's height first, so `maxHeightFill` wins and the
- * table sits a little narrower. On a narrow one the distance limit, which
- * keeps the camera inside the room, wins. Portrait framing is a Phase 2 task.
+ * The subject is brought as close as it can be while spanning no more than
+ * `widthFill` of the frame's width and `heightFill` of its height (a stage may
+ * set its own). The camera never leaves the room: `roomMargin` is the nearest
+ * it comes to a wall or the ceiling. If the room is too small for the shot at
+ * the stage's own field of view — a narrow window, or the ceiling over the
+ * near-overhead view — the lens widens instead, only as far as the shot needs
+ * and never past `maxFov`. Beyond that the subject is allowed to crop.
  */
-export const OVERVIEW_FRAMING = {
-  tableWidthFill: 0.75,
-  maxHeightFill: 0.8,
-  minDistance: 2.2,
-  maxDistance: 6.5,
+export const FRAMING = {
+  widthFill: 0.75,
+  heightFill: 0.8,
+  maxFov: 58,
+  minDistance: 1.2,
+  roomMargin: 0.25,
 }
 
-const OVERVIEW_CAMERA = { position: [1.35, 3.6, 3.75], lookAt: TABLE_TOP_CENTER, fov: 45, fitTableWidth: true }
+/** Below this aspect ratio a stage's `portraitPosition` is used, if it has one. */
+export const PORTRAIT_ASPECT = 0.9
+
+const rearWallZ = ROOM.rearWallZ
 
 export const STAGES = [
   {
     key: 'dim',
-    // The wall identity, with the table in the foreground.
-    camera: { position: [0, 1.3, 3.6], lookAt: [0, 1.75, LETTERING_CENTER[2]], fov: 45 },
-    lights: { ambient: 1, lettering: 0.06, tableKey: 0 },
+    // The wall identity, low and square-on, with the table a silhouette across
+    // the foreground.
+    camera: { position: [0, 1.22, 4.3], lookAt: [0, 1.75, rearWallZ], fov: 40 },
+    lights: { ambient: 1, lettering: 0.08, tableKey: 0 },
   },
   {
     key: 'lettering',
-    // A subtle push toward the wall as the spotlight comes up.
-    camera: { position: [0, 1.4, 2.6], lookAt: LETTERING_CENTER, fov: 45 },
+    // A subtle push toward the wall as the spotlight comes up. Stops short of
+    // losing the table's near edge out of the bottom of the frame.
+    camera: { position: [0, 1.3, 3.7], lookAt: [0, 1.9, rearWallZ], fov: 40 },
     lights: { ambient: 1, lettering: 1, tableKey: 0 },
   },
   {
     key: 'table',
-    // Crane up, tilt down: the whole table from an elevated three-quarter angle.
-    camera: OVERVIEW_CAMERA,
+    // Crane up, tilt down: the whole table from an elevated three-quarter
+    // angle, the rear wall still in the top of the frame.
+    camera: {
+      position: [1.25, 3.3, 3.9],
+      // From beyond the Digital end, looking down the table's length.
+      portraitPosition: [3.6, 3.3, 1.3],
+      lookAt: TABLE_TOP_CENTER,
+      fov: 45,
+      fit: { bounds: TABLE_BOUNDS },
+    },
     lights: { ambient: 1, lettering: 1, tableKey: 1 },
   },
   {
     key: 'film',
-    camera: { position: [-1.25, 1.75, 1.45], lookAt: ZONES.film, fov: 45 },
+    // In over the left of the table.
+    camera: {
+      position: [ZONES.film.center[0] - 0.4, 2.55, 2.0],
+      lookAt: ZONES.film.center,
+      fov: 45,
+      fit: { bounds: ZONES.film.bounds, widthFill: 0.7, heightFill: 0.7 },
+    },
     lights: { ambient: 1, lettering: 0.55, tableKey: 1 },
   },
   {
     key: 'digital',
-    camera: { position: [1.25, 1.75, 1.45], lookAt: ZONES.digital, fov: 45 },
+    // Across the table to the right, at the same height.
+    camera: {
+      position: [ZONES.digital.center[0] + 0.4, 2.55, 2.0],
+      lookAt: ZONES.digital.center,
+      fov: 45,
+      fit: { bounds: ZONES.digital.bounds, widthFill: 0.7, heightFill: 0.7 },
+    },
     lights: { ambient: 1, lettering: 0.55, tableKey: 1 },
   },
   {
     key: 'overview',
-    // The same view the table was revealed from.
-    camera: OVERVIEW_CAMERA,
+    // Higher and nearly overhead: the complete table with little distortion.
+    // A touch off vertical, so the camera still has a floor to stand over.
+    camera: {
+      position: [0, 4, 0.55],
+      // The ceiling is too low to hold the table's length from overhead on an
+      // upright screen, so this is a steep view down its length instead.
+      portraitPosition: [3.3, 4.4, 0],
+      lookAt: TABLE_TOP_CENTER,
+      fov: 45,
+      fit: { bounds: TABLE_BOUNDS, widthFill: 0.8, heightFill: 0.8 },
+    },
     lights: { ambient: 1, lettering: 1, tableKey: 1 },
   },
 ]

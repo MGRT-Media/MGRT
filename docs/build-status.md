@@ -11,10 +11,11 @@ The current state of the redesign. Read this first, every session. Keep it short
 | **Project** | MGRT Creative Table, replacing the Greek-room homepage |
 | **Branch** | `redesign/creative-table` |
 | **Branched from** | `main` at `112f5a3` (2026-10-12) |
-| **Current phase** | 1 — Foundations |
+| **Current phase** | 2 — Room blockout and camera framing |
 | **Phase status** | TECHNICALLY COMPLETE, awaiting review |
-| **Approved scope** | Phase 1 only. No table contents, detailed modelling, materials, new assets or dependencies. |
-| **Next phase** | 2 — Blockout and framing. Not approved to start. |
+| **Approved scope** | Phase 2 only. No detailed lighting, photoreal materials or table population. |
+| **Next phase** | 3 — Visual development. Not approved to start. |
+| **Review screenshots** | `docs/review/phase-2/` (desktop, tablet portrait, phone; all six stages) |
 | **View the new scene** | `npm run dev`, then `http://localhost:5173/?scene=creative-table` |
 
 `main` is production (mgrtmedia.com) and is unchanged.
@@ -25,8 +26,8 @@ The current state of the redesign. Read this first, every session. Keep it short
 
 ```text
 0  Documentation                        APPROVED (2026-10-12)
-1  Foundations                          TECHNICALLY COMPLETE
-2  Blockout and framing                 NOT STARTED
+1  Foundations                          APPROVED (2026-10-12)
+2  Blockout and framing                 TECHNICALLY COMPLETE
 3  Visual development (light+material)  NOT STARTED
 4  Table population                     NOT STARTED
 5  Interaction                          NOT STARTED
@@ -88,6 +89,12 @@ Approved 2026-10-12, at the audit review. These are protected; raise any conflic
 - Lighting interpolates smoothly between stages.
 - The wall lettering keeps the stacked MGRT / MEDIA arrangement, derived from the existing Cormorant Medium styling and spacing, with shallow depth, realistic bevels and slight separation from the wall.
 
+**Confirmed at the Phase 1 review (2026-10-12)**
+
+- Stage-based navigation without native page scrolling stays. It is not to be replaced with ScrollTrigger.
+- `?scene=creative-table` stays available in preview and production builds during development. The original remains the default.
+- Trackpad momentum, touch, reduced motion and accessibility must be validated before launch (see §6).
+
 ---
 
 ## 4. Open decisions
@@ -96,8 +103,8 @@ These need an answer before the phase shown.
 
 | # | Decision | Needed by |
 |---|---|---|
-| 1 | **The page does not scroll in the new scene.** Stages are driven by wheel, touch and keyboard gestures directly, with no scroll position behind them. See §8, Phase 1. This is a change from the plan in the Phase 0 architecture doc and needs your confirmation. | Phase 2 |
-| 2 | **Should the selector work on production builds?** It currently does (it is how the production build was tested). It can be limited to development if you prefer. | Phase 8 at the latest |
+| 1 | **Phone portrait cannot show the whole table.** See §8, Phase 2, "Portrait compromises". Choose between a slight crop (current), a wider lens, a larger room, or letting the camera stand beyond the side wall. | Phase 3 |
+| 2 | **Portrait views the table from its end.** On upright screens the table reveal and final overview look down the table's length from the Digital end, so Film is at the far end rather than on the left. Confirm or reject. | Phase 3 |
 | 3 | **Who authors the lettering GLB.** Outlines come from Cormorant Medium (confirmed). It still needs a modelling tool or a one-off script with `--no-save` packages, and the Cormorant font file, which is not in the repository. | Phase 3 |
 | 4 | **Texture sources.** Which scanned plaster and walnut sets. Selected in Phase 3; downloading third-party files needs approval per file. | Phase 3 |
 | 5 | **Lettering finish.** Brushed dark metal or aged bronze, decided on screen. | Phase 3 |
@@ -136,9 +143,14 @@ Either way the GLB has to be authored in a modelling tool (extrusion and bevel),
 | 22 source comments cite the archived docs by their old path | Low | Comments only; resolved when Greek-room code is removed | Phase 8 |
 | Startup cover images show the Greek room | Expected | Re-capture from the new scene | Phase 6 |
 | The new scene still downloads the old opening image (38 to 157 kB, hidden) because it is in the HTML before any script runs | Low | Goes away when the cover is re-captured | Phase 6 |
-| New scene is not framed for portrait viewports; the overview crops the table there, and the other stages are not fitted at any aspect | Expected | Per-aspect framing | Phase 2 |
-| Wheel-gesture detection is untested on a real trackpad or touch device; only synthetic wheel and keyboard input were used | Medium | Test and tune the 50-unit threshold and 140 ms gap on hardware | Phase 2 |
-| A second quick trackpad swipe during the first one's momentum is ignored until the wheel goes quiet | Low | Tune with the above | Phase 2 |
+| On a phone in portrait the table is cropped slightly at its near corners in the table reveal and final overview | Medium | Open decision 1 | Phase 3 |
+| **Before launch:** wheel-gesture detection is untested on a real trackpad; only synthetic wheel and keyboard input have been used | Medium | Test and tune the 50-unit threshold and 140 ms gap on hardware | Phase 7 |
+| **Before launch:** a second quick trackpad swipe during the first one's momentum is ignored until the wheel goes quiet | Low | Tune with the above | Phase 7 |
+| **Before launch:** touch input is untested on a real device | Medium | Test on iOS and Android | Phase 7 |
+| **Before launch:** reduced motion in the new scene is implemented (instant stage changes) but untested | Medium | Test with the system setting on | Phase 7 |
+| **Before launch:** the stages have no on-screen control or screen-reader announcement; keyboard works but nothing says which stage is current | Medium | Section indicator and live region | Phase 5 |
+| A resize re-fits the camera at once, without easing | Low | Ease if it reads as a jump on real devices | Phase 7 |
+| The zone guides are not blurred by depth of field correctly (they do not write depth) | Low | Temporary; removed with the guides | Phase 4 |
 | The scene choice persists across client-side navigation; returning from `/work` keeps the selected scene even though the URL no longer shows the query | Low | Acceptable for a development selector | — |
 
 ---
@@ -234,9 +246,74 @@ A resize re-fits at once, without easing. Verified by measurement only: the prev
 - Reduced motion in the new scene.
 - Returning to the new scene from an internal page.
 
+### Phase 2 — Room blockout and camera framing (2026-10-12)
+
+**Built**
+
+- `studioLayout.js`: room 9 × 7 × 4 m; table 3.6 × 1.8 × 0.78 m with 1.4 m clear to the rear wall; lettering 1.8 m wide, centred 2.5 m up; three zones on the tabletop, each 1.1 × 1.5 m.
+- `StudioRoom.jsx`: floor, ceiling, rear wall and both side walls in flat neutral greys, plus the table. No front wall; the camera never looks back at it.
+- `WallLettering.jsx`: the stacked MGRT / MEDIA wordmark drawn flat in Cormorant Medium with the established line proportions and tracking, standing 20 mm off the wall. Flat placeholder; extrusion is Phase 3.
+- `ZoneGuides.jsx`: temporary dashed outlines labelled FILM, MGRT, DIGITAL. Removed by deleting one line in `StudioRoom.jsx`.
+- `stageFraming.js`: a per-viewport solver for "fitted" stages. A stage says what it must show and from which direction; the solver finds the distance, centres the subject, keeps the camera inside the room, and widens the lens only if the room is too small.
+- `stageBeats.js`: all six stages refined (below).
+
+**The six stages, desktop (1440 × 900)**
+
+| # | Stage | Camera | Lens | Result |
+|---|---|---|---|---|
+| 0 | Initial | Low and square-on, 6.6 m from the wall | 40° | Lettering 23% of width; table a silhouette across the lower quarter |
+| 1 | Wall reveal | 0.6 m push | 40° | Lettering 26%; table's near edge still in frame |
+| 2 | Table reveal | Up to 2.5 m, elevated three-quarter | 45° | Whole table, 75% of width; rear wall in the top of the frame |
+| 3 | Film | In over the left end | 45° | Film area centred at 45% of width, MGRT area alongside |
+| 4 | Digital | Across to the right end, same height | 45° | Mirror of Film |
+| 5 | Final overview | 3.75 m up, nearly overhead | 52° | Whole table, 80% of width, slight keystone |
+
+Stage 5's lens is wider than 45° because the 4 m ceiling stops the camera rising far enough; on 16:9 it is 47.6°.
+
+**Framing by viewport** (subject's share of width; "whole table" for stages 2 and 5)
+
+| Viewport | Stage 2 | Stage 5 | Notes |
+|---|---|---|---|
+| 1920 × 1080 | 75%, whole table | 80%, whole table, 47.6° | |
+| 1440 × 900 | 75%, whole table | 80%, whole table, 52.2° | |
+| 1366 × 768 | 75%, whole table | 80%, whole table, 47.6° | |
+| 1024 × 768 | 75%, whole table | 85%, whole table, 58° | lens at its limit |
+| 768 × 1024 | 75%, whole table, 57° | 80%, whole table, 48.6° | end-on portrait views |
+| 390 × 844 | cropped (119% of width) | cropped (106% of width) | end-on portrait views, lens at 58° |
+
+**Portrait compromises**
+
+- A 3.6 m table cannot be shown across an upright screen from inside a 9 × 7 m room without an extreme wide-angle lens. Below an aspect ratio of 0.9, stages 2 and 5 therefore view the table from beyond its Digital end, looking down its length. Film is at the far end, Digital nearest.
+- The final overview on portrait is a steep end-on view, not near-overhead: the ceiling is too low to hold the table's length from above.
+- The move from the wall reveal to the table reveal is longer on portrait: the camera travels round the table's corner (path about 19 m in total against 11 m on desktop, fastest turn about 125° per stage against 62°).
+- On a phone the table is still cropped slightly at its near corners with the lens at its 58° limit. Ways to remove the crop, none taken without your decision: a lens of about 68° (visible distortion); a room about 10.5 m wide; or the camera standing beyond the side wall, which is invisible because the wall is single-sided but breaks the "no clipping through walls" rule.
+- Stages 0, 1, 3 and 4 need no special treatment on portrait. On a phone the lettering fills 81 to 89% of the width.
+
+**Unresolved visual issues**
+
+- The lettering is small in the opening on desktop (23% of width). That follows from a 1.8 m wordmark in a 9 m room; a longer lens or a closer start would enlarge it at the cost of the table foreground.
+- The table reveal does not show the lettering; the wall above the table is in frame but the wordmark is above the top edge.
+- In stages 0 and 1 the tabletop is seen almost edge-on, so it reads as a thin band with legs.
+- The lighting is provisional and harsh (hard table shadow, dark side walls). It is not a Phase 2 deliverable.
+- Film and Digital are exact mirrors. They may want to differ once real objects are placed.
+
+**Testing**
+
+- `npm run build` succeeds. `StudioHome` is 13 kB; `Home` is unchanged at 117 kB.
+- All six stages captured at desktop, tablet portrait and phone with headless Chrome: `docs/review/phase-2/`.
+- Camera path walked at 2,000 points for each of six viewports: never outside the room, never within 0.25 m above or 0.15 m beside the table, no abrupt rotations.
+- Wheel input: forward 0 → 5 then back 5 → 0, one stage per gesture. A straight run from 5 to 0 was monotonic.
+- New scene requests no old-scene models, textures, environment files, timeline code, GSAP or Lenis.
+- Original scene: no file outside `src/experience/studio/` changed in this phase. Loads, steps forward 0 → 0.12 → 0.45 → 0.6 and back, no console errors.
+
+**Not tested**
+
+- Safari; real trackpad, touch or mobile devices; reduced motion.
+- Screenshots are from headless Chrome, not a visible browser window.
+
 **Remaining for later phases**
 
-- Phase 2: real room proportions, validated poses, per-aspect framing, input tuning on hardware.
-- Phase 3: materials, lettering GLB, lighting look, haze and dust, GTAO tuning.
+- Phase 3: materials, lettering GLB, lighting look, haze and dust, GTAO tuning, the portrait decisions.
 - Phase 5: section indicator and direct navigation between Film, Digital and Overview.
 - Phase 6: the new scene's own opening image and asset lists.
+- Phase 7: input, reduced-motion and accessibility validation on real hardware.
