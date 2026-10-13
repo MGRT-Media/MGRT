@@ -15,7 +15,7 @@ The current state of the redesign. Read this first, every session. Keep it short
 | **Phase status** | TECHNICALLY COMPLETE, awaiting review |
 | **Approved scope** | Phase 2 only. No detailed lighting, photoreal materials or table population. |
 | **Next phase** | 3 — Visual development. Not approved to start. |
-| **Review screenshots** | `docs/review/phase-2/` (desktop, tablet portrait, phone; all six stages) |
+| **Review screenshots** | `docs/review/phase-2-refined/` (six viewports, all six stages). `docs/review/phase-2/` is the first pass and is superseded. |
 | **View the new scene** | `npm run dev`, then `http://localhost:5173/?scene=creative-table` |
 
 `main` is production (mgrtmedia.com) and is unchanged.
@@ -97,18 +97,23 @@ Approved 2026-10-12, at the audit review. These are protected; raise any conflic
 
 ---
 
+**Decided after the Phase 2 review (2026-10-13)**
+
+- Portrait keeps the desktop's elevated three-quarter angle, with Film left, MGRT centre and Digital right. The end-on portrait views are removed.
+- On portrait the table is deliberately cropped, not forced into frame.
+
+---
+
 ## 4. Open decisions
 
 These need an answer before the phase shown.
 
 | # | Decision | Needed by |
 |---|---|---|
-| 1 | **Phone portrait cannot show the whole table.** See §8, Phase 2, "Portrait compromises". Choose between a slight crop (current), a wider lens, a larger room, or letting the camera stand beyond the side wall. | Phase 3 |
-| 2 | **Portrait views the table from its end.** On upright screens the table reveal and final overview look down the table's length from the Digital end, so Film is at the far end rather than on the left. Confirm or reject. | Phase 3 |
-| 3 | **Who authors the lettering GLB.** Outlines come from Cormorant Medium (confirmed). It still needs a modelling tool or a one-off script with `--no-save` packages, and the Cormorant font file, which is not in the repository. | Phase 3 |
-| 4 | **Texture sources.** Which scanned plaster and walnut sets. Selected in Phase 3; downloading third-party files needs approval per file. | Phase 3 |
-| 5 | **Lettering finish.** Brushed dark metal or aged bronze, decided on screen. | Phase 3 |
-| 6 | **Table contents.** Source material for the project sheet, sketches, identity card and both collections. | Phase 4 |
+| 1 | **Who authors the lettering GLB.** Outlines come from Cormorant Medium (confirmed). It still needs a modelling tool or a one-off script with `--no-save` packages, and the Cormorant font file, which is not in the repository. | Phase 3 |
+| 2 | **Texture sources.** Which scanned plaster and walnut sets. Selected in Phase 3; downloading third-party files needs approval per file. | Phase 3 |
+| 3 | **Lettering finish.** Brushed dark metal or aged bronze, decided on screen. | Phase 3 |
+| 4 | **Table contents.** Source material for the project sheet, sketches, identity card and both collections. | Phase 4 |
 
 ---
 
@@ -143,7 +148,6 @@ Either way the GLB has to be authored in a modelling tool (extrusion and bevel),
 | 22 source comments cite the archived docs by their old path | Low | Comments only; resolved when Greek-room code is removed | Phase 8 |
 | Startup cover images show the Greek room | Expected | Re-capture from the new scene | Phase 6 |
 | The new scene still downloads the old opening image (38 to 157 kB, hidden) because it is in the HTML before any script runs | Low | Goes away when the cover is re-captured | Phase 6 |
-| On a phone in portrait the table is cropped slightly at its near corners in the table reveal and final overview | Medium | Open decision 1 | Phase 3 |
 | **Before launch:** wheel-gesture detection is untested on a real trackpad; only synthetic wheel and keyboard input have been used | Medium | Test and tune the 50-unit threshold and 140 ms gap on hardware | Phase 7 |
 | **Before launch:** a second quick trackpad swipe during the first one's momentum is ignored until the wheel goes quiet | Low | Tune with the above | Phase 7 |
 | **Before launch:** touch input is untested on a real device | Medium | Test on iOS and Android | Phase 7 |
@@ -278,16 +282,8 @@ Stage 5's lens is wider than 45° because the 4 m ceiling stops the camera risin
 | 1440 × 900 | 75%, whole table | 80%, whole table, 52.2° | |
 | 1366 × 768 | 75%, whole table | 80%, whole table, 47.6° | |
 | 1024 × 768 | 75%, whole table | 85%, whole table, 58° | lens at its limit |
-| 768 × 1024 | 75%, whole table, 57° | 80%, whole table, 48.6° | end-on portrait views |
-| 390 × 844 | cropped (119% of width) | cropped (106% of width) | end-on portrait views, lens at 58° |
 
-**Portrait compromises**
-
-- A 3.6 m table cannot be shown across an upright screen from inside a 9 × 7 m room without an extreme wide-angle lens. Below an aspect ratio of 0.9, stages 2 and 5 therefore view the table from beyond its Digital end, looking down its length. Film is at the far end, Digital nearest.
-- The final overview on portrait is a steep end-on view, not near-overhead: the ceiling is too low to hold the table's length from above.
-- The move from the wall reveal to the table reveal is longer on portrait: the camera travels round the table's corner (path about 19 m in total against 11 m on desktop, fastest turn about 125° per stage against 62°).
-- On a phone the table is still cropped slightly at its near corners with the lens at its 58° limit. Ways to remove the crop, none taken without your decision: a lens of about 68° (visible distortion); a room about 10.5 m wide; or the camera standing beyond the side wall, which is invisible because the wall is single-sided but breaks the "no clipping through walls" rule.
-- Stages 0, 1, 3 and 4 need no special treatment on portrait. On a phone the lettering fills 81 to 89% of the width.
+Portrait framing in this table was replaced on 2026-10-13; see "Portrait framing refinement" below.
 
 **Unresolved visual issues**
 
@@ -311,9 +307,78 @@ Stage 5's lens is wider than 45° because the 4 m ceiling stops the camera risin
 - Safari; real trackpad, touch or mobile devices; reduced motion.
 - Screenshots are from headless Chrome, not a visible browser window.
 
+### Phase 2 refinement — portrait framing and no ceiling in frame (2026-10-13)
+
+Three review passes on the same day. This is the resulting state; desktop table scale and the portrait deliberate crop are as approved.
+
+**Rules now enforced**
+
+- **The ceiling is never in frame.** No sight line may land on a wall within 0.15 m of the ceiling (`FRAMING.ceilingClearance`), and no light fixture's position may be in frame. This holds at every point along the path, not only at the resting stages: `stageFraming.js` tilts any shot down, by lowering its aim, until it complies, and the sampler applies the same guard every frame. Stages that already comply are untouched. The ceiling geometry is still there; nothing is hidden.
+- **Lettering is complete or absent** at every resting stage.
+- **Portrait keeps the desktop viewing angle**, Film left and Digital right, and crops the table deliberately.
+
+**How it is configured** (all in `stageBeats.js`)
+
+- A stage's `portrait` object replaces fields of its camera below an aspect ratio of 0.9.
+- A fitted shot's `bounds` may be a list of boxes framed together; `centerY` sets the subject lower in the frame.
+- Stages 0 and 1 aim lower than before (1.4 m and 1.6 m up the wall, from 1.75 m and 1.9 m): at the old aim the top of the frame reached the ceiling. On portrait the camera is also 17 cm lower.
+- Portrait stages 2 and 5 frame the whole wordmark together with the table, so a tall frame's spare height goes to the wall, not the floor.
+- Portrait stage 5 is fitted top to bottom, wordmark to the table's near edge, from the ceiling limit on a wide lens.
+
+**Compositions**
+
+| # | Stage | Desktop 1440 × 900 | Phone 390 × 844 / 430 × 932 | Tablet 768 × 1024 |
+|---|---|---|---|---|
+| 0 | Initial | Lettering complete; whole table as foreground; 40° | Lettering 81% of width; 1.4 m of table; 40° | 2.3 m of table |
+| 1 | Wall reveal | Lettering complete; table's near edge in frame; 40° | Lettering 89% of width; 1.2 m of table | 2.0 m of table |
+| 2 | Table reveal | Whole table at 75% of width; lettering outside; 45° | Wordmark above, MGRT area prominent, 1.8 m of table; tabletop 25% of height, 9% floor below; 45° | Wordmark above; 2.2 m of table; 45° |
+| 3 | Film | Film area centred, 2.7 m of table; 45° | 1.5 m of table; tabletop 36% of height, 19% floor; 45° | 1.6 m; tabletop 54% |
+| 4 | Digital | Mirror of Film | Mirror of Film | Mirror of Film |
+| 5 | Final overview | Whole table at 80%, nearly overhead; 52° | Wordmark above; steeper, from the ceiling limit; 1.8 m of table; tabletop 39% of height, 2% floor; 58° | Wordmark above; 3.0 m of table; tabletop 39%; 58° |
+
+Landscape tablet (1024 × 768) matches desktop, with the final overview at 58°. 1920 × 1080 and 1366 × 768 match the approved Phase 2 figures for stages 2 to 5.
+
+**Whole-path audit** (3,000 points per viewport; the path is the same in both directions)
+
+| Viewport | Highest wall point ever in frame | Fastest turn | Fastest lens change | Path |
+|---|---|---|---|---|
+| 1920 × 1080 | 3.85 m | 58° per stage | 5° per stage | 10.6 m |
+| 1440 × 900 | 3.85 m | 56° | 7° | 10.9 m |
+| 1366 × 768 | 3.85 m | 58° | 5° | 10.6 m |
+| 1024 × 768 | 3.85 m | 55° | 13° | 11.9 m |
+| 768 × 1024 | 3.85 m | 30° | 13° | 9.4 m |
+| 430 × 932 | 3.85 m | 27° | 13° | 10.4 m |
+| 390 × 844 | 3.85 m | 27° | 13° | 10.4 m |
+
+The ceiling is at 4.00 m. At every viewport: no ceiling, no fixture position in frame, the camera at least 0.2 m inside the room, and clear of the table.
+
+**Remaining compromises**
+
+- **The lettering crosses the frame edge during a move**, never at rest: between the wall reveal and table reveal on desktop, and between the table shots and Film or Digital on portrait. A shot that holds the wordmark and the next that excludes it cannot avoid this.
+- **On a phone the final overview shows no more table than the table reveal** (1.8 m each). It is distinct by angle and scale instead: steeper, the tabletop 39% of the screen against 25%, almost no floor. With no ceiling in frame, no surplus floor and a lens of at most 58°, about 1.9 m is the most table a 390-wide screen can show from inside this room. More would need a wider room, a higher ceiling or a wider lens.
+- **The portrait final overview is at the 58° lens limit**, on phones and tablets.
+- **Phone stages 0 and 1 have a dark band below the table** (about a fifth of the frame): the floor and the table's legs in the dim opening light. Raising the aim would bring the ceiling in, and a longer lens would push the lettering past the screen's edges.
+- **Phone Film and Digital have 19% floor below the table.**
+- **A lowered aim can make a move's rotation slightly uneven** where the guard starts or stops acting mid-move. The audit's turn rates include it.
+- Portrait framing is "slightly asymmetric": the camera is 0.13 to 0.46 m right of the room's centre line in the table shots.
+
+**Testing**
+
+- `npm run build` succeeds.
+- All six stages captured at 1920 × 1080, 1440 × 900, 1024 × 768, 768 × 1024, 430 × 932 and 390 × 844: `docs/review/phase-2-refined/`.
+- Whole-path audit above, at seven viewports.
+- Wheel navigation at all six captured sizes: back 5 → 0 one stage per gesture, a further back gesture stays at 0, then forward again.
+- New scene requests no old-scene assets or scroll libraries at any size. No console errors.
+- Original scene: only four files under `src/experience/studio/` changed. Loads, steps 0 → 0.12 → 0.45 → 0.6 and back to 0.45, no console errors.
+
+**Not tested**
+
+- Mid-move frames were audited by calculation through the same sampler the renderer uses, not captured as images.
+- Real phones or tablets, Safari, touch input, reduced motion. Captures are from headless Chrome.
+
 **Remaining for later phases**
 
-- Phase 3: materials, lettering GLB, lighting look, haze and dust, GTAO tuning, the portrait decisions.
+- Phase 3: materials, lettering GLB, lighting look, haze and dust, GTAO tuning.
 - Phase 5: section indicator and direct navigation between Film, Digital and Overview.
 - Phase 6: the new scene's own opening image and asset lists.
 - Phase 7: input, reduced-motion and accessibility validation on real hardware.

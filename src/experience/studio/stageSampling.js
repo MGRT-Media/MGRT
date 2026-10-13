@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { LAST_STAGE, STAGES } from './stageBeats.js'
-import { frameStageCamera } from './stageFraming.js'
+import { frameStageCamera, keepCeilingOutOfShot } from './stageFraming.js'
 
 /**
  * Reads the stage definitions at any point between stages.
@@ -25,15 +25,18 @@ const lookAtCurve = splineThrough(STAGES.map((stage) => stage.camera.lookAt))
 
 const solvedFov = STAGES.map((stage) => stage.camera.fov)
 
+// The viewport the stages are currently solved for.
+let framedAspect = 16 / 9
+
 /**
- * Re-solves the fitted stages for a viewport (`stageFraming.js`) and moves
- * their points on the camera and aim paths.
+ * Resolves every stage's camera for a viewport (`stageFraming.js`) and moves
+ * its points on the camera and aim paths.
  *
  * Called by the camera rig when the aspect ratio changes, never per frame.
  */
 export function frameStagesForAspect(aspect) {
+  framedAspect = aspect
   STAGES.forEach((stage, index) => {
-    if (!stage.camera.fit) return
     solvedFov[index] = frameStageCamera(
       stage.camera,
       aspect,
@@ -58,6 +61,7 @@ export function sampleStageCameraInto(progress, outPosition, outLookAt) {
   const t = clampToStages(progress) / LAST_STAGE
   positionCurve.getPoint(t, outPosition)
   lookAtCurve.getPoint(t, outLookAt)
+  keepCeilingOutOfShot(outPosition, outLookAt, stageFovAt(progress), framedAspect)
 }
 
 /** A per-stage number, interpolated linearly between the two nearest stages. */

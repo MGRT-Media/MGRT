@@ -45,6 +45,14 @@ export const TABLE_BOUNDS = {
 // cinema camera or a propped-up screen stands this tall.
 const COLLECTION_HEIGHT = 0.45
 
+/** A stretch of the tabletop, with that headroom, as a box a shot can frame. */
+function tabletopBounds(centerX, width, depth) {
+  return {
+    center: [centerX, TABLE.height + COLLECTION_HEIGHT / 2, 0],
+    size: [width, COLLECTION_HEIGHT, depth],
+  }
+}
+
 function zone(centerX, width) {
   const depth = 1.5
   return {
@@ -52,10 +60,7 @@ function zone(centerX, width) {
     center: [centerX, TABLE.height, 0],
     size: [width, depth],
     // The volume its shot has to keep in frame.
-    bounds: {
-      center: [centerX, TABLE.height + COLLECTION_HEIGHT / 2, 0],
-      size: [width, COLLECTION_HEIGHT, depth],
-    },
+    bounds: tabletopBounds(centerX, width, depth),
   }
 }
 
@@ -69,6 +74,13 @@ export const ZONES = {
   mgrt: zone(0, 1.1),
   digital: zone(1.2, 1.1),
 }
+
+/**
+ * The middle of the tabletop from its rear edge to its near one: what a shot
+ * has to hold top to bottom to show the table's full depth, whatever length of
+ * the table its width then takes in.
+ */
+export const TABLE_DEPTH_BOUNDS = tabletopBounds(0, 1.1, TABLE.depth)
 
 /**
  * The stacked MGRT / MEDIA wordmark on the rear wall.
@@ -100,6 +112,12 @@ export const LETTERING_CENTER = [
   LETTERING.centerY,
   ROOM.rearWallZ + LETTERING.standoff + LETTERING.depth / 2,
 ]
+
+/** The wordmark as a box, for a shot that has to hold all of it. */
+export const LETTERING_BOUNDS = {
+  center: LETTERING_CENTER,
+  size: [LETTERING.width, LETTERING_HEIGHT, LETTERING.depth],
+}
 
 /**
  * The fixtures. `intensity` is each light at full; how much of it a stage uses

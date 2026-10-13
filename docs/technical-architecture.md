@@ -128,8 +128,9 @@ Not reused, because they are built around the old room: `timeline/ScrollTimeline
   2. never beyond the room: 0.25 m from any wall or the ceiling;
   3. if the room is too small, the lens widens only as far as needed, up to 58°;
   4. the aim slides until the box is centred.
-- **Portrait.** Below an aspect ratio of 0.9 a stage's `portraitPosition` direction is used if it has one. Stages 2 and 5 use this to view the table from its end.
+- **Portrait.** Below an aspect ratio of 0.9 a stage's `portrait` object replaces fields of its camera: the viewing direction, what to frame, and how large. Portrait keeps the desktop's three-quarter angle and frames a deliberate crop of the table, because the whole table cannot span a phone's width from inside the room. A shot's `bounds` may be a list of boxes framed together (the portrait table shots hold the whole wordmark above the table), and `centerY` sets the subject lower in the frame.
 - The solve runs when the aspect ratio changes, not per frame, and moves that stage's points on the path splines.
+- **No ceiling in frame, ever.** No sight line may land on a wall within 0.15 m of the ceiling, and no light fixture's position may be in frame. `stageFraming.js` enforces it by lowering a shot's aim until it complies: once when a stage is resolved, and every frame in the sampler, because between two compliant shots the camera can rise faster than its aim falls. The per-frame check is ten ray tests with scratch objects and does nothing more when the shot is already clear.
 - **Not yet built:** easing of a re-fit on resize, and direct flights between Film, Digital and Overview that do not pass through the stage between (Phase 5). `goToStage(n)` already exists for navigation to call.
 
 ---
