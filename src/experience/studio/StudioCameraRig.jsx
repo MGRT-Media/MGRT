@@ -66,6 +66,20 @@ export default function StudioCameraRig() {
     }
     cameraProgress.value = progress
 
+    // Development only: hold a fixed review shot, for inspecting the set from
+    // angles no stage uses — `window.__reviewShot = { position, lookAt, fov }`.
+    // Removed from production builds entirely.
+    if (import.meta.env.DEV && window.__reviewShot) {
+      const shot = window.__reviewShot
+      camera.position.fromArray(shot.position)
+      camera.lookAt(lookAtScratch.fromArray(shot.lookAt))
+      if (camera.fov !== shot.fov) {
+        camera.fov = shot.fov
+        camera.updateProjectionMatrix()
+      }
+      return
+    }
+
     sampleStageCameraInto(progress, camera.position, lookAtScratch)
     camera.lookAt(lookAtScratch)
 

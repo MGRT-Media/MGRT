@@ -4,7 +4,7 @@ How the Creative Table experience is built. What the visitor sees is defined in 
 
 Sections 1 to 6 describe the target architecture for the redesign. Section 7 onward records **measured findings from the previous build that still apply**. The full tables and methods behind them are in `archive/greek-room/technical-architecture.md` (§13 to §17).
 
-> Status: sections 2 to 4 describe what Phase 1 built. Sections 5 and 6 are the approved plan for later phases. Room dimensions and camera poses in the code are provisional blockout values; they are set properly only after the blockout has been validated in the browser.
+> Status: sections 2 to 6 describe what is built, through Phase 3. Table contents, interaction and the new scene's own startup image are later phases.
 
 ---
 
@@ -58,9 +58,15 @@ src/experience/studio/
   StudioCameraRig.jsx        moves the camera to the requested stage
   StudioLightingRig.jsx      holds each light at its stage's level
   StudioDepthOfField.jsx     post-processing chain and focus
-  StudioRoom.jsx             the room and table as a blockout
-  WallLettering.jsx          the wordmark, flat placeholder until Phase 3
-  ZoneGuides.jsx             TEMPORARY outlines of the three table areas
+  studioLook.js              every surface finish and atmosphere setting
+  studioAssets.js            preflight: textures and the lettering model, before mount
+  studioMaterials.js         plaster, stone, steel, floor and bronze (and the kept walnut), built from studioLook
+  walnutBoards.js            the walnut top's board pattern; unused while the table is stone
+  studioGeometry.js          walls and the table, with UVs in metres
+  StudioRoom.jsx             the room and table
+  WallLettering.jsx          the bronze wordmark, from the lettering GLB
+  StudioDust.jsx             motes in the two beams
+  ZoneGuides.jsx             TEMPORARY outlines of the three table areas (?guides)
 ```
 
 Everything for the new scene is in `studio/` so the cutover is a matter of deleting the old folders.
@@ -85,6 +91,7 @@ Used by the new scene now:
 | Progress | `timeline/journeyProgress.js` (the two progress objects), `timeline/contentProgress.js` |
 | Loading | `loading/SceneReady.jsx`, `loading/startupCover.js`, `loading/LoadErrorBoundary.jsx`, the startup cover in `index.html` |
 | Rendering | `postprocessing/DepthAwareBokehPass.js`, `lighting/shadowUpdates.js`, `ui/GrainOverlay.jsx` |
+| Assets | the scanned-texture loader `materials/scannedStone.js` (off-thread decode, one copy per set), `materials/stoneMacroVariation.js`, `assets/assetUrl.js`, the fingerprint plugin, and the `textures/floors` set |
 | Shell | `App.jsx`, the router, `GlobalNav`, `ui/SiteMark.jsx`, `timeline/sectionNavigationEvent.js`, `hooks/useViewportHeight.js` |
 
 To be adopted in later phases:
@@ -92,8 +99,8 @@ To be adopted in later phases:
 | Area | Modules |
 |---|---|
 | Framing | `timeline/viewportFit.js` (Phase 2) |
-| Assets | `models/modelAssets.js`, `models/propTextureUpgrades.js`, the scanned-PBR loader in `materials/scannedStone.js`, `assets/assetUrl.js`, the fingerprint plugin (Phase 3) |
-| Atmosphere | the dust system in `lighting/volumetricLighting.js`, which is currently tied to the old sun (Phase 3) |
+| Assets | `models/modelAssets.js`, `models/propTextureUpgrades.js` (Phase 4, when the table gets models) |
+| Loading | boot-quality variants and deferred upgrades (Phase 6) |
 | Loading | `loading/criticalAssets.js`, `loading/deferredAssets.js`, `loading/heroAssets.js` as patterns (Phase 6) |
 
 Not reused, because they are built around the old room: `timeline/ScrollTimelineProvider.jsx`, `timeline/ScrollCameraRig.jsx`, `timeline/cameraPath.js`, `timeline/sectionFlight*.js`, `postprocessing/DepthOfField.jsx`.
@@ -137,36 +144,52 @@ Not reused, because they are built around the old room: `timeline/ScrollTimeline
 
 ## 5. Lighting and atmosphere
 
-- Three sources: a low ambient or environment term, a warm spotlight on the lettering, a large soft directional key on the table.
-- Every light level is a function of progress, read through `contentValue()`, with per-stage levels defined in the beats.
-- **Shadow budget:** one shadow-casting light, the table key, with a 2048 map. The previous 4096 sun map is not carried over. The lettering spot does not cast a map shadow unless visual development shows it is needed.
-- Shadows are rendered once and frozen, then updated on demand (`shadowUpdates.js`). A static room is the ideal case for this.
-- Haze is the existing exponential fog plus the existing GPU dust, with an inexpensive additive cone for the lettering beam. No ray-marched volumetrics.
-- Lighting and materials are developed together in one visual-development phase, because each is tuned against the other.
+Fixtures are defined in `studioLayout.js` (`LIGHTS`); how much of each a stage uses is its `lights` levels in `stageBeats.js`.
+
+| Light | Type | Role |
+|---|---|---|
+| `lettering` | Spot, shadow-casting | Warm architectural spot on the wall identity, from the ceiling 2.3 m out from the wall |
+| `tableKey` | Spot, shadow-casting | Large soft key over the table, from the Film side |
+| `fill` | Directional, no shadow | Warm light coming back off the lit wall across the table |
+| `ambient` | Hemisphere | The dim return of the two spots off plaster and wood |
+
+- Every light exists from the first frame at intensity zero. Raising one is a change of a number, so no material recompiles when a stage begins.
+- Levels are read through `contentValue()` on the camera's own progress and interpolate linearly between stages, so lighting is continuous and exactly reversible. `StudioLightingRig.jsx` publishes the current levels in `lightLevels`, which the dust also reads.
+- **Two shadow maps, both frozen: 2048 for the lettering, 1024 for the table key** (the coarser map gives the table's shadow a wider soft edge). The plan was one; the lettering needs its own, because the gap between the letters and the wall is only visible through the shadow they drop. Nothing in the room moves, so each map is drawn once (`shadowUpdates.js`): the second costs memory, not frames.
+- **Reflections follow their light.** The bronze, the stone and the steel reflect a small blurred studio interior (three's `RoomEnvironment`, prefiltered once). It is set on those two materials only, not as the scene's environment, so it is not an ambient light. Its strength is scaled each frame by the level of the light that surface belongs to; otherwise polished surfaces would glow in a dark room.
+- **Haze** is exponential fog at a low density. **Dust** is one draw call of 320 points that light themselves: each works out in the vertex shader whether it is inside either spot's cone, from the same fixture definitions, and takes that light's colour and level. Outside a beam it is given no size.
+- The fixture positions are also what the framing guard keeps out of frame (§4), so moving a light can tilt a shot. The whole-path audit is re-run after any change to `LIGHTS`.
 
 ---
 
 ## 6. Materials, models and post-processing
 
+All finishes are in `studioLook.js`.
+
 ### Materials
 
-- Plaster and walnut use scanned PBR sets: albedo, normal and a packed occlusion-roughness-metalness map, loaded through the existing scanned-texture path.
-- The existing `floors` set is already a dark worn concrete and is the starting point for the floor.
-- Texture resolution is chosen from how close the camera gets, then encoded per the rules in §9.
+- **Plaster** is a Poly Haven scan and the **stone** an ambientCG scan (sources and licences in `asset-sources/README.md`), shipped as the three files the existing scanned-texture loader reads: colour, OpenGL normal, and roughness packed in the green channel. Every map is in place when a material is created; nothing is swapped after the reveal.
+- **UVs are in metres** (`studioGeometry.js`), so a texture's repeat is one over its scan's recorded size and it lands at real scale on anything.
+- **Walls turn into the floor through an 80 mm plaster cove** (`ROOM.coveRadius`). Wall and cove are one sheet, laid out flat with UVs along the surface and then rolled, so nothing stretches round the curve. The plaster's tone falls toward the floor (`LOOK.plaster.base`), baked into the vertices; a cove left pale faces the light and reads as a bright skirting.
+- **Plaster** is tinted warm. The walls carry a slow, wall-sized drift in tone baked into their vertex colours, which is what stops a 1.5 m scan reading as a grid across a 9 m wall.
+- **Table.** `LOOK.tableFinish` chooses the finish; it is `'stone'`. The stone table (`buildStoneTable`, sizes in `TABLE.stone`) is a 50 mm slab built as a sweep of its edge profile (9 mm round over, 5 mm under) round an outline with 45 mm corners, with true normals throughout; two stone pedestals with rounded edges standing across it, 0.6 m in from each end; and a recessed blackened-steel plate between each pedestal and the slab as a shadow gap. Material: honed stone (ambientCG Marble 024, its polished roughness re-centred to 0.62 in the build, repetition broken up by `antiTiling.js`). The slab's UVs wrap over its edges, so veins run down the edge instead of restarting there.
+- **Walnut (kept, unused).** The earlier finish is complete and selectable with `tableFinish: 'walnut'`: the same geometry in one material, with the boards drawn by `walnutBoards.js`. Its textures stay in `public/` but are not requested while the table is stone.
+- **Floor** is the original scene's scanned concrete, held dark, with its repeat broken up the same way as the plaster and a contact shade baked in along the walls (`LOOK.floor.wallShade`).
+- **Repetition** on plaster and concrete is broken up by `antiTiling.js`: each map is read from two of eight offsets into the scan, chosen and blended by a slow noise, so neighbouring patches come from different parts of the scan. Patched before first compile; one extra texture read per map.
+- **Bronze** has no texture: colour, roughness and the reflection above.
 
 ### Wall lettering
 
-- A GLB with real extruded, bevelled geometry. The current wordmark is a flat alpha-cut texture and cannot hold up under a raking spotlight.
-- See `build-status.md` for the open question on the wordmark's vector source.
+- `public/models/studio/wall-lettering.glb`, built from Cormorant instantiated at weight 500 (the font is variable and defaults to Light). Geometry only; 475 kB.
+- 30 mm deep with a 1.4 mm chamfer, standing 20 mm off the wall, at the approved position and footprint.
 
-### Models
+### Texture resolution
 
-- GLBs are meshopt-compressed and loaded through `modelAssets.js`.
-- Models ship with low-resolution boot textures and are upgraded after the reveal (§8).
+Chosen from how close the camera gets: plaster 1024 / 768 / 512 (colour / normal / roughness); stone 2048 / 1024 / 1024 (walnut, kept, the same), because the tabletop is the subject of the close stages and its grain is fine lines.
 
 ### Post-processing
 
-`StudioDepthOfField.jsx` runs render, ambient occlusion (GTAO), depth-aware bokeh and output. The focal plane sits on the current stage's look-at point, read from the stage definitions, so the lens knows nothing about the room's geometry. Dust joins the chain in Phase 3.
+`StudioDepthOfField.jsx` runs render, ambient occlusion (GTAO), depth-aware bokeh and output. The focal plane sits on the current stage's look-at point, read from the stage definitions, so the lens knows nothing about the room's geometry. Dust is drawn in the main scene; it does not write depth, so the blur behind it is decided by the room.
 
 ---
 

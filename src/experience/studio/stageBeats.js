@@ -32,7 +32,8 @@ import { LETTERING_BOUNDS, ROOM, TABLE_BOUNDS, TABLE_DEPTH_BOUNDS, TABLE_TOP_CEN
  * `lookAt` is also the lens's focus subject: every shot here looks at what it
  * is about.
  *
- * `lights` are levels from 0 to 1 of the fixtures in `studioLayout.js`.
+ * `lights` are levels of the fixtures in `studioLayout.js`: 0 is off and 1 is
+ * the fixture at its designed strength.
  *
  * Neighbouring stages must not share an identical `position` or `lookAt`: the
  * path is a spline through them, and a repeated point puts a small loop in it.
@@ -86,7 +87,7 @@ export const STAGES = [
       // table's feet instead of running on down an empty floor.
       portrait: { position: [0, 1.05, 4.3], lookAt: [0, 1.42, rearWallZ] },
     },
-    lights: { ambient: 1, lettering: 0.08, tableKey: 0 },
+    lights: { ambient: 0.8, lettering: 0.12, tableKey: 0, fill: 0 },
   },
   {
     key: 'lettering',
@@ -98,7 +99,9 @@ export const STAGES = [
       fov: 40,
       portrait: { position: [0, 1.12, 3.7], lookAt: [0, 1.57, rearWallZ] },
     },
-    lights: { ambient: 1, lettering: 1, tableKey: 0 },
+    // A little more of the spot's return than stage 0, so the walls around
+    // the pool are dark but still read as walls.
+    lights: { ambient: 1.5, lettering: 1, tableKey: 0, fill: 0.25 },
   },
   {
     key: 'table',
@@ -121,7 +124,7 @@ export const STAGES = [
         fit: { bounds: [LETTERING_BOUNDS, ZONES.mgrt.bounds], widthFill: 0.9, heightFill: 0.86, centerY: -0.08 },
       },
     },
-    lights: { ambient: 1, lettering: 1, tableKey: 1 },
+    lights: { ambient: 1, lettering: 0.85, tableKey: 1, fill: 1 },
   },
   {
     key: 'film',
@@ -138,7 +141,7 @@ export const STAGES = [
         fit: { bounds: ZONES.film.bounds, widthFill: 0.95, heightFill: 0.6, centerY: -0.12 },
       },
     },
-    lights: { ambient: 1, lettering: 0.55, tableKey: 1 },
+    lights: { ambient: 1, lettering: 0.6, tableKey: 1, fill: 1 },
   },
   {
     key: 'digital',
@@ -153,7 +156,7 @@ export const STAGES = [
         fit: { bounds: ZONES.digital.bounds, widthFill: 0.95, heightFill: 0.6, centerY: -0.12 },
       },
     },
-    lights: { ambient: 1, lettering: 0.55, tableKey: 1 },
+    lights: { ambient: 1, lettering: 0.6, tableKey: 1, fill: 1 },
   },
   {
     key: 'overview',
@@ -182,7 +185,7 @@ export const STAGES = [
         fit: { bounds: [LETTERING_BOUNDS, TABLE_DEPTH_BOUNDS], widthFill: 0.96, heightFill: 0.87, centerY: -0.07 },
       },
     },
-    lights: { ambient: 1, lettering: 1, tableKey: 1 },
+    lights: { ambient: 1.2, lettering: 0.7, tableKey: 1, fill: 1.3 },
   },
 ]
 

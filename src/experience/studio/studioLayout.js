@@ -10,12 +10,46 @@
  * the front, Film (negative X) is on the left and Digital on the right.
  */
 export const TABLE = {
+  // The approved footprint and working height: the top surface, edge to edge.
   width: 3.6,
   depth: 1.8,
   height: 0.78,
+  // A solid top: a stone slab of this span wants to be substantial.
   topThickness: 0.06,
-  legThickness: 0.09,
-  legInset: 0.16,
+  // The top's edges are eased, not sharp: this small round along its upper
+  // and lower arrises is what catches the key light as a line.
+  edgeRadius: 0.004,
+  // Its corners, seen from above, are rounded just enough not to cut.
+  cornerRadius: 0.014,
+  // Square legs, set in from the edges so the top overhangs them: further at
+  // the ends than along the sides, which is where people sit and stand.
+  // Insets are from the top's edge to the leg's outer face.
+  leg: { size: 0.085, endInset: 0.15, sideInset: 0.085 },
+  // A plain apron rail between each pair of legs, under the top: what holds a
+  // 3.6 m top flat, and what makes the table read as built rather than a slab
+  // on posts. Set back a little from the legs' outer faces.
+  apron: { height: 0.095, thickness: 0.024, setBack: 0.012 },
+  // The ease on every edge of the legs and rails.
+  pieceRadius: 0.003,
+  // The stone table (`LOOK.tableFinish: 'stone'`). The walnut fields above
+  // describe the earlier wooden table, which is kept.
+  stone: {
+    // A 50 mm slab: enough to read as solid stone without becoming a block.
+    thickness: 0.05,
+    // Its upper edge is rounded over 9 mm, its lower edge 5 mm: an eased
+    // profile that catches the key light as a soft line, not a cut.
+    edgeRadius: 0.009,
+    underEdgeRadius: 0.005,
+    // Corners rounded in plan, as a fabricator would leave a slab this size.
+    cornerRadius: 0.045,
+    // Two stone pedestals standing across the table, set in from its ends,
+    // so the slab overhangs them on every side and the space beneath stays
+    // open. Their edges are rounded throughout.
+    pedestal: { width: 0.14, depth: 1.0, centerFromEnd: 0.6, radius: 0.025 },
+    // Between each pedestal and the slab, a recessed blackened-steel plate:
+    // a shadow gap, so the two stones never meet in a hard line.
+    reveal: { height: 0.014, inset: 0.022, radius: 0.004 },
+  },
   // Clear floor between the table's rear edge and the rear wall.
   rearClearance: 1.4,
 }
@@ -30,6 +64,10 @@ export const ROOM = {
   height: 4,
   rearWallZ: REAR_WALL_Z,
   frontWallZ: REAR_WALL_Z + ROOM_DEPTH,
+  // The plaster runs into the floor through a small cove rather than meeting
+  // it at a right angle: the radius of that curve. A plasterer's cove, not a
+  // photographer's — large enough to soften the line, far too small to hide it.
+  coveRadius: 0.08,
 }
 
 /** The centre of the tabletop's surface. */
@@ -123,28 +161,46 @@ export const LETTERING_BOUNDS = {
  * The fixtures. `intensity` is each light at full; how much of it a stage uses
  * is that stage's `lights` level in `stageBeats.js`.
  *
- * PROVISIONAL: enough light to judge the blockout by. The lighting itself is
- * designed in Phase 3.
+ * Three sources carry the room, each one a fixture that could be there: a
+ * spot on the wall identity, a key over the table, and the warm light those
+ * two throw back off the plaster and the wood. `ambient` is that return, as a
+ * dim wash; `fill` is the part of it that comes back off the rear wall onto
+ * the table, which is what lets the table's near side and legs keep some shape
+ * instead of dropping to black.
  */
 export const LIGHTS = {
-  ambient: { skyColor: '#8a8580', groundColor: '#2a2826', intensity: 2.6 },
-  // Warm architectural spot from the ceiling, raking down the wall.
+  ambient: { skyColor: '#54483d', groundColor: '#15110e', intensity: 2.6 },
+  // Warm architectural spot from the ceiling, far enough out from the wall
+  // that the letters' shadows stay short: a dark edge under each letter that
+  // lifts it off the plaster, not a second wordmark printed below the first.
   lettering: {
-    position: [0, ROOM.height - 0.2, ROOM.rearWallZ + 1.5],
-    target: LETTERING_CENTER,
-    color: '#ffc690',
-    intensity: 45,
-    angleDegrees: 34,
-    penumbra: 0.8,
-  },
-  // Large soft key over the table, from the Film side. The only shadow caster.
-  tableKey: {
-    position: [-1.8, ROOM.height - 0.2, 1.6],
-    target: TABLE_TOP_CENTER,
-    color: '#ffd9b0',
-    intensity: 130,
-    angleDegrees: 42,
-    penumbra: 1,
+    position: [0, ROOM.height - 0.2, ROOM.rearWallZ + 2.3],
+    target: [0, LETTERING.centerY - 0.45, ROOM.rearWallZ],
+    color: '#ffd0a2',
+    intensity: 52,
+    angleDegrees: 36,
+    penumbra: 0.95,
     shadowMapSize: 2048,
+  },
+  // Large soft key over the table, from the Film side and a little in front.
+  tableKey: {
+    position: [-1.9, ROOM.height - 0.2, 1.5],
+    target: [0.15, TABLE.height, 0],
+    color: '#ffdfc0',
+    intensity: 165,
+    angleDegrees: 44,
+    penumbra: 1,
+    // Half the lettering spot's resolution on purpose. The shadow filter's
+    // softening is a fixed number of map texels, so a coarser map gives the
+    // table's shadow a wider edge — closer to what a large, soft source
+    // throws — where a fine one cut it out of the floor like a stencil.
+    shadowMapSize: 1024,
+  },
+  // Bounce off the lit wall, back across the table toward the camera.
+  fill: {
+    position: [0.6, 2.4, ROOM.rearWallZ + 0.4],
+    target: [0, TABLE.height, 0.4],
+    color: '#ffc08a',
+    intensity: 0.8,
   },
 }

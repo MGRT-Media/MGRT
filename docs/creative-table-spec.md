@@ -4,7 +4,7 @@ This document is the single source of truth for **what the visitor sees**: the c
 
 How it is built is in `technical-architecture.md`. Where the build stands is in `build-status.md`.
 
-Lines marked *Proposed* are suggestions written during Phase 0 that have not been approved. Everything else comes from the approved brief.
+Everything here is approved direction. Where a detail is still provisional it says so.
 
 ---
 
@@ -36,14 +36,14 @@ The scene must feel **art-directed and photographed, not procedurally assembled*
 |---|---|
 | Walls | Warm textured plaster with subtle aging and imperfections. Scanned PBR. |
 | Floor | Dark stone or concrete. Stays the darkest surface in the frame. |
-| Table | Large, solid, dark walnut. The centre of the composition. Scanned PBR tabletop. |
+| Table | A substantial slab of honed stone, warm grey toward charcoal, on a blackened-steel frame. The centre of the composition. Replaced the earlier dark-walnut direction on 2026-10-22. |
 | Lettering | Physical MGRT MEDIA letters mounted on the back wall, behind the table. |
 | Light | Warm architectural spotlight on the lettering; a large soft directional source on the table; very low ambient. |
 | Atmosphere | Light haze visible only inside the beams; fine dust; film grain. |
 
 ### Materials
 
-- High-quality scanned PBR textures for the plaster and the walnut.
+- Scanned PBR textures for the plaster and the stone. The stone top reads as one continuous slab, honed and low in sheen: broad soft highlights, restrained veining, no polished gloss.
 - Priority order: believable roughness, normal detail, real-world scale, natural variation. Exaggerated displacement is a failure, not a feature.
 - Surfaces should show wear where hands and objects would cause it, not uniformly.
 
@@ -52,8 +52,9 @@ The scene must feel **art-directed and photographed, not procedurally assembled*
 - A custom 3D model (GLB) derived from the **exact existing MGRT wordmark**. Typography and proportions are preserved. No substitute font.
 - Shallow, realistic extrusion with a subtle bevel that catches the spotlight.
 - Brushed dark metal or aged bronze; the choice is made on screen during visual development.
-- *Proposed:* mounted slightly off the wall so it casts a soft contact shadow onto the plaster.
-- Whether the wall carries the stacked form (MGRT over MEDIA) or one line is an open decision; see `build-status.md`.
+- Mounted slightly off the wall, so it casts a short contact shadow onto the plaster.
+- The stacked form, MGRT over MEDIA, 1.8 m wide and centred 2.5 m up the rear wall.
+- Finish: aged bronze, provisional until approved.
 
 ### Lighting
 
@@ -82,7 +83,7 @@ Described from the overview camera (stage 2 and stage 5):
 
 ## 4. The sequence
 
-Six stages. Scroll moves between them one stage per gesture.
+Six stages. One intentional gesture (wheel, swipe or key) moves one stage, forward or back. The page itself does not scroll.
 
 | # | Stage | Light | Camera |
 |---|---|---|---|
@@ -91,15 +92,16 @@ Six stages. Scroll moves between them one stage per gesture.
 | 2 | **Table** | Large soft directional light rises on the table. | Cranes up and tilts down to an elevated three-quarter view of the whole table. |
 | 3 | **Film** | Table light holds; emphasis shifts left. | Moves in to explore the Film side. |
 | 4 | **Digital** | Table light holds; emphasis shifts right. | Travels across to the Digital side. |
-| 5 | **Overview** | Full table lit. | Returns to the complete table overview. |
+| 5 | **Final overview** | Full table lit, a little brighter. | Rises to a higher, near-overhead view of the complete table with little distortion. This becomes the project-selection view. |
 
 ### Rules for the sequence
 
 - **Stage 0 framing is fixed in intent:** the wall identity is the subject and the table is foreground. It is also the frame the startup image shows.
 - **Stage 1 to stage 2 is one natural move.** The crane-and-tilt should feel like a single operator decision, not two motions joined.
-- **Stage 5 and stage 2 are the same view.** The sequence ends where the table was first revealed, now understood.
+- **Stage 5 is its own view**, higher and more comprehensive than the table reveal.
+- **The ceiling is never in frame**, at any stage or during any move. The top of every composition is wall, lettering or lit wall. Light fixtures stay out of frame.
 - Every stage is reversible. Scrolling back replays the lighting and camera in reverse.
-- *Proposed, awaiting confirmation:* no intro animation plays on its own, and no scroll lock holds the visitor against their input. The previous site had both.
+- No intro animation plays on its own, and nothing holds the visitor against their input.
 
 ### Camera character
 
@@ -127,6 +129,8 @@ Visitors must be able to move directly between **Film**, **Digital** and **Overv
 - The same room, the same sequence and the same light on every device.
 - What may change is framing: camera distance, elevation and field of view adapt so each stage's subject is fully in frame on a portrait phone.
 - Mobile is composed, not scaled down. Each stage is checked on a portrait phone before it is called done.
+- On upright screens the camera keeps the desktop's three-quarter angle, Film on the left and Digital on the right, and crops the table deliberately: the whole table cannot span a phone's width from inside the room. The portrait table shots hold the complete wordmark above the table.
+- Lettering is either complete or entirely out of frame at every resting stage.
 
 ---
 

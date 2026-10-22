@@ -3,7 +3,9 @@ import SceneReady from '../loading/SceneReady.jsx'
 import { STAGES } from './stageBeats.js'
 import StudioCameraRig from './StudioCameraRig.jsx'
 import StudioDepthOfField from './StudioDepthOfField.jsx'
+import StudioDust from './StudioDust.jsx'
 import StudioLightingRig from './StudioLightingRig.jsx'
+import { LOOK } from './studioLook.js'
 import StudioRoom from './StudioRoom.jsx'
 
 const OPENING = STAGES[0].camera
@@ -27,13 +29,15 @@ export default function StudioExperience({ onReady }) {
       className="experience-canvas"
       shadows="soft"
       dpr={[1, 1.75]}
-      gl={{ antialias: false, toneMappingExposure: 1.0 }}
+      gl={{ antialias: false, toneMappingExposure: LOOK.exposure }}
       camera={{ position: OPENING.position, fov: OPENING.fov, near: 0.05, far: 100 }}
     >
-      <color attach="background" args={['#0d0d0d']} />
+      <color attach="background" args={[LOOK.background]} />
+      <fogExp2 attach="fog" args={[LOOK.fog.color, LOOK.fog.density]} />
       <StudioCameraRig />
       <StudioLightingRig />
       <StudioRoom />
+      <StudioDust />
       <SceneReady onReady={onReady} />
       {/* Last child deliberately: it owns the render loop. */}
       <StudioDepthOfField />

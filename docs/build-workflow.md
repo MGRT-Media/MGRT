@@ -40,7 +40,7 @@ Read `build-status.md` first, every session. Read the others as the task require
 | # | Phase | Objective | Review gate |
 |---|---|---|---|
 | 0 | **Documentation** | Archive the old docs; write the spec, architecture, status and workflow; add `CLAUDE.md`. | Docs reviewed; open decisions answered. |
-| 1 | **Foundations** | Scene switch in `Home`; `studioLayout.js` and `beats.js`; six-stage scroll skeleton; empty studio scene mounting behind the switch. | Old scene unchanged by default; six stages step forward and back in the new one. |
+| 1 | **Foundations** | Scene switch in `Home`; `studioLayout.js` and `stageBeats.js`; six-stage navigation; empty studio scene mounting behind the switch. | Old scene unchanged by default; six stages step forward and back in the new one. |
 | 2 | **Blockout and framing** | Untextured room, table and lettering placeholder at real scale; camera poses for all six stages; portrait framing. | Room proportions and every stage's framing approved, desktop and phone. |
 | 3 | **Visual development** | Lighting and materials together: plaster, floor, walnut, lettering GLB and finish, the three light states, haze, shadows, depth of field. | The empty room reads as photographed at every stage. |
 | 4 | **Table population** | Film, MGRT and Digital collections placed on the table as physical objects. | Table reads as naturally composed; each zone holds up in its close view. |

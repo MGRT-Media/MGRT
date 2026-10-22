@@ -4,7 +4,7 @@ The MGRT Media website: a scroll-driven, cinematic Three.js homepage plus plain 
 
 ## Current work: the Creative Table redesign
 
-The branch `redesign/creative-table` replaces the Greek-room journey with **MGRT Creative Table**, a photoreal warm studio with a walnut table and physical MGRT MEDIA wall lettering.
+The branch `redesign/creative-table` replaces the Greek-room journey with **MGRT Creative Table**, a photoreal warm studio with a honed stone table and physical MGRT MEDIA wall lettering.
 
 - **`main` is production and must not be modified.** All redesign work happens on `redesign/creative-table`. Confirm the branch before editing.
 - The existing Greek-room experience must keep working on this branch until the replacement scene is approved. Do not delete its source or assets before the cutover phase.
